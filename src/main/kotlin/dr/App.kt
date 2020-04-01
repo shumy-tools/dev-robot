@@ -1,6 +1,8 @@
 package dr
 
 import dr.schema.*
+import dr.query.*
+
 import java.time.LocalDateTime
 
 @Trait
@@ -28,8 +30,7 @@ class Auction(
 
   @Create val items: List<AuctionItem>,
   @Open @Create val bids: List<Bid>
-) {
-}
+)
 
 @Detail
 class AuctionItem(
@@ -45,10 +46,12 @@ class Bid(
   
   @Create val from: User,
   @Create val item: AuctionItem
-) {
-}
+)
 
 fun main(args: Array<String>) {
-  val schema = SchemaParser.parse(User::class, Role::class, Auction::class)
-  schema.print()
+  //val schema = SchemaParser.parse(User::class, Role::class, Auction::class)
+  //schema.print()
+
+  val qe = DrQueryEngine()
+  qe.query("100+2*34 10+4")
 }

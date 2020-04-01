@@ -1,16 +1,37 @@
 plugins {
   id 'org.jetbrains.kotlin.jvm' version '1.3.70'
+  id 'antlr'
   id 'application'
 }
+
+group 'net.dev-robot'
+version '0.0.1'
 
 repositories {
   jcenter()
 }
 
+sourceSets {
+  main.java.srcDirs += 'gen-src'
+}
+
+/**
+ * Without the next section Gradle will add a 'compile' dependency on Antlr3:
+ * https://github.com/gradle/gradle/issues/820
+ */
+configurations {
+  compile {
+    extendsFrom = extendsFrom.findAll { it != configurations.antlr }
+  }
+}
+
 dependencies {
+  antlr 'org.antlr:antlr4:4.7'
+
   implementation platform('org.jetbrains.kotlin:kotlin-bom')
   implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8'
-  implementation "org.jetbrains.kotlin:kotlin-reflect"
+  implementation 'org.jetbrains.kotlin:kotlin-reflect'
+  implementation "org.antlr:antlr4-runtime:4.7"
 
   testImplementation 'org.jetbrains.kotlin:kotlin-test'
   testImplementation 'org.jetbrains.kotlin:kotlin-test-junit'
@@ -20,8 +41,19 @@ application {
   mainClassName = 'dr.AppKt'
 }
 
+generateGrammarSource {
+  maxHeapSize = '64m'
+  arguments += ['-package', 'dr.query']
+  outputDirectory = file('gen-src/dr/query')
+}
+
 compileKotlin {
-    kotlinOptions {
-        freeCompilerArgs += "-Xuse-experimental=kotlin.ExperimentalStdlibApi"
-    }
+  dependsOn generateGrammarSource
+  kotlinOptions {
+    freeCompilerArgs += '-Xuse-experimental=kotlin.ExperimentalStdlibApi'
+  }
+}
+
+clean.doLast {
+  file('gen-src').deleteDir()
 }

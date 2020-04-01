@@ -24,7 +24,7 @@ class TempSchema(
   val traits: MutableMap<String, STrait> = LinkedHashMap<String, STrait>()
 )
 
-class SchemaParser(val schema: Schema) {
+class SchemaParser() {
   companion object {
     fun parse(vararg items: KClass<out Any>): Schema {
       println("---Processing Schema---")
@@ -43,7 +43,7 @@ class SchemaParser(val schema: Schema) {
 }
 
 
-
+/* ----------- Helper processing functions ----------- */
 private fun KClass<*>.checkEntityNumber(name: String) {
   var aNumber = 0
   if (this.hasAnnotation<Master>())
@@ -183,11 +183,11 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
 
     val tRef = type.arguments.first().type ?: throw Exception("Required generic type! - ($name, ${this.name})")
     val ref = tRef.processReference(tmpSchema)
-    SRelation(rType as RelationType, ref, traits, true, isOpen, isOptional)
+    SRelation(rType, ref, traits, true, isOpen, isOptional)
   } else {
     // SReference
     val ref = type.processReference(tmpSchema)
-    SRelation(rType as RelationType, ref, traits, false, isOpen, isOptional)
+    SRelation(rType, ref, traits, false, isOpen, isOptional)
   }
 }
 
