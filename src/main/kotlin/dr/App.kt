@@ -3,16 +3,18 @@ package dr
 import dr.schema.*
 import java.time.LocalDateTime
 
-@Link
+@Trait
 class Trace(
-  val date: LocalDateTime
+  val date: LocalDateTime//,
+  //val user: User
 )
 
 @Master
 class User(
   val name: String,
   val email: String,
-  @Open @Aggregation(Trace::class) val roles: List<Role>
+  
+  @Open @Link(Trace::class) val roles: List<Role>
 )
 
 @Master
@@ -23,24 +25,26 @@ class Role(
 @Master
 class Auction(
   val name: String,
-  @Composition val items: List<AuctionItem>,
-  @Open @Composition val bids: List<Bid>
+
+  @Create val items: List<AuctionItem>,
+  @Open @Create val bids: List<Bid>
 ) {
 }
 
-@Item
+@Detail
 class AuctionItem(
   val name: String,
   val price: Float) {
 }
 
-@Item
+@Detail
 class Bid(
-  val from: User,
-  val item: AuctionItem,
   val price: Float,
   val boxes: Int,
-  val comments: String?
+  val comments: String?,
+  
+  @Create val from: User,
+  @Create val item: AuctionItem
 ) {
 }
 

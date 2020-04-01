@@ -1,7 +1,7 @@
 package dr.schema
 
 enum class EntityType {
-  MASTER, ITEM
+  MASTER, DETAIL
 }
 
 enum class FieldType {
@@ -9,20 +9,20 @@ enum class FieldType {
   TIME, DATE, DATETIME
 }
 
-enum class AssociationType {
-  COMPOSITION, AGGREGATION
+enum class RelationType {
+  CREATE, LINK
 }
 
 class Schema(
   val masters: Map<String, SEntity>,
   val entities: Map<String, SEntity>,
-  val links: Map<String, SLink>
+  val traits: Map<String, STrait>
 ) {
   fun print(filter: String = "all") {
     println("-------SCHEMA (filter=$filter)-------")
     
     val mFiltered = if (filter == "all") this.masters else this.masters.filter{ (key, _) -> key.startsWith(filter) }
-    val mLinks = if (filter == "all") this.links else this.links.filter{ (key, _) -> key.startsWith(filter) }
+    val mTraits = if (filter == "all") this.traits else this.traits.filter{ (key, _) -> key.startsWith(filter) }
 
     println("<MASTER>")
     for ((name, entity) in mFiltered) {
@@ -30,10 +30,10 @@ class Schema(
       entity.print(4)
     }
 
-    println("<LINK>")
-    for ((name, link) in mLinks) {
+    println("<TRAIT>")
+    for ((name, trait) in mTraits) {
       println("  $name")
-      link.print(4)
+      trait.print(4)
     }
   }
 }
@@ -42,8 +42,8 @@ class SEntity(
   val name: String,
   val type: EntityType,
   val fields: Map<String, SField>,
-  val refs: Map<String, SReference>,
-  val assos: Map<String, SAssociation>
+  val refs: Map<String, SRelation>,
+  val rels: Map<String, SRelation>
 ) {
   fun print(spaces: Int) {
     val item = " ".repeat(spaces)
@@ -53,30 +53,30 @@ class SEntity(
       println("${item}$name: ${field.type} - ${opt}FIELD")
     }
 
-    for ((name, field) in this.refs) {
-      val opt = if (field.isOptional) "OPT " else ""
-      println("${item}$name: ${field.ref.name} - ${opt}REF")
-      if (field.ref.type != EntityType.MASTER) {
-        field.ref.print(spaces + 2)
+    for ((name, ref) in this.refs) {
+      val opt = if (ref.isOptional) "OPT " else ""
+      println("${item}$name: ${ref.ref.name} - ${opt}REF")
+      if (ref.ref.type != EntityType.MASTER) {
+        ref.ref.print(spaces + 2)
       }
     }
 
-    for ((name, field) in this.assos) {
-      val links = field.links.map{ it.name }
-      val open = if (field.isOpen) "OPEN " else ""
-      val sLinks = if (links.isEmpty()) "" else " $links"
-      println("${item}$name: ${field.ref.name} - ${open}${field.type}${sLinks}")
-      if (field.ref.type != EntityType.MASTER) {
-        field.ref.print(spaces + 2)
+    for ((name, rel) in this.rels) {
+      val open = if (rel.isOpen) "OPEN " else ""
+      val traits = rel.traits.map{ it.name }
+      val sTraits = if (traits.isEmpty()) "" else " $traits"
+      println("${item}$name: ${rel.ref.name} - ${open}${rel.type}${sTraits}")
+      if (rel.ref.type != EntityType.MASTER) {
+        rel.ref.print(spaces + 2)
       }
     }
   }
 }
 
-class SLink(
+class STrait(
   val name: String,
   val fields: Map<String, SField>,
-  val refs: Map<String, SReference>
+  val refs: Map<String, SRelation>
 ) {
   fun print(spaces: Int) {
     val item = " ".repeat(spaces)
@@ -86,11 +86,11 @@ class SLink(
       println("${item}$name: ${field.type} - ${opt}FIELD")
     }
 
-    for ((name, field) in this.refs) {
-      val opt = if (field.isOptional) "OPT " else ""
-      println("${item}$name: ${field.ref.name} - ${opt}REF")
-      if (field.ref.type != EntityType.MASTER) {
-        field.ref.print(spaces + 2)
+    for ((name, ref) in this.refs) {
+      val opt = if (ref.isOptional) "OPT " else ""
+      println("${item}$name: ${ref.ref.name} - ${opt}REF")
+      if (ref.ref.type != EntityType.MASTER) {
+        ref.ref.print(spaces + 2)
       }
     }
   }
@@ -101,14 +101,12 @@ class SField(
   val isOptional: Boolean
 )
 
-class SReference(
+class SRelation(
+  val type: RelationType,
   val ref: SEntity,
-  val isOptional: Boolean
-)
+  val traits: Set<STrait>,
 
-class SAssociation(
-  val type: AssociationType,
-  val ref: SEntity,
-  val links: Set<SLink>,
-  val isOpen: Boolean
+  val isCollection: Boolean,
+  val isOpen: Boolean,
+  val isOptional: Boolean
 )

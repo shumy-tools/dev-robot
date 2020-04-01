@@ -21,7 +21,7 @@ val SET = typeOf<Set<*>?>()
 class TempSchema(
   val masters: MutableMap<String, SEntity> = LinkedHashMap<String, SEntity>(),
   val entities: MutableMap<String, SEntity> = LinkedHashMap<String, SEntity>(),
-  val links: MutableMap<String, SLink> = LinkedHashMap<String, SLink>()
+  val traits: MutableMap<String, STrait> = LinkedHashMap<String, STrait>()
 )
 
 class SchemaParser(val schema: Schema) {
@@ -34,38 +34,37 @@ class SchemaParser(val schema: Schema) {
           throw Exception("Include only master entities!")
         }
 
-        val entity = kc.processEntity(tmpSchema)
-        tmpSchema.masters.put(entity.name, entity)
+        kc.processEntity(tmpSchema)
       }
 
-      return Schema(tmpSchema.masters, tmpSchema.entities, tmpSchema.links)
+      return Schema(tmpSchema.masters, tmpSchema.entities, tmpSchema.traits)
     }
   }
 }
 
 
 
-private fun KClass<*>.checkTypeNumber(name: String) {
+private fun KClass<*>.checkEntityNumber(name: String) {
   var aNumber = 0
   if (this.hasAnnotation<Master>())
     aNumber++
   
-  if (this.hasAnnotation<Item>())
+  if (this.hasAnnotation<Detail>())
     aNumber++
   
   if (this.hasAnnotation<Link>())
     aNumber++
 
   if (aNumber > 1)
-    throw Exception("KClass with multiple types! Select one of (Master, Item, Link). - ($name)")
+    throw Exception("KClass with multiple types! Select one of (Master, Detail, Link). - ($name)")
 }
 
-private fun KProperty1<*, *>.checkAssociationNumber(name: String) {
+private fun KProperty1<*, *>.checkRelationNumber(name: String) {
   var aNumber = 0
-  if (this.hasAnnotation<Composition>())
+  if (this.hasAnnotation<Create>())
     aNumber++
   
-  if (this.hasAnnotation<Aggregation>())
+  if (this.hasAnnotation<Link>())
     aNumber++
 
   if (aNumber > 1)
@@ -73,116 +72,133 @@ private fun KProperty1<*, *>.checkAssociationNumber(name: String) {
 }
 
 private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
-  val exist = tmpSchema.entities.get(this.qualifiedName)
-  if (exist != null) {
-    return exist
-  }
-
   val name = this.qualifiedName ?: throw Exception("No Entity name!")
-  this.checkTypeNumber(name)
+  return tmpSchema.entities.getOrElse(name) {
+    this.checkEntityNumber(name)
 
-  println("  KClass: $name")
-  val fields = LinkedHashMap<String, SField>()
-  val refs = LinkedHashMap<String, SReference>()
-  val assos = LinkedHashMap<String, SAssociation>()
-  
-  for (field in this.memberProperties) {
-    val rType = field.returnType
-    
-    if (rType.isSubtypeOf(MAP))
-      throw Exception("Map is not supported in associations! - ($name, ${field.name})")
-
-    val isOptional = rType.isMarkedNullable
-    val type = rType.getFieldType()
-
-    if (type != null) {
-      // SField
-      fields.put(field.name, SField(type, isOptional))
-    } else if (rType.isSubtypeOf(LIST) || rType.isSubtypeOf(SET)) {
-      // SAssociation
-      field.checkAssociationNumber(name)
-
-      if (isOptional)
-        throw Exception("Associations are non optional! - ($name, ${field.name})")
-
-      val isOpen = field.hasAnnotation<Open>()
-      val (aType, links) = field.processAssociation(tmpSchema) ?: throw Exception("Required annotation (Composition, Aggregation)! - ($name, ${field.name})")
-
-      val tRef = rType.arguments.first().type ?: throw Exception("Required generic type! - ($name, ${field.name})")
-      val ref = tRef.processReference(tmpSchema)
-      
-      assos.put(field.name, SAssociation(aType, ref, links, isOpen))
-    } else {
-      // SReference
-      val ref = rType.processReference(tmpSchema)
-      refs.put(field.name, SReference(ref, isOptional))
-    }
-  }
-  
-  val type = this.getEntityType() ?: throw Exception("Required annotation (Master, Item)! - ($name)")
-  val entity = SEntity(name, type, fields, refs, assos)
-  tmpSchema.entities.put(name, entity)
-
-  return entity
-}
-
-private fun KType.processReference(tmpSchema: TempSchema): SEntity {
-  return tmpSchema.entities.getOrElse(this.toString()) {
-    val clazz = this.classifier as KClass<*>
-    clazz.processEntity(tmpSchema)
-  }
-}
-
-private fun KProperty1<*, *>.processAssociation(tmpSchema: TempSchema): Pair<AssociationType, Set<SLink>>? {
-  val comp = this.findAnnotation<Composition>()
-  if (comp != null) {
-    val links = comp.value.map{ it.processLink(tmpSchema) }.toSet()
-    return Pair(AssociationType.COMPOSITION, links)
-  }
-
-  val aggr = this.findAnnotation<Aggregation>()
-  if (aggr != null) {
-    val links = aggr.value.map{ it.processLink(tmpSchema) }.toSet()
-    return Pair(AssociationType.AGGREGATION, links)
-  }
-
-  return null
-}
-
-private fun KClass<*>.processLink(tmpSchema: TempSchema): SLink {
-  val name = this.qualifiedName ?: throw Exception("No Link name!")
-  this.checkTypeNumber(name)
-
-  if (!this.hasAnnotation<Link>())
-    throw Exception("Not of type Link! - ($name)")
-  
-  return tmpSchema.links.getOrElse(name) {
+    println("  Entity: $name")
     val fields = LinkedHashMap<String, SField>()
-    val refs = LinkedHashMap<String, SReference>()
+    val refs = LinkedHashMap<String, SRelation>()
+    val rels = LinkedHashMap<String, SRelation>()
+
     for (field in this.memberProperties) {
       val rType = field.returnType
-      val isOptional = rType.isMarkedNullable
+      if (rType.isSubtypeOf(MAP))
+        throw Exception("Map is not supported in associations! - ($name, ${field.name})")
+      
       val type = rType.getFieldType()
-
       if (type != null) {
         // SField
+        val isOptional = rType.isMarkedNullable
         fields.put(field.name, SField(type, isOptional))
       } else {
-        // SReference
-        val ref = rType.processReference(tmpSchema)
-        refs.put(field.name, SReference(ref, isOptional))
+        // SRelation
+        val rel = field.processRelation(name, tmpSchema)
+        if (!rel.isCollection) {
+          refs.put(field.name, rel)
+        } else {
+          rels.put(field.name, rel)
+        }
       }
     }
 
-    val link = SLink(name, fields, refs)
-    tmpSchema.links.put(name, link)
-    link
+    val type = this.getEntityType() ?: throw Exception("Required annotation (Master, Detail)! - ($name)")
+    val entity = SEntity(name, type, fields, refs, rels)
+
+    tmpSchema.entities.put(name, entity)
+    if (entity.type == EntityType.MASTER) {
+      tmpSchema.masters.put(name, entity)
+    }
+
+    entity
   }
+}
+
+private fun KClass<*>.processTrait(tmpSchema: TempSchema): STrait {
+  val name = this.qualifiedName ?: throw Exception("No Trait name!")
+  return tmpSchema.traits.getOrElse(name) {
+    this.checkEntityNumber(name)
+
+    if (!this.hasAnnotation<Trait>())
+      throw Exception("Required annotation (Trait)! - ($name)")
+
+    println("    Trait: $name")
+    val fields = LinkedHashMap<String, SField>()
+    val refs = LinkedHashMap<String, SRelation>()
+
+    for (field in this.memberProperties) {
+      val rType = field.returnType
+      val type = rType.getFieldType()
+      if (type != null) {
+        // SField
+        val isOptional = rType.isMarkedNullable
+        fields.put(field.name, SField(type, isOptional))
+      } else {
+        // SReference
+        val rel = field.processRelation(name, tmpSchema)
+        if (!rel.isCollection) {
+          refs.put(field.name, rel)
+        } else {
+          throw Exception("Traits do not support collections! - ($name, ${field.name})")
+        }
+      }
+    }
+
+    val trait = STrait(name, fields, refs)
+    tmpSchema.traits.put(name, trait)
+
+    trait
+  }
+}
+
+private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema): SRelation {
+  this.checkRelationNumber(name)
+
+  val type = this.returnType
+  val isOpen = this.hasAnnotation<Open>()
+  val isOptional = type.isMarkedNullable
+
+  var rType: RelationType? = null
+  val traits = LinkedHashSet<STrait>()
+
+  if (this.hasAnnotation<Create>()) {
+    rType = RelationType.CREATE
+  }
+
+  val link = this.findAnnotation<Link>()
+  if (link != null) {
+    rType = RelationType.LINK
+    for (trait in link.value) {
+      traits.add(trait.processTrait(tmpSchema))
+    }
+  }
+
+  if (rType == null) 
+    throw Exception("Required annotation (Create, Link)! - ($name, ${this.name})")
+
+  return if (type.isSubtypeOf(LIST) || type.isSubtypeOf(SET)) {
+    // SCollection
+    if (isOptional)
+      throw Exception("Collections are non optional! - ($name, ${this.name})")
+
+    val tRef = type.arguments.first().type ?: throw Exception("Required generic type! - ($name, ${this.name})")
+    val ref = tRef.processReference(tmpSchema)
+    SRelation(rType as RelationType, ref, traits, true, isOpen, isOptional)
+  } else {
+    // SReference
+    val ref = type.processReference(tmpSchema)
+    SRelation(rType as RelationType, ref, traits, false, isOpen, isOptional)
+  }
+}
+
+private fun KType.processReference(tmpSchema: TempSchema): SEntity {
+  val entity = this.classifier as KClass<*>
+  return entity.processEntity(tmpSchema)
 }
 
 private fun KClass<*>.getEntityType(): EntityType? {
   if (this.hasAnnotation<Master>()) return EntityType.MASTER
-  if (this.hasAnnotation<Item>()) return EntityType.ITEM
+  if (this.hasAnnotation<Detail>()) return EntityType.DETAIL
   return null
 }
 
