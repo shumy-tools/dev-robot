@@ -53,5 +53,14 @@ fun main(args: Array<String>) {
   //schema.print()
 
   val qe = DrQueryEngine()
-  qe.query("100+2*34 10+4")
+
+  println("Q1")
+  qe.query("""dr.User | name == "Mica*" | { * }""")
+
+  println("Q2")
+  qe.query("""dr.User | name == "Mica*" | {
+    name, birthday,
+    address { * },
+    roles | order > 1 | { name }
+  }""".trimMargin())
 }

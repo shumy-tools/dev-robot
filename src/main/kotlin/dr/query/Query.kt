@@ -8,7 +8,7 @@ class DrQueryEngine() {
     val lexer = QueryLexer(CharStreams.fromString(query))
     val tokens = CommonTokenStream(lexer)
     val parser = QueryParser(tokens)
-    val tree = parser.prog()
+    val tree = parser.query()
 
     val walker = ParseTreeWalker()
     val listener = DrQueryListener()
@@ -17,10 +17,9 @@ class DrQueryEngine() {
 }
 
 class DrQueryListener(): QueryBaseListener() {
-  override fun enterProg(ctx: QueryParser.ProgContext) {
-    val node = ctx.expr().forEach {
-      println("${it.text}")
-    }
+  override fun enterQuery(ctx: QueryParser.QueryContext) {
+    val text = ctx.qline().text
+    println("$text")
   }
 
   override fun visitErrorNode(node: ErrorNode) {
