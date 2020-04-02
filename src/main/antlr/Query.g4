@@ -1,16 +1,16 @@
 grammar Query;
 
-query: entity qline ;
+query: entity qline EOF ;
 
 entity: (ID '.')* NAME ;
 
-qline: filter? sort? limit? page? select ;
+qline: filter? sort? (limit page?)? select ;
 
-  filter: '|' item (logic item)* '|' ;
+  filter: '|' predicate (logic predicate)* '|' ;
 
-    item: pid oper value ;
+    predicate: path oper value ;
 
-    pid: ID ('.' ID)* ;
+    path: ID ('.' ID)* ;
 
     value: (INT | STRING) ;
 

@@ -44,21 +44,35 @@ class Bid(
   val boxes: Int,
   val comments: String?,
   
-  @Create val from: User,
+  @Link val from: User,
   @Create val item: AuctionItem
 )
 
-fun main(args: Array<String>) {
-  //val schema = SchemaParser.parse(User::class, Role::class, Auction::class)
-  //schema.print()
+class TestQueryExecutor(): QueryExecutor {
+  override fun exec() {
+    TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+  }
+}
 
-  val qe = DrQueryEngine()
+class TestQueryAdaptor(): QueryAdaptor {
+  override fun compile(query: CompiledQuery): QueryExecutor {
+    println("Adaptor: $query")
+    return TestQueryExecutor()
+  }
+}
+
+fun main(args: Array<String>) {
+  val schema = SchemaParser.parse(User::class, Role::class, Auction::class)
+  schema.print()
+
+  val qa = TestQueryAdaptor()
+  val qe = DrQueryEngine(schema, qa)
 
   println("Q1")
-  qe.query("""dr.User | name == "Mica*" | { * }""")
+  qe.compile("""dr.User | name == "Mica*" | limit 10 { * }""")
 
   println("Q2")
-  qe.query("""dr.User | name == "Mica*" | {
+  qe.compile("""dr.User | name == "Mica*" | {
     name, birthday,
     address { * },
     roles | order > 1 | { name }

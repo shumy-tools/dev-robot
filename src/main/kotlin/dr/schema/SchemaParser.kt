@@ -90,14 +90,14 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
       if (type != null) {
         // SField
         val isOptional = rType.isMarkedNullable
-        fields.put(field.name, SField(type, isOptional))
+        fields[field.name] = SField(type, isOptional)
       } else {
         // SRelation
         val rel = field.processRelation(name, tmpSchema)
         if (!rel.isCollection) {
-          refs.put(field.name, rel)
+          refs[field.name] = rel
         } else {
-          rels.put(field.name, rel)
+          rels[field.name] = rel
         }
       }
     }
@@ -105,9 +105,9 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
     val type = this.getEntityType() ?: throw Exception("Required annotation (Master, Detail)! - ($name)")
     val entity = SEntity(name, type, fields, refs, rels)
 
-    tmpSchema.entities.put(name, entity)
+    tmpSchema.entities[name] = entity
     if (entity.type == EntityType.MASTER) {
-      tmpSchema.masters.put(name, entity)
+      tmpSchema.masters[name] = entity
     }
 
     entity
@@ -132,12 +132,12 @@ private fun KClass<*>.processTrait(tmpSchema: TempSchema): STrait {
       if (type != null) {
         // SField
         val isOptional = rType.isMarkedNullable
-        fields.put(field.name, SField(type, isOptional))
+        fields[field.name] = SField(type, isOptional)
       } else {
         // SReference
         val rel = field.processRelation(name, tmpSchema)
         if (!rel.isCollection) {
-          refs.put(field.name, rel)
+          refs[field.name] = rel
         } else {
           throw Exception("Traits do not support collections! - ($name, ${field.name})")
         }
@@ -145,7 +145,7 @@ private fun KClass<*>.processTrait(tmpSchema: TempSchema): STrait {
     }
 
     val trait = STrait(name, fields, refs)
-    tmpSchema.traits.put(name, trait)
+    tmpSchema.traits[name] = trait
 
     trait
   }
@@ -176,19 +176,25 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
   if (rType == null) 
     throw Exception("Required annotation (Create, Link)! - ($name, ${this.name})")
 
-  return if (type.isSubtypeOf(LIST) || type.isSubtypeOf(SET)) {
+  val (ref, isCollection) = if (type.isSubtypeOf(LIST) || type.isSubtypeOf(SET)) {
     // SCollection
     if (isOptional)
       throw Exception("Collections are non optional! - ($name, ${this.name})")
 
     val tRef = type.arguments.first().type ?: throw Exception("Required generic type! - ($name, ${this.name})")
     val ref = tRef.processReference(tmpSchema)
-    SRelation(rType, ref, traits, true, isOpen, isOptional)
+    Pair(ref, true)
   } else {
     // SReference
     val ref = type.processReference(tmpSchema)
-    SRelation(rType, ref, traits, false, isOpen, isOptional)
+    Pair(ref, false)
   }
+
+  if (rType == RelationType.CREATE && ref.type == EntityType.MASTER) {
+    throw Exception("Cannot create a master through a relation! - ($name, ${this.name})")
+  }
+
+  return SRelation(rType, ref, traits, isCollection, isOpen, isOptional)
 }
 
 private fun KType.processReference(tmpSchema: TempSchema): SEntity {
