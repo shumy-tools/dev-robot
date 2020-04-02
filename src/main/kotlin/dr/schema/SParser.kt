@@ -18,13 +18,7 @@ val MAP = typeOf<Map<*, *>?>()
 val LIST = typeOf<List<*>?>()
 val SET = typeOf<Set<*>?>()
 
-class TempSchema(
-  val masters: MutableMap<String, SEntity> = LinkedHashMap<String, SEntity>(),
-  val entities: MutableMap<String, SEntity> = LinkedHashMap<String, SEntity>(),
-  val traits: MutableMap<String, STrait> = LinkedHashMap<String, STrait>()
-)
-
-class SchemaParser() {
+class SParser() {
   companion object {
     fun parse(vararg items: KClass<out Any>): Schema {
       println("---Processing Schema---")
@@ -42,8 +36,13 @@ class SchemaParser() {
   }
 }
 
+/* ----------- Helpers ----------- */
+private class TempSchema(
+  val masters: MutableMap<String, SEntity> = LinkedHashMap<String, SEntity>(),
+  val entities: MutableMap<String, SEntity> = LinkedHashMap<String, SEntity>(),
+  val traits: MutableMap<String, STrait> = LinkedHashMap<String, STrait>()
+)
 
-/* ----------- Helper processing functions ----------- */
 private fun KClass<*>.checkEntityNumber(name: String) {
   var aNumber = 0
   if (this.hasAnnotation<Master>())
@@ -78,7 +77,6 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
 
     println("  Entity: $name")
     val fields = LinkedHashMap<String, SField>()
-    val refs = LinkedHashMap<String, SRelation>()
     val rels = LinkedHashMap<String, SRelation>()
 
     for (field in this.memberProperties) {
@@ -94,16 +92,12 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
       } else {
         // SRelation
         val rel = field.processRelation(name, tmpSchema)
-        if (!rel.isCollection) {
-          refs[field.name] = rel
-        } else {
-          rels[field.name] = rel
-        }
+        rels[field.name] = rel
       }
     }
 
     val type = this.getEntityType() ?: throw Exception("Required annotation (Master, Detail)! - ($name)")
-    val entity = SEntity(name, type, fields, refs, rels)
+    val entity = SEntity(name, type, fields, rels)
 
     tmpSchema.entities[name] = entity
     if (entity.type == EntityType.MASTER) {
@@ -134,7 +128,7 @@ private fun KClass<*>.processTrait(tmpSchema: TempSchema): STrait {
         val isOptional = rType.isMarkedNullable
         fields[field.name] = SField(type, isOptional)
       } else {
-        // SReference
+        // SRelation
         val rel = field.processRelation(name, tmpSchema)
         if (!rel.isCollection) {
           refs[field.name] = rel

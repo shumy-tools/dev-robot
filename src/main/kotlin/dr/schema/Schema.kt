@@ -23,7 +23,6 @@ class SEntity(
   val name: String,
   val type: EntityType,
   val fields: Map<String, SField>,
-  val refs: Map<String, SRelation>,
   val rels: Map<String, SRelation>
 )
 
@@ -77,19 +76,13 @@ fun SEntity.print(spaces: Int) {
     println("${item}$name: ${field.type} - ${opt}FIELD")
   }
 
-  for ((name, ref) in this.refs) {
-    val opt = if (ref.isOptional) "OPT " else ""
-    println("${item}$name: ${ref.ref.name} - ${opt}REF")
-    if (ref.ref.type != EntityType.MASTER) {
-      ref.ref.print(spaces + 2)
-    }
-  }
-
   for ((name, rel) in this.rels) {
-    val open = if (rel.isOpen) "OPEN " else ""
+    val isOpen = if (rel.isOpen) "OPEN " else ""
+    val isOptional = if (rel.isOptional) "OPT " else ""
+
     val traits = rel.traits.map{ it.name }
     val sTraits = if (traits.isEmpty()) "" else " $traits"
-    println("${item}$name: ${rel.ref.name} - ${open}${rel.type}${sTraits}")
+    println("${item}$name: ${rel.ref.name} - ${isOpen}${isOptional}${rel.type}${sTraits}")
     if (rel.ref.type != EntityType.MASTER) {
       rel.ref.print(spaces + 2)
     }

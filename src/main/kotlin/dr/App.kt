@@ -2,6 +2,10 @@ package dr
 
 import dr.schema.*
 import dr.query.*
+import dr.spi.IAccessed
+import dr.spi.IQueryAdaptor
+import dr.spi.IQueryAuthorize
+import dr.spi.IQueryExecutor
 
 import java.time.LocalDateTime
 
@@ -15,8 +19,16 @@ class Trace(
 class User(
   val name: String,
   val email: String,
-  
+
+  @Link val address: Address,
   @Open @Link(Trace::class) val roles: List<Role>
+)
+
+@Detail
+class Address(
+  val country: String,
+  val city: String,
+  val address: String
 )
 
 @Master
@@ -48,32 +60,40 @@ class Bid(
   @Create val item: AuctionItem
 )
 
-class TestQueryExecutor(): QueryExecutor {
+class TestQueryExecutor(): IQueryExecutor {
   override fun exec() {
     TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
   }
 }
 
-class TestQueryAdaptor(): QueryAdaptor {
-  override fun compile(query: CompiledQuery): QueryExecutor {
-    println("Adaptor: $query")
+class TestQueryAdaptor(): IQueryAdaptor {
+  override fun compile(query: QTree): IQueryExecutor {
+    println("tree = $query")
     return TestQueryExecutor()
   }
 }
 
+class TestQueryAuthorize(): IQueryAuthorize {
+  override fun authorized(accessed: IAccessed): Boolean {
+    println("accessed = $accessed")
+    return true
+  }
+}
+
 fun main(args: Array<String>) {
-  val schema = SchemaParser.parse(User::class, Role::class, Auction::class)
+  val schema = SParser.parse(User::class, Role::class, Auction::class)
   schema.print()
 
-  val qa = TestQueryAdaptor()
-  val qe = DrQueryEngine(schema, qa)
+  val qAdaptor = TestQueryAdaptor()
+  val qAuthorize = TestQueryAuthorize()
+  val qEngine = DrQueryEngine(schema, qAdaptor, qAuthorize)
 
   println("Q1")
-  qe.compile("""dr.User | name == "Mica*" | limit 10 { * }""")
+  qEngine.compile("""dr.User | name == "Mica*" | limit 10 { * }""")
 
   println("Q2")
-  qe.compile("""dr.User | name == "Mica*" | {
-    name, birthday,
+  qEngine.compile("""dr.User | name == "Mica*" | {
+    name, email,
     address { * },
     roles | order > 1 | { name }
   }""".trimMargin())

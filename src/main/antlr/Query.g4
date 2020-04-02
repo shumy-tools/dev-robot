@@ -4,7 +4,7 @@ query: entity qline EOF ;
 
 entity: (ID '.')* NAME ;
 
-qline: filter? sort? (limit page?)? select ;
+qline: filter? (limit page?)? select ;
 
   filter: '|' predicate (logic predicate)* '|' ;
 
@@ -14,8 +14,6 @@ qline: filter? sort? (limit page?)? select ;
 
     value: (INT | STRING) ;
 
-  sort: 'sort' (ID order)+;
-
   limit: 'limit' INT ;
 
   page: 'page' INT;
@@ -24,7 +22,7 @@ qline: filter? sort? (limit page?)? select ;
 
     fields: ALL | (field (',' field)*) ;
 
-    field: ID ;
+    field: ('(' order INT ')')? ID ;
 
     relation: ID qline ;
 
