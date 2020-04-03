@@ -6,6 +6,7 @@ import dr.spi.IQueryAdaptor
 import dr.spi.IQueryAuthorize
 import dr.spi.IQueryExecutor
 import org.antlr.v4.runtime.*
+import org.antlr.v4.runtime.atn.PredictionMode
 import org.antlr.v4.runtime.tree.*
 import java.lang.StringBuilder
 
@@ -21,6 +22,7 @@ class QEngine(private val schema: Schema, private val adaptor: IQueryAdaptor, pr
 
     try {
       walker.walk(listener, tree)
+      //println("tokens: ${tokens.tokens.map { it.text }}")
     } catch (ex: Exception) {
       throw Exception("Failed to compile query! ${ex.message}")
     }
@@ -174,31 +176,11 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
   }
 
   private fun processFilter(prefix: List<String>, filter: QueryParser.FilterContext, sEntity: SEntity): QFilter {
-    println("predicate: ${filter.predicate().text}")
-    println("more: ${filter.more().size}")
+    processPredicate(prefix, filter.predicate(), sEntity)
 
     filter.more().forEach {
       val logic = it.logic().text
-      val predicate = it.predicate()
-
-      if (predicate.path().next().isEmpty()) {
-        val path = predicate.path().ID().text
-        accessed.addField(prefix, path)
-        val sField = sEntity.fields[path] ?: throw Exception("Invalid field path '${sEntity.name}.$path'")
-        // TODO: check sField operator constraints
-      } else {
-        val last = predicate.path().next().last()
-        val (lEntity, lRelation, full) = processPath(prefix, predicate.path(), sEntity)
-
-        val deref = last.deref().text
-        checkDeref(deref, lEntity, full.last(), lRelation)
-
-        val path = last.ID().text
-        accessed.addField(prefix, path)
-        val sField = lEntity.fields[path] ?: throw Exception("Invalid field path '${lEntity.name}.$path'")
-        // TODO: check sField operator constraints
-
-      }
+      processPredicate(prefix, it.predicate(), sEntity)
 
       // TODO: update for advanced paths! ex: address.{ name == "Paris" } or roles..{ name == "admin" }
     }
@@ -207,8 +189,24 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
     return QFilter(filter.text)
   }
 
-  fun processPredicate() {
+  private fun processPredicate(prefix: List<String>, predicate: QueryParser.PredicateContext, sEntity: SEntity) {
+    if (predicate.path().next().isEmpty()) {
+      val path = predicate.path().ID().text
+      accessed.addField(prefix, path)
+      val sField = sEntity.fields[path] ?: throw Exception("Invalid field path '${sEntity.name}.$path'")
+      // TODO: check sField operator constraints
+    } else {
+      val last = predicate.path().next().last()
+      val (lEntity, lRelation, full) = processPath(prefix, predicate.path(), sEntity)
 
+      val deref = last.deref().text
+      checkDeref(deref, lEntity, full.last(), lRelation)
+
+      val path = last.ID().text
+      accessed.addField(prefix, path)
+      val sField = lEntity.fields[path] ?: throw Exception("Invalid field path '${lEntity.name}.$path'")
+      // TODO: check sField operator constraints
+    }
   }
 
   private fun processPath(prefix: List<String>, qPath: QueryParser.PathContext, sEntity: SEntity): Triple<SEntity, SRelation, List<String>> {
@@ -236,10 +234,10 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
   private fun checkDeref(deref: String, sEntity: SEntity, path: String, sRelation: SRelation) {
     println("checkDeref")
     if (deref == "." && sRelation.isCollection)
-      throw Exception("Invalid relation path '${sEntity.name}.${path}..'. Expected one-to-one relation!")
+      throw Exception("Invalid relation path '${sEntity.name}.${path}.'. Expected one-to-many relation!")
 
     if (deref == ".." && !sRelation.isCollection)
-      throw Exception("Invalid relation path '${sEntity.name}.${path}.' Expected one-to-many relation!")
+      throw Exception("Invalid relation path '${sEntity.name}.${path}..' Expected one-to-one relation!")
   }
 
   private fun exists(present: MutableSet<String>, full: List<String>) {

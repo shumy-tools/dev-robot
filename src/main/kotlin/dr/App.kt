@@ -82,7 +82,6 @@ class TestQueryAuthorize(): IQueryAuthorize {
 
 fun main(args: Array<String>) {
   val schema = SParser.parse(User::class, Role::class, Auction::class)
-  schema.print()
 
   val qAdaptor = TestQueryAdaptor()
   val qAuthorize = TestQueryAuthorize()
@@ -104,5 +103,5 @@ fun main(args: Array<String>) {
   }""".trimMargin())
 
   println("Q4")
-  qEngine.compile("""dr.User | name == "Mica*" and roles.name == "admin" | { * }""")
+  qEngine.compile("""dr.User | name == "Mica*" and roles..name == "admin" | { * }""")
 }

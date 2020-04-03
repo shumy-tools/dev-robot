@@ -47,6 +47,6 @@ LOWER: 'a'..'z' ;
 UPPER: 'A'..'Z' ;
 
 ALL: '*' ;
-STRING : '"' (' '..'~')* '"' ;
+STRING: '"' ( '""' | ~["\r\n] )* '"';
 
 WS: [ \t\r\n\f]+ -> skip ;
