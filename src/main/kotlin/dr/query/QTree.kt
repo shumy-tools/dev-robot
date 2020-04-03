@@ -1,7 +1,5 @@
 package dr.query
 
-import dr.schema.FieldType
-
 enum class SortType {
   NONE, ASC, DSC
 }

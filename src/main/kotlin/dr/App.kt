@@ -7,10 +7,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dr.schema.*
 import dr.query.*
-import dr.spi.IAccessed
-import dr.spi.IQueryAdaptor
-import dr.spi.IQueryAuthorize
-import dr.spi.IQueryExecutor
+import dr.spi.*
 import java.text.SimpleDateFormat
 
 import java.time.LocalDateTime
@@ -75,9 +72,15 @@ val mapper: ObjectWriter = jacksonObjectMapper()
   .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
   .writerWithDefaultPrettyPrinter()
 
-class TestQueryExecutor(): IQueryExecutor {
-  override fun exec() {
+class TestResult(): IResult {
+  override fun toJson(): String {
     TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+  }
+}
+
+class TestQueryExecutor(): IQueryExecutor {
+  override fun exec(params: Map<String, Any>): IResult {
+    return TestResult()
   }
 }
 
@@ -118,11 +121,11 @@ fun main(args: Array<String>) {
     address {
       country, city
     },
-    roles | name == "admin" and order == 10.0 | { * }
+    roles | name == "admin" and order == 10 | { * }
   }""".trimMargin())
 
   println("Q4")
-  qEngine.compile("""dr.User | name == "Mica*" and roles..name == "admin" | { * }""")
+  qEngine.compile("""dr.User | name == "Mica*" and roles..order == 1 | { * }""")
 
   println("Q5")
   qEngine.compile("""dr.User |  email == "email" and (name == "Mica*" or roles..name == ?name) | { * }""")

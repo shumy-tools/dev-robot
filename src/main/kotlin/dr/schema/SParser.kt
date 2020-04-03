@@ -19,7 +19,7 @@ val MAP = typeOf<Map<*, *>?>()
 val LIST = typeOf<List<*>?>()
 val SET = typeOf<Set<*>?>()
 
-class SParser() {
+class SParser {
   companion object {
     fun parse(vararg items: KClass<out Any>): Schema {
       println("---Processing Schema---")
@@ -39,9 +39,9 @@ class SParser() {
 
 /* ----------- Helpers ----------- */
 private class TempSchema(
-  val masters: MutableMap<String, SEntity> = LinkedHashMap<String, SEntity>(),
-  val entities: MutableMap<String, SEntity> = LinkedHashMap<String, SEntity>(),
-  val traits: MutableMap<String, STrait> = LinkedHashMap<String, STrait>()
+  val masters: MutableMap<String, SEntity> = LinkedHashMap(),
+  val entities: MutableMap<String, SEntity> = LinkedHashMap(),
+  val traits: MutableMap<String, STrait> = LinkedHashMap()
 )
 
 private fun KClass<*>.checkEntityNumber(name: String) {

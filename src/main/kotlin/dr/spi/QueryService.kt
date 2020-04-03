@@ -1,15 +1,18 @@
 package dr.spi
 
 import dr.query.QTree
-import dr.schema.SEntity
 
 interface IAccessed {
   fun getEntityName(): String
   fun getPaths(): Map<String, Any>
 }
 
+interface IResult {
+  fun toJson(): String
+}
+
 interface IQueryExecutor {
-  fun exec()
+  fun exec(params: Map<String, Any>): IResult
 }
 
 interface IQueryAdaptor {

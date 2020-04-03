@@ -1,10 +1,7 @@
 package dr.query
 
 import dr.schema.*
-import dr.spi.IAccessed
-import dr.spi.IQueryAdaptor
-import dr.spi.IQueryAuthorize
-import dr.spi.IQueryExecutor
+import dr.spi.*
 import org.antlr.v4.runtime.*
 import org.antlr.v4.runtime.tree.*
 import java.time.LocalDate
@@ -32,12 +29,18 @@ class QEngine(private val schema: Schema, private val adaptor: IQueryAdaptor, pr
       throw Exception("Failed to compile query! ${listener.errors}")
     }
 
-    return this.adaptor.compile(listener.compiled!!)
+    val native = this.adaptor.compile(listener.compiled!!)
+
+    return try {
+      QueryExecutorWithValidator(native, listener.parameters)
+    } catch (ex: Exception) {
+      throw Exception("Failed to compile query! ${ex.message}")
+    }
   }
 }
 
 /* ----------- Helpers ----------- */
-private class AccessedPaths(): IAccessed {
+private class AccessedPaths : IAccessed {
   private val paths = mutableMapOf<String, Any>()
 
   override fun getEntityName() = this.paths.keys.first()
@@ -80,6 +83,8 @@ private class AccessedPaths(): IAccessed {
 
 private class DrQueryListener(private val schema: Schema, private val authorize: IQueryAuthorize): QueryBaseListener() {
   val errors = mutableListOf<String>()
+  val parameters = mutableListOf<Parameter>()
+
   var compiled: QTree? = null
 
   private var accessed: AccessedPaths = AccessedPaths()
@@ -148,7 +153,7 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
     return if (fields.ALL() != null) {
       val path = accessed.addField(prefix, fields.ALL().text)
       exists(present, path)
-      Pair(true, listOf<QField>())
+      Pair(true, listOf())
     } else {
       Pair(false, fields.field().map {
         val path = it.ID().text
@@ -240,7 +245,7 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
     val qParam = transformParam(predicate.param())
 
     val lEntity = schema.entities[qDeref.entity]
-    checkPredicate(lEntity!!, qDeref.name, compType, qParam)
+    this.parameters.add(Parameter(lEntity!!, qDeref.name, compType, qParam))
 
     return QPredicate(qDerefList, compType, qParam)
   }
@@ -288,30 +293,19 @@ private fun derefType(deref: String) = when (deref) {
 
 private fun transformParam(param: QueryParser.ParamContext) = when {
   param.value() != null -> transformValue(param.value())
-
-  param.list() != null -> QParam(ParamType.LIST, param.list().value().map { transformValue(it) })
-
+  param.list() != null -> QParam(ParamType.LIST, param.list().value().map { transformValue(it).value })
   else -> throw Exception("Unrecognized parameter type!")
 }
 
-
 private fun transformValue(value: QueryParser.ValueContext) = when {
   value.TEXT() != null -> QParam(ParamType.TEXT, value.TEXT().text)
-
   value.INT() != null -> QParam(ParamType.INT, value.INT().text.toLong())
-
   value.FLOAT() != null -> QParam(ParamType.FLOAT, value.FLOAT().text.toDouble())
-
   value.BOOL() != null -> QParam(ParamType.BOOL, value.BOOL().text.toBoolean())
-
   value.TIME() != null -> QParam(ParamType.TIME, LocalTime.parse(value.TIME().text.substring(1)))
-
   value.DATE() != null -> QParam(ParamType.DATE, LocalDate.parse(value.DATE().text.substring(1)))
-
   value.DATETIME() != null -> QParam(ParamType.DATETIME, LocalDateTime.parse(value.DATETIME().text.substring(1)))
-
   value.PARAM() != null -> QParam(ParamType.PARAM, value.PARAM().text.substring(1))
-
   else -> throw Exception("Unrecognized parameter type!")
 }
 
@@ -321,9 +315,4 @@ private fun checkDeref(drType: DerefType, sEntity: SEntity, path: String, sRelat
 
   if (drType == DerefType.MANY && !sRelation.isCollection)
     throw Exception("Invalid relation path '${sEntity.name}.${path}..' Expected one-to-one relation!")
-}
-
-private fun checkPredicate(entity: SEntity, field: String, comp: CompType, param: QParam) {
-  // TODO: check if (entity.field, comp, param) are compatible
-
 }
