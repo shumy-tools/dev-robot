@@ -7,6 +7,9 @@ import dr.spi.IQueryAuthorize
 import dr.spi.IQueryExecutor
 import org.antlr.v4.runtime.*
 import org.antlr.v4.runtime.tree.*
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 
 class QEngine(private val schema: Schema, private val adaptor: IQueryAdaptor, private val authorizer: IQueryAuthorize) {
   fun compile(query: String): IQueryExecutor {
@@ -231,20 +234,15 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
 
     // TODO: update qDerefList with advanced paths? ex: address.{ name == "Paris" } or roles..{ name == "admin" }
 
-    // process operator and value
-    val qDerefLast = qDerefList.last()
+    // process comparator and parameter
+    val qDeref = qDerefList.last()
     val compType = compType(predicate.comp().text)
+    val qParam = transformParam(predicate.param())
 
+    val lEntity = schema.entities[qDeref.entity]
+    checkPredicate(lEntity!!, qDeref.name, compType, qParam)
 
-    return QPredicate(qDerefList, compType, predicate.value().text)
-  }
-
-  private fun checkDeref(drType: DerefType, sEntity: SEntity, path: String, sRelation: SRelation) {
-    if (drType == DerefType.ONE && sRelation.isCollection)
-      throw Exception("Invalid relation path '${sEntity.name}.${path}.'. Expected one-to-many relation!")
-
-    if (drType == DerefType.MANY && !sRelation.isCollection)
-      throw Exception("Invalid relation path '${sEntity.name}.${path}..' Expected one-to-one relation!")
+    return QPredicate(qDerefList, compType, qParam)
   }
 
   private fun exists(present: MutableSet<String>, full: List<String>) {
@@ -255,6 +253,8 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
   }
 }
 
+
+/* ----------- Helpers ----------- */
 private fun sortType(sort: String?) = when(sort) {
   "asc" -> SortType.ASC
   "dsc" -> SortType.DSC
@@ -283,5 +283,47 @@ private fun compType(comp: String) = when (comp) {
 private fun derefType(deref: String) = when (deref) {
   "." -> DerefType.ONE
   ".." -> DerefType.MANY
-  else -> throw Exception("Unrecognized deref! Use ('.', '..')")
+  else -> throw Exception("Unrecognized deref operator! Use ('.', '..')")
+}
+
+private fun transformParam(param: QueryParser.ParamContext) = when {
+  param.value() != null -> transformValue(param.value())
+
+  param.list() != null -> QParam(ParamType.LIST, param.list().value().map { transformValue(it) })
+
+  else -> throw Exception("Unrecognized parameter type!")
+}
+
+
+private fun transformValue(value: QueryParser.ValueContext) = when {
+  value.TEXT() != null -> QParam(ParamType.TEXT, value.TEXT().text)
+
+  value.INT() != null -> QParam(ParamType.INT, value.INT().text.toLong())
+
+  value.FLOAT() != null -> QParam(ParamType.FLOAT, value.FLOAT().text.toDouble())
+
+  value.BOOL() != null -> QParam(ParamType.BOOL, value.BOOL().text.toBoolean())
+
+  value.TIME() != null -> QParam(ParamType.TIME, LocalTime.parse(value.TIME().text.substring(1)))
+
+  value.DATE() != null -> QParam(ParamType.DATE, LocalDate.parse(value.DATE().text.substring(1)))
+
+  value.DATETIME() != null -> QParam(ParamType.DATETIME, LocalDateTime.parse(value.DATETIME().text.substring(1)))
+
+  value.PARAM() != null -> QParam(ParamType.PARAM, value.PARAM().text.substring(1))
+
+  else -> throw Exception("Unrecognized parameter type!")
+}
+
+private fun checkDeref(drType: DerefType, sEntity: SEntity, path: String, sRelation: SRelation) {
+  if (drType == DerefType.ONE && sRelation.isCollection)
+    throw Exception("Invalid relation path '${sEntity.name}.${path}.'. Expected one-to-many relation!")
+
+  if (drType == DerefType.MANY && !sRelation.isCollection)
+    throw Exception("Invalid relation path '${sEntity.name}.${path}..' Expected one-to-one relation!")
+}
+
+private fun checkPredicate(entity: SEntity, field: String, comp: CompType, param: QParam) {
+  // TODO: check if (entity.field, comp, param) are compatible
+
 }

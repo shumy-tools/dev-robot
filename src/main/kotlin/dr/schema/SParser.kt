@@ -4,11 +4,12 @@ import kotlin.reflect.*
 import kotlin.reflect.full.*
 import java.time.*
 
-val STRING = typeOf<String?>()
+val TEXT = typeOf<String?>()
 val INT = typeOf<Int?>()
 val LONG = typeOf<Long?>()
 val FLOAT = typeOf<Float?>()
 val DOUBLE = typeOf<Double?>()
+val BOOL = typeOf<Boolean?>()
 
 val TIME = typeOf<LocalTime?>()
 val DATE = typeOf<LocalDate?>()
@@ -203,9 +204,10 @@ private fun KClass<*>.getEntityType(): EntityType? {
 }
 
 private fun KType.getFieldType(): FieldType? {
-  if (this.isSubtypeOf(STRING)) return FieldType.TEXT
-  if (this.isSubtypeOf(INT) || this.isSubtypeOf(LONG)) return FieldType.INTEGER
-  if (this.isSubtypeOf(FLOAT) || this.isSubtypeOf(DOUBLE)) return FieldType.NUMBER
+  if (this.isSubtypeOf(TEXT)) return FieldType.TEXT
+  if (this.isSubtypeOf(INT) || this.isSubtypeOf(LONG)) return FieldType.INT
+  if (this.isSubtypeOf(FLOAT) || this.isSubtypeOf(DOUBLE)) return FieldType.FLOAT
+  if (this.isSubtypeOf(BOOL)) return FieldType.BOOL
 
   if (this.isSubtypeOf(TIME)) return FieldType.TIME
   if (this.isSubtypeOf(DATE)) return FieldType.DATE

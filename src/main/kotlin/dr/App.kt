@@ -2,6 +2,8 @@ package dr
 
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.ObjectWriter
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dr.schema.*
 import dr.query.*
@@ -9,6 +11,7 @@ import dr.spi.IAccessed
 import dr.spi.IQueryAdaptor
 import dr.spi.IQueryAuthorize
 import dr.spi.IQueryExecutor
+import java.text.SimpleDateFormat
 
 import java.time.LocalDateTime
 
@@ -36,7 +39,8 @@ class Address(
 
 @Master
 class Role(
-  val name: String
+  val name: String,
+  val order: Int
 )
 
 @Master
@@ -63,7 +67,10 @@ class Bid(
   @Create val item: AuctionItem
 )
 
+
 val mapper: ObjectWriter = jacksonObjectMapper()
+  .registerModule(JavaTimeModule())
+  .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
   .setSerializationInclusion(JsonInclude.Include.NON_NULL)
   .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
   .writerWithDefaultPrettyPrinter()
@@ -111,12 +118,12 @@ fun main(args: Array<String>) {
     address {
       country, city
     },
-    roles | name == "admin" | { * }
+    roles | name == "admin" and order == 10.0 | { * }
   }""".trimMargin())
 
   println("Q4")
   qEngine.compile("""dr.User | name == "Mica*" and roles..name == "admin" | { * }""")
 
   println("Q5")
-  qEngine.compile("""dr.User |  email == "email" and (name == "Mica*" or roles..name == "admin") | { * }""")
+  qEngine.compile("""dr.User |  email == "email" and (name == "Mica*" or roles..name == ?name) | { * }""")
 }

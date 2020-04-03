@@ -1,5 +1,7 @@
 package dr.query
 
+import dr.schema.FieldType
+
 enum class SortType {
   NONE, ASC, DSC
 }
@@ -16,6 +18,14 @@ enum class DerefType {
   ONE, MANY
 }
 
+// This enum must contain all options from dr.schema.FieldType
+enum class ParamType {
+  TEXT, INT, FLOAT, BOOL,
+  TIME, DATE, DATETIME,
+  LIST, PARAM
+}
+
+// ----------- query structure -----------
 data class QTree(
   val entity: String,
 
@@ -25,7 +35,7 @@ data class QTree(
   val select: QSelect
 )
 
-  // filter structure
+  // ----------- filter structure -----------
   data class QExpression(
     val left: QExpression?,
     val oper: OperType?,
@@ -36,7 +46,7 @@ data class QTree(
     data class QPredicate(
       val path: List<QDeref>,
       val comp: CompType,
-      val value: String //TODO: process this
+      val param: QParam
     )
 
       data class QDeref(
@@ -45,28 +55,33 @@ data class QTree(
         val name: String
       )
 
-// select structure
-data class QSelect(
-  val hasAll: Boolean,
-  val fields: List<QField>,
-  val relations: List<QRelation>
-)
+      data class QParam(
+        val type: ParamType,
+        val value: Any
+      )
 
-  data class QField(
-    val entity: String,
-    val name: String,
-
-    val sort: SortType,
-    val order: Int
+  // ----------- select structure -----------
+  data class QSelect(
+    val hasAll: Boolean,
+    val fields: List<QField>,
+    val relations: List<QRelation>
   )
 
-  data class QRelation(
-    val entity: String,
-    val name: String,
+    data class QField(
+      val entity: String,
+      val name: String,
 
-    val filter: QExpression?,
-    val limit: Int?,
-    val page: Int?,
-    val select: QSelect
-  )
+      val sort: SortType,
+      val order: Int
+    )
+
+    data class QRelation(
+      val entity: String,
+      val name: String,
+
+      val filter: QExpression?,
+      val limit: Int?,
+      val page: Int?,
+      val select: QSelect
+    )
 

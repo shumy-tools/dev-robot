@@ -5,7 +5,7 @@ enum class EntityType {
 }
 
 enum class FieldType {
-  TEXT, INTEGER, NUMBER,
+  TEXT, INT, FLOAT, BOOL,
   TIME, DATE, DATETIME
 }
 
@@ -13,40 +13,42 @@ enum class RelationType {
   CREATE, LINK
 }
 
+// ----------- schema structure -----------
 class Schema(
   val masters: Map<String, SEntity>,
   val entities: Map<String, SEntity>,
   val traits: Map<String, STrait>
 )
 
-class SEntity(
-  val name: String,
-  val type: EntityType,
-  val fields: Map<String, SField>,
-  val rels: Map<String, SRelation>
-)
+  // ----------- entity structure -----------
+  class SEntity(
+    val name: String,
+    val type: EntityType,
+    val fields: Map<String, SField>,
+    val rels: Map<String, SRelation>
+  )
 
-class STrait(
-  val name: String,
-  val fields: Map<String, SField>,
-  val refs: Map<String, SRelation>
-)
+    class SField(
+      val type: FieldType,
+      val isOptional: Boolean
+    )
 
-class SField(
-  val type: FieldType,
-  val isOptional: Boolean
-)
+    class SRelation(
+      val type: RelationType,
+      val ref: SEntity,
+      val traits: Set<STrait>,
 
-class SRelation(
-  val type: RelationType,
-  val ref: SEntity,
-  val traits: Set<STrait>,
+      val isCollection: Boolean,
+      val isOpen: Boolean,
+      val isOptional: Boolean
+    )
 
-  val isCollection: Boolean,
-  val isOpen: Boolean,
-  val isOptional: Boolean
-)
-
+  // ----------- trait structure ----------
+  class STrait(
+    val name: String,
+    val fields: Map<String, SField>,
+    val refs: Map<String, SRelation>
+  )
 
 /* ----------- Helper printer functions ----------- */
 fun Schema.print(filter: String = "all") {
