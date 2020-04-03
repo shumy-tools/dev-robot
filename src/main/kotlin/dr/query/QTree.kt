@@ -21,7 +21,7 @@ data class QSelect(
 data class QField(
   val name: String,
   val sort: SortType,
-  val order: Int?
+  val order: Int
 )
 
 data class QRelation(

@@ -86,15 +86,23 @@ fun main(args: Array<String>) {
 
   val qAdaptor = TestQueryAdaptor()
   val qAuthorize = TestQueryAuthorize()
-  val qEngine = DrQueryEngine(schema, qAdaptor, qAuthorize)
+  val qEngine = QEngine(schema, qAdaptor, qAuthorize)
 
   println("Q1")
-  qEngine.compile("""dr.User | name == "Mica*" | limit 10 { * }""")
+  qEngine.compile("""dr.User | name == "Mica*" | limit 10 {
+    (asc 1) name
+  }""".trimIndent())
 
   println("Q2")
+  qEngine.compile("""dr.User | name == "Mica*" | limit 10 page 2 { * }""".trimIndent())
+
+  println("Q3")
   qEngine.compile("""dr.User | name == "Mica*" | {
     name, email,
     address { * },
-    roles | order > 1 | { name }
+    roles | name == "admin" | { name }
   }""".trimMargin())
+
+  println("Q4")
+  qEngine.compile("""dr.User | name == "Mica*" and roles.name == "admin" | { * }""")
 }
