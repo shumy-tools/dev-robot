@@ -6,9 +6,15 @@ entity: (ID '.')* NAME ;
 
 qline: filter? (limit page?)? select ;
 
-  filter: '|' predicate more* '|' ;
+  filter: '|' expr '|' ;
 
-    predicate: path oper value ;
+    expr: '(' expr ')'
+      | left=expr oper='and' right=expr
+      | left=expr oper='or' right=expr
+      | predicate
+    ;
+
+    predicate: path comp value ;
 
       path: ID next* ;
 
@@ -16,13 +22,9 @@ qline: filter? (limit page?)? select ;
 
           deref: ('.' | '..') ;
 
-      oper: ('==' | '!=' | '>' | '<' | '<=' | '>=' | 'in') ;
+      comp: ('==' | '!=' | '>' | '<' | '>=' | '<=' | 'in') ;
 
       value: (INT | STRING) ;
-
-    more: logic predicate ;
-
-      logic: ('or' | 'and') ;
 
   limit: 'limit' INT ;
 
@@ -38,15 +40,11 @@ qline: filter? (limit page?)? select ;
 
     relation: ID qline ;
 
-NAME: UPPER ID ;
-ID: LOWER (NUMBER | LOWER | UPPER)* ;
-INT: NUMBER+ ;
-
-NUMBER: '0'..'9' ;
-LOWER: 'a'..'z' ;
-UPPER: 'A'..'Z' ;
-
+NAME: [A-Z] ID ;
 ALL: '*' ;
+
+ID: [_]*[a-z][A-Za-z0-9_]* ;
+INT: [0-9]+ ;
 STRING: '"' ( '""' | ~["\r\n] )* '"';
 
 WS: [ \t\r\n\f]+ -> skip ;

@@ -6,9 +6,7 @@ import dr.spi.IQueryAdaptor
 import dr.spi.IQueryAuthorize
 import dr.spi.IQueryExecutor
 import org.antlr.v4.runtime.*
-import org.antlr.v4.runtime.atn.PredictionMode
 import org.antlr.v4.runtime.tree.*
-import java.lang.StringBuilder
 
 class QEngine(private val schema: Schema, private val adaptor: IQueryAdaptor, private val authorizer: IQueryAuthorize) {
   fun compile(query: String): IQueryExecutor {
@@ -89,8 +87,8 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
     val entity = this.schema.entities[eText] ?: throw Exception("No entity found: $eText")
 
     // process query
-    val rel = processQLine(listOf(entity.name), ctx.qline(), entity)
-    this.compiled = QTree(rel)
+    val rel = processQLine(listOf(eText), ctx.qline(), entity, entity)
+    this.compiled = QTree(eText, rel.filter, rel.limit, rel.page, rel.select)
 
     // check query authorization
     this.authorize.authorized(accessed)
@@ -100,7 +98,7 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
     this.errors.add(error.text)
   }
 
-  private fun processQLine(prefix: List<String>, qline: QueryParser.QlineContext, sEntity: SEntity): QRelation {
+  private fun processQLine(prefix: List<String>, qline: QueryParser.QlineContext, lEntity: SEntity, sEntity: SEntity): QRelation {
     // process select fields
     val (hasAll, fields) = processFields(prefix, qline.select().fields(), sEntity)
 
@@ -122,10 +120,10 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
     }
 
     // process filter paths
-    val filter = qline.filter()?.let { processFilter(prefix, it, sEntity) }
+    val filter = qline.filter()?.let { processExpr(prefix, it.expr(), sEntity) }
 
     val select = QSelect(hasAll, fields, relations)
-    return QRelation(prefix.last(), select, filter, limit, page)
+    return QRelation(lEntity.name, prefix.last(), filter, limit, page, select)
   }
 
   private fun processRelations(prefix: List<String>, relations: List<QueryParser.RelationContext>, sEntity: SEntity): List<QRelation> {
@@ -137,7 +135,7 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
       exists(present, full)
 
       val rel = sEntity.rels[path] ?: throw Exception("Invalid relation path '${sEntity.name}.$path'")
-      processQLine(full, it.qline(), rel.ref)
+      processQLine(full, it.qline(), sEntity, rel.ref)
     }
   }
 
@@ -157,11 +155,7 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
         if (sEntity.fields[path] == null)
           throw Exception("Invalid field path '${sEntity.name}.$path'")
 
-        val sort = when(it.order()?.text) {
-          "asc" -> SortType.ASC
-          "dsc" -> SortType.DSC
-          else -> SortType.NONE
-        }
+        val sortType = sortType(it.order()?.text)
 
         val order = it.INT()?.let { ord ->
           val order = ord.text.toInt()
@@ -170,73 +164,86 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
           order
         } ?: 0
 
-        QField(it.ID().text, sort, order)
+        QField(sEntity.name, path, sortType, order)
       })
     }
   }
 
-  private fun processFilter(prefix: List<String>, filter: QueryParser.FilterContext, sEntity: SEntity): QFilter {
-    processPredicate(prefix, filter.predicate(), sEntity)
+  private fun processExpr(prefix: List<String>, expr: QueryParser.ExprContext, sEntity: SEntity): QExpression {
+    val list = expr.expr()
+    val oper = expr.oper
 
-    filter.more().forEach {
-      val logic = it.logic().text
-      processPredicate(prefix, it.predicate(), sEntity)
+    return when {
+      list.size == 1 -> {
+        val qExpression = processExpr(prefix, list.last(), sEntity)
+        QExpression(qExpression, null, null, null)
+      }
 
-      // TODO: update for advanced paths! ex: address.{ name == "Paris" } or roles..{ name == "admin" }
+      oper != null -> {
+        val qLeft = processExpr(prefix, expr.left, sEntity)
+        val qRight = processExpr(prefix, expr.right, sEntity)
+        val operType = operType(oper.text)
+
+        QExpression(qLeft, operType, qRight, null)
+      }
+
+      else -> {
+        val qPredicate = processPredicate(prefix, expr.predicate(), sEntity)
+        QExpression(null, null, null, qPredicate)
+      }
     }
-
-    // TODO: include filter predicates
-    return QFilter(filter.text)
   }
 
-  private fun processPredicate(prefix: List<String>, predicate: QueryParser.PredicateContext, sEntity: SEntity) {
-    if (predicate.path().next().isEmpty()) {
-      val path = predicate.path().ID().text
-      accessed.addField(prefix, path)
-      val sField = sEntity.fields[path] ?: throw Exception("Invalid field path '${sEntity.name}.$path'")
-      // TODO: check sField operator constraints
+  private fun processPredicate(prefix: List<String>, predicate: QueryParser.PredicateContext, sEntity: SEntity): QPredicate {
+    // process head
+    val path = predicate.path().ID().text
+    val full = accessed.addField(prefix, path)
+    val qDerefHead = QDeref(sEntity.name, DerefType.ONE, path)
+
+    // process tail
+    val fullPath = predicate.path().next()
+    val qDerefList = if (fullPath.isNotEmpty()) {
+      var nextPath = path
+      var nextFull = full
+      var lEntity = sEntity
+      var lRelation = lEntity.rels[path] ?: throw Exception("Invalid relation path '${lEntity.name}.$path'")
+
+      val qDerefTail = fullPath.mapIndexed { index, nxt ->
+        val drType = derefType(nxt.deref().text)
+        checkDeref(drType, lEntity, nextPath, lRelation)
+
+        // process next path
+        nextPath = nxt.ID().text
+        nextFull = accessed.addRelation(nextFull, nextPath)
+
+        lEntity = lRelation.ref
+        if (index != fullPath.size - 1) {
+          lRelation = lEntity.rels[nextPath] ?: throw Exception("Invalid relation path '${lEntity.name}.$nextPath'")
+        }
+
+        QDeref(lEntity.name, drType, nextPath)
+      }
+
+      listOf(qDerefHead).plus(qDerefTail)
     } else {
-      val last = predicate.path().next().last()
-      val (lEntity, lRelation, full) = processPath(prefix, predicate.path(), sEntity)
-
-      val deref = last.deref().text
-      checkDeref(deref, lEntity, full.last(), lRelation)
-
-      val path = last.ID().text
-      accessed.addField(prefix, path)
-      val sField = lEntity.fields[path] ?: throw Exception("Invalid field path '${lEntity.name}.$path'")
-      // TODO: check sField operator constraints
-    }
-  }
-
-  private fun processPath(prefix: List<String>, qPath: QueryParser.PathContext, sEntity: SEntity): Triple<SEntity, SRelation, List<String>> {
-    var path = qPath.ID().text
-    var full = accessed.addField(prefix, path)
-
-    var lEntity = sEntity
-    var lRelation = lEntity.rels[path] ?: throw Exception("Invalid relation path '${lEntity.name}.$path'")
-
-    for (nxt in qPath.next().dropLast(1)) {
-      val deref = nxt.deref().text
-      checkDeref(deref, lEntity, path, lRelation)
-
-      // process next path
-      path = nxt.ID().text
-      full = accessed.addRelation(full, path)
-
-      lEntity = lRelation.ref
-      lRelation = lEntity.rels[path] ?: throw Exception("Invalid relation path '${lEntity.name}.$path'")
+      listOf(qDerefHead)
     }
 
-    return Triple(lEntity, lRelation, full)
+    // TODO: update qDerefList with advanced paths? ex: address.{ name == "Paris" } or roles..{ name == "admin" }
+
+    // process operator and value
+    val qDerefLast = qDerefList.last()
+    val compType = compType(predicate.comp().text)
+
+
+    return QPredicate(qDerefList, compType, predicate.value().text)
   }
 
-  private fun checkDeref(deref: String, sEntity: SEntity, path: String, sRelation: SRelation) {
-    println("checkDeref")
-    if (deref == "." && sRelation.isCollection)
+  private fun checkDeref(drType: DerefType, sEntity: SEntity, path: String, sRelation: SRelation) {
+    if (drType == DerefType.ONE && sRelation.isCollection)
       throw Exception("Invalid relation path '${sEntity.name}.${path}.'. Expected one-to-many relation!")
 
-    if (deref == ".." && !sRelation.isCollection)
+    if (drType == DerefType.MANY && !sRelation.isCollection)
       throw Exception("Invalid relation path '${sEntity.name}.${path}..' Expected one-to-one relation!")
   }
 
@@ -246,4 +253,35 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
       this.errors.add("Path '$path' already exists in select!")
     present.add(path)
   }
+}
+
+private fun sortType(sort: String?) = when(sort) {
+  "asc" -> SortType.ASC
+  "dsc" -> SortType.DSC
+  null -> SortType.NONE
+  else -> throw Exception("Unrecognized sort operator! Use (asc, dsc)")
+}
+
+
+private fun operType(oper: String) = when(oper) {
+  "or" -> OperType.OR
+  "and" -> OperType.AND
+  else -> throw Exception("Unrecognized logic operator! Use (or, and)")
+}
+
+private fun compType(comp: String) = when (comp) {
+  "==" -> CompType.EQUAL
+  "!=" -> CompType.DIFFERENT
+  ">" -> CompType.MORE
+  "<" -> CompType.LESS
+  ">=" -> CompType.MORE_EQ
+  "<=" -> CompType.LESS_EQ
+  "in" -> CompType.IN
+  else -> throw Exception("Unrecognized comparator! Use ('==', '!=', '>', '<', '>=', '<=', 'in')")
+}
+
+private fun derefType(deref: String) = when (deref) {
+  "." -> DerefType.ONE
+  ".." -> DerefType.MANY
+  else -> throw Exception("Unrecognized deref! Use ('.', '..')")
 }

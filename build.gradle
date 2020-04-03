@@ -31,7 +31,9 @@ dependencies {
   implementation platform('org.jetbrains.kotlin:kotlin-bom')
   implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8'
   implementation 'org.jetbrains.kotlin:kotlin-reflect'
+
   implementation "org.antlr:antlr4-runtime:4.8"
+  implementation 'com.fasterxml.jackson.module:jackson-module-kotlin:2.9.8'
 
   testImplementation 'org.jetbrains.kotlin:kotlin-test'
   testImplementation 'org.jetbrains.kotlin:kotlin-test-junit'

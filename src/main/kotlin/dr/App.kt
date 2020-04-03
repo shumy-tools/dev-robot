@@ -1,5 +1,8 @@
 package dr
 
+import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.databind.ObjectWriter
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dr.schema.*
 import dr.query.*
 import dr.spi.IAccessed
@@ -60,6 +63,11 @@ class Bid(
   @Create val item: AuctionItem
 )
 
+val mapper: ObjectWriter = jacksonObjectMapper()
+  .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+  .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
+  .writerWithDefaultPrettyPrinter()
+
 class TestQueryExecutor(): IQueryExecutor {
   override fun exec() {
     TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
@@ -68,7 +76,9 @@ class TestQueryExecutor(): IQueryExecutor {
 
 class TestQueryAdaptor(): IQueryAdaptor {
   override fun compile(query: QTree): IQueryExecutor {
-    println("tree = $query")
+    val json = mapper.writeValueAsString(query);
+
+    println("tree = $json")
     return TestQueryExecutor()
   }
 }
@@ -98,10 +108,15 @@ fun main(args: Array<String>) {
   println("Q3")
   qEngine.compile("""dr.User | name == "Mica*" | {
     name, email,
-    address { * },
-    roles | name == "admin" | { name }
+    address {
+      country, city
+    },
+    roles | name == "admin" | { * }
   }""".trimMargin())
 
   println("Q4")
   qEngine.compile("""dr.User | name == "Mica*" and roles..name == "admin" | { * }""")
+
+  println("Q5")
+  qEngine.compile("""dr.User |  email == "email" and (name == "Mica*" or roles..name == "admin") | { * }""")
 }
