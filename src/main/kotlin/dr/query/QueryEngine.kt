@@ -1,5 +1,6 @@
 package dr.query
 
+import dr.DrServer
 import dr.schema.*
 import dr.spi.*
 import org.antlr.v4.runtime.*
@@ -9,7 +10,9 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 
 /* ------------------------- api -------------------------*/
-class QEngine(private val schema: Schema, private val adaptor: IQueryAdaptor, private val authorizer: IQueryAuthorizer) {
+class QueryEngine(private val adaptor: IQueryAdaptor, private val authorizer: IQueryAuthorizer) {
+  private val schema: Schema by lazy { DrServer.schema }
+
   fun compile(query: String): IQueryExecutor {
     val lexer = QueryLexer(CharStreams.fromString(query))
     val tokens = CommonTokenStream(lexer)

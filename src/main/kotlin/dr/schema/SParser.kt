@@ -3,6 +3,7 @@ package dr.schema
 import kotlin.reflect.*
 import kotlin.reflect.full.*
 import java.time.*
+import kotlin.reflect.jvm.isAccessible
 
 /* ------------------------- api -------------------------*/
 class SParser {
@@ -38,6 +39,9 @@ private val DATETIME = typeOf<LocalDateTime?>()
 private val MAP = typeOf<Map<*, *>?>()
 private val LIST = typeOf<List<*>?>()
 private val SET = typeOf<Set<*>?>()
+
+private val LISTENER = typeOf<EListener<*>>()
+private val LNAME = (LISTENER.classifier as KClass<*>).qualifiedName
 
 private class TempSchema(
   val masters: MutableMap<String, SEntity> = LinkedHashMap(),
@@ -99,7 +103,7 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
     }
 
     val type = this.getEntityType() ?: throw Exception("Required annotation (Master, Detail)! - ($name)")
-    val entity = SEntity(name, type, fields, rels)
+    val entity = SEntity(name, type, fields, rels, processListeners())
 
     tmpSchema.entities[name] = entity
     if (entity.type == EntityType.MASTER) {
@@ -140,10 +144,48 @@ private fun KClass<*>.processTrait(tmpSchema: TempSchema): STrait {
       }
     }
 
-    val trait = STrait(name, fields, refs)
+    val trait = STrait(name, fields, refs, processListeners())
     tmpSchema.traits[name] = trait
 
     trait
+  }
+}
+
+private fun KClass<*>.processListeners(): List<SListener> {
+  val listeners = findAnnotation<Listeners>() ?: return listOf()
+  return listeners.value.map {
+    val sType = it.supertypes.lastOrNull() ?: throw Exception("No supertype found for listener '${it.qualifiedName}'")
+    println("$sType")
+    if (LISTENER.isSubtypeOf(sType))
+      throw Exception("Listener '${it.qualifiedName}' must inherit from '${LNAME}'")
+
+    val tRef = sType.arguments.first().type ?: throw Exception("Listener '${it.qualifiedName}' requires generic type!")
+    if (tRef != this.createType())
+      throw throw Exception("Listener '${it.qualifiedName}' must inherit from '$LNAME<${this.qualifiedName}>'")
+
+    // instantiate listener
+    val instance = it.createInstance() as EListener<*>
+    val enabled = it.declaredFunctions.mapNotNull { member ->
+      val action = when(member.name) {
+        "onCreate" -> ActionType.CREATE
+        "onUpdate" -> ActionType.UPDATE
+        "onDelete" -> ActionType.DELETE
+        "onAddCreate" -> ActionType.ADD_CREATE
+        "onAddLink" -> ActionType.ADD_LINK
+        "onRemoveLink" -> ActionType.REMOVE_LINK
+        else -> null
+      }
+
+      if (action != null) {
+        val events = member.findAnnotation<Events>() ?: throw Exception("'${member.name}' on '${it.qualifiedName}' listener requires 'Events' annotation!")
+        if (events.value.isEmpty())
+          throw Exception("${member.name} on '${it.qualifiedName}' listener requires at least one EventType!")
+
+        action to events.value.map { evt -> evt }.toSet()
+      } else null
+    }.toMap()
+
+    SListener(instance, enabled)
   }
 }
 
@@ -189,9 +231,8 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
     Pair(ref, false)
   }
 
-  if (rType == RelationType.CREATE && ref.type == EntityType.MASTER) {
+  if (rType == RelationType.CREATE && ref.type == EntityType.MASTER)
     throw Exception("Cannot create a master through a relation! - ($name, ${this.name})")
-  }
 
   return SRelation(rType, ref, traits, isCollection, isOpen, isOptional)
 }
