@@ -8,40 +8,46 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dr.schema.*
 import dr.query.*
 import dr.spi.*
-import java.text.SimpleDateFormat
 
 import java.time.LocalDateTime
 
 @Trait
-class Trace(
+data class Trace(
   val date: LocalDateTime//,
   //val user: User
 )
 
-@Master
-class User(
+@Master @Listeners(UserListener::class)
+data class User(
   val name: String,
   val email: String,
 
-  @Link val address: Address,
-  @Open @Link(Trace::class) val roles: List<Role>
+  @Link(Address::class) val address: Long,
+  @Open @Link(Role::class, traits = [Trace::class]) val roles: List<Long>
 )
+  // process events
+  class UserListener: EListener<User>() {
+    @Events(EventType.STARTED)
+    override fun onCreate(type: EventType, id: Long, new: User) {
+      println("CREATE($type) - ($id, $new)")
+    }
+  }
 
 @Detail
-class Address(
+data class Address(
   val country: String,
   val city: String,
   val address: String
 )
 
 @Master
-class Role(
+data class Role(
   val name: String,
   val order: Int
 )
 
 @Master
-class Auction(
+data class Auction(
   val name: String,
 
   @Create val items: List<AuctionItem>,
@@ -49,18 +55,18 @@ class Auction(
 )
 
 @Detail
-class AuctionItem(
+data class AuctionItem(
   val name: String,
   val price: Float) {
 }
 
 @Detail
-class Bid(
+data class Bid(
   val price: Float,
   val boxes: Int,
   val comments: String?,
   
-  @Link val from: User,
+  @Link(User::class) val from: Long,
   @Create val item: AuctionItem
 )
 
@@ -93,8 +99,8 @@ class TestQueryAdaptor(): IQueryAdaptor {
   }
 }
 
-class TestQueryAuthorize(): IQueryAuthorize {
-  override fun authorized(accessed: IAccessed): Boolean {
+class TestQueryAuthorizer(): IQueryAuthorizer {
+  override fun authorize(accessed: IAccessed): Boolean {
     println("accessed = $accessed")
     return true
   }
@@ -102,9 +108,10 @@ class TestQueryAuthorize(): IQueryAuthorize {
 
 fun main(args: Array<String>) {
   val schema = SParser.parse(User::class, Role::class, Auction::class)
+  schema.print()
 
   val qAdaptor = TestQueryAdaptor()
-  val qAuthorize = TestQueryAuthorize()
+  val qAuthorize = TestQueryAuthorizer()
   val qEngine = QEngine(schema, qAdaptor, qAuthorize)
 
   println("Q1")
@@ -128,5 +135,6 @@ fun main(args: Array<String>) {
   qEngine.compile("""dr.User | name == "Mica*" and roles..order == 1 | { * }""")
 
   println("Q5")
-  qEngine.compile("""dr.User |  email == "email" and (name == "Mica*" or roles..name == ?name) | { * }""")
+  val query = qEngine.compile("""dr.User |  email == "email" and (name == "Mica*" or roles..name == ?name) | { * }""")
+  query.exec(mapOf("name" to "admin"))
 }

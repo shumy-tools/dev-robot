@@ -1,5 +1,33 @@
 package dr.schema
 
+import kotlin.reflect.KClass
+
+/* ------------------------- annotations -------------------------*/
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Master
+
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Detail
+
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Trait
+
+@Target(AnnotationTarget.PROPERTY)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Open
+
+@Target(AnnotationTarget.PROPERTY)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Create
+
+@Target(AnnotationTarget.PROPERTY)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Link(val value: KClass<out Any>, vararg val traits: KClass<out Any>)
+
+/* ------------------------- enums -------------------------*/
 enum class EntityType {
   MASTER, DETAIL
 }
@@ -13,14 +41,14 @@ enum class RelationType {
   CREATE, LINK
 }
 
-// ----------- schema structure -----------
+/* ------------------------- structures -------------------------*/
 class Schema(
   val masters: Map<String, SEntity>,
   val entities: Map<String, SEntity>,
   val traits: Map<String, STrait>
 )
 
-  // ----------- entity structure -----------
+  /* ------------------------- entity -------------------------*/
   class SEntity(
     val name: String,
     val type: EntityType,
@@ -43,12 +71,13 @@ class Schema(
       val isOptional: Boolean
     )
 
-  // ----------- trait structure ----------
+  /* ------------------------- trait -------------------------*/
   class STrait(
     val name: String,
     val fields: Map<String, SField>,
     val refs: Map<String, SRelation>
   )
+
 
 /* ----------- Helper printer functions ----------- */
 fun Schema.print(filter: String = "all") {

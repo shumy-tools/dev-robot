@@ -19,6 +19,6 @@ interface IQueryAdaptor {
   fun compile(query: QTree): IQueryExecutor
 }
 
-interface IQueryAuthorize {
-  fun authorized(accessed: IAccessed): Boolean
+interface IQueryAuthorizer {
+  fun authorize(accessed: IAccessed): Boolean
 }

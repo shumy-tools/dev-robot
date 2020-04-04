@@ -7,6 +7,7 @@ import dr.spi.IQueryExecutor
 import dr.spi.IResult
 import kotlin.reflect.KClass
 
+/* ------------------------- internal api -------------------------*/
 class Parameter(val entity: SEntity, val field: String, val comp: CompType, val param: QParam)
 
 class QueryExecutorWithValidator(private val native: IQueryExecutor, parameters: List<Parameter>): IQueryExecutor {
@@ -43,7 +44,7 @@ class QueryExecutorWithValidator(private val native: IQueryExecutor, parameters:
   }
 }
 
-/* ----------- Helpers ----------- */
+/* ------------------------- helpers -------------------------*/
 private class CompatibilityTable {
   private val table: MutableMap<FieldType, MutableMap<CompType, KClass<*>>> = mutableMapOf()
 

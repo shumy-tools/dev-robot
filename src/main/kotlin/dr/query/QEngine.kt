@@ -8,7 +8,8 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-class QEngine(private val schema: Schema, private val adaptor: IQueryAdaptor, private val authorizer: IQueryAuthorize) {
+/* ------------------------- api -------------------------*/
+class QEngine(private val schema: Schema, private val adaptor: IQueryAdaptor, private val authorizer: IQueryAuthorizer) {
   fun compile(query: String): IQueryExecutor {
     val lexer = QueryLexer(CharStreams.fromString(query))
     val tokens = CommonTokenStream(lexer)
@@ -18,28 +19,18 @@ class QEngine(private val schema: Schema, private val adaptor: IQueryAdaptor, pr
     val walker = ParseTreeWalker()
     val listener = DrQueryListener(this.schema, this.authorizer)
 
-    try {
-      walker.walk(listener, tree)
-      //println("tokens: ${tokens.tokens.map { it.text }}")
-    } catch (ex: Exception) {
-      throw Exception("Failed to compile query! ${ex.message}")
-    }
+    walker.walk(listener, tree)
+    //println("tokens: ${tokens.tokens.map { it.text }}")
 
-    if (listener.errors.isNotEmpty()) {
+    if (listener.errors.isNotEmpty())
       throw Exception("Failed to compile query! ${listener.errors}")
-    }
 
     val native = this.adaptor.compile(listener.compiled!!)
-
-    return try {
-      QueryExecutorWithValidator(native, listener.parameters)
-    } catch (ex: Exception) {
-      throw Exception("Failed to compile query! ${ex.message}")
-    }
+    return QueryExecutorWithValidator(native, listener.parameters)
   }
 }
 
-/* ----------- Helpers ----------- */
+/* ------------------------- helpers -------------------------*/
 private class AccessedPaths : IAccessed {
   private val paths = mutableMapOf<String, Any>()
 
@@ -81,7 +72,7 @@ private class AccessedPaths : IAccessed {
   }
 }
 
-private class DrQueryListener(private val schema: Schema, private val authorize: IQueryAuthorize): QueryBaseListener() {
+private class DrQueryListener(private val schema: Schema, private val authorize: IQueryAuthorizer): QueryBaseListener() {
   val errors = mutableListOf<String>()
   val parameters = mutableListOf<Parameter>()
 
@@ -99,7 +90,7 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
     this.compiled = QTree(eText, rel.filter, rel.limit, rel.page, rel.select)
 
     // check query authorization
-    this.authorize.authorized(accessed)
+    this.authorize.authorize(accessed)
   }
 
   override fun visitErrorNode(error: ErrorNode) {
@@ -259,7 +250,7 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
 }
 
 
-/* ----------- Helpers ----------- */
+/* ------------------------- helpers -------------------------*/
 private fun sortType(sort: String?) = when(sort) {
   "asc" -> SortType.ASC
   "dsc" -> SortType.DSC
