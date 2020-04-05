@@ -1,6 +1,14 @@
 package dr.schema
 
 import kotlin.reflect.KClass
+import dr.schema.ActionType.*
+import dr.schema.EventType.*
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import kotlin.reflect.KType
+import kotlin.reflect.full.isSubtypeOf
+import kotlin.reflect.typeOf
 
 /* ------------------------- annotations -------------------------*/
 @Target(AnnotationTarget.CLASS)
@@ -32,11 +40,6 @@ enum class EntityType {
   MASTER, DETAIL
 }
 
-enum class FieldType {
-  TEXT, INT, FLOAT, BOOL,
-  TIME, DATE, DATETIME
-}
-
 enum class RelationType {
   CREATE, LINK
 }
@@ -49,14 +52,41 @@ class Schema(
 )
 
   /* ------------------------- entity -------------------------*/
-  class SEntity(
-    val name: String,
-    val type: EntityType,
-    val fields: Map<String, SField>,
-    val rels: Map<String, SRelation>,
+  class SEntity(val name: String, val type: EntityType, val listeners: List<SListener>): EListener<Any>() {
+    lateinit var fields: Map<String, SField>
+      internal set
 
-    val listeners: List<SListener>
-  )
+    lateinit var rels: Map<String, SRelation>
+      internal set
+
+    override fun onRead(id: Long, tree: Map<String, Any>) {
+      listeners.forEach { it.listener.onRead(id, tree) }
+    }
+
+    override fun onCreate(type: EventType, id: Long, new: Any) {
+      listeners.forEach { it.get(CREATE, type)?.onCreate(type, id, new) }
+    }
+
+    override fun onUpdate(type: EventType, id: Long, tree: Map<String, Any>) {
+      listeners.forEach { it.get(UPDATE, type)?.onUpdate(type, id, tree) }
+    }
+
+    override fun onDelete(type: EventType, id: Long) {
+      listeners.forEach { it.get(DELETE, type)?.onDelete(type, id) }
+    }
+
+    override fun onAddCreate(type: EventType, id: Long, field: String, new: Any) {
+      listeners.forEach { it.get(ADD_CREATE, type)?.onAddCreate(type, id, field, new) }
+    }
+
+    override fun onAddLink(type: EventType, id: Long, field: String, link: Long) {
+      listeners.forEach { it.get(ADD_LINK, type)?.onAddLink(type, id, field, link) }
+    }
+
+    override fun onRemoveLink(type: EventType, id: Long, field: String, link: Long) {
+      listeners.forEach { it.get(REMOVE_LINK, type)?.onRemoveLink(type, id, field, link) }
+    }
+  }
 
     class SField(
       val type: FieldType,
@@ -73,20 +103,23 @@ class Schema(
       val isOptional: Boolean
     )
 
-    class SListener(
-      val listener: EListener<*>,
-      val enabled: Map<ActionType, Set<EventType>>
-    )
+    @Suppress("UNCHECKED_CAST")
+    class SListener(val listener: EListener<*>, val enabled: Map<ActionType, Set<EventType>>) {
+      internal fun get(action: ActionType, event: EventType): EListener<Any>? {
+        return enabled[action]?.let {
+          if (it.contains(event)) listener as EListener<Any> else null
+        }
+      }
+    }
 
   /* ------------------------- trait -------------------------*/
-  class STrait(
-    val name: String,
-    val fields: Map<String, SField>,
-    val refs: Map<String, SRelation>,
+  class STrait(val name: String, val listeners: List<SListener>) {
+    lateinit var fields: Map<String, SField>
+      internal set
 
-    val listeners: List<SListener>
-  )
-
+    lateinit var refs: Map<String, SRelation>
+      internal set
+  }
 
 /* ----------- Helper printer functions ----------- */
 fun Schema.print(filter: String = "all") {

@@ -22,7 +22,8 @@ enum class EventType {
 }
 
 enum class ActionType {
-  READ, CREATE, UPDATE, DELETE, ADD_CREATE, ADD_LINK, REMOVE_LINK
+  READ, CREATE, UPDATE, DELETE,
+  ADD_CREATE, ADD_LINK, REMOVE_LINK
 }
 
 /* ------------------------- api -------------------------*/
@@ -32,10 +33,10 @@ open class EListener<T>() {
   val aEngine: ActionEngine by lazy { DrServer.aEngine }
   val nEngine: NotificationEngine by lazy { DrServer.nEngine }
 
-  open fun onRead(id: Long, data: Map<String, Any>) {}
+  open fun onRead(id: Long, tree: Map<String, Any>) {}
 
   open fun onCreate(type: EventType, id: Long, new: T) {}
-  open fun onUpdate(type: EventType, id: Long, data: Map<String, Any>) {}
+  open fun onUpdate(type: EventType, id: Long, tree: Map<String, Any>) {}
   open fun onDelete(type: EventType, id: Long) {}
 
   open fun onAddCreate(type: EventType, id: Long, field: String, new: Any) {}

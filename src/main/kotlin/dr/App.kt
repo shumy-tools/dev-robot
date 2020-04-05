@@ -6,16 +6,16 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dr.modification.ModificationEngine
+import dr.query.QTree
+import dr.query.QueryEngine
 import dr.schema.*
-import dr.query.*
 import dr.spi.*
-
 import java.time.LocalDateTime
 
 @Trait
 data class Trace(
-  val date: LocalDateTime//,
-  //val user: User
+  val date: LocalDateTime,
+  @Link(User::class) val user: Long
 )
 
 @Master @Listeners(UserListener::class)
@@ -28,12 +28,10 @@ data class User(
 )
   // process events
   class UserListener: EListener<User>() {
-
     @Events(EventType.STARTED, EventType.VALIDATED)
     override fun onCreate(type: EventType, id: Long, new: User) {
       println("CREATE($type) - ($id, $new)")
     }
-
   }
 
 @Detail
@@ -60,8 +58,8 @@ data class Auction(
 @Detail
 data class AuctionItem(
   val name: String,
-  val price: Float) {
-}
+  val price: Float
+)
 
 @Detail
 data class Bid(
@@ -93,16 +91,16 @@ class TestQueryExecutor(): IQueryExecutor {
   }
 }
 
-class TestQueryAdaptor(): IQueryAdaptor {
+class TestQueryAdaptor: IQueryAdaptor {
   override fun compile(query: QTree): IQueryExecutor {
-    val json = mapper.writeValueAsString(query);
+    val json = mapper.writeValueAsString(query)
 
     println("tree = $json")
     return TestQueryExecutor()
   }
 }
 
-class TestQueryAuthorizer(): IQueryAuthorizer {
+class TestQueryAuthorizer : IQueryAuthorizer {
   override fun authorize(accessed: IAccessed): Boolean {
     println("accessed = $accessed")
     return true
@@ -113,13 +111,13 @@ fun main(args: Array<String>) {
   DrServer.apply {
     schema = SParser.parse(User::class, Role::class, Auction::class)
     qEngine = QueryEngine(TestQueryAdaptor(), TestQueryAuthorizer())
+    mEngine = ModificationEngine()
 
     start(8080)
   }
 
   DrServer.schema.print()
 
-/*
   println("Q1")
   DrServer.qEngine.compile("""dr.User | name == "Mica*" | limit 10 {
     (asc 1) name
@@ -142,5 +140,11 @@ fun main(args: Array<String>) {
 
   println("Q5")
   val query = DrServer.qEngine.compile("""dr.User |  email == "email" and (name == "Mica*" or roles..name == ?name) | { * }""")
-  query.exec(mapOf("name" to "admin"))*/
+  query.exec(mapOf("name" to "admin"))
+
+  DrServer.mEngine.update(User::class.qualifiedName!!, 10L, mapOf(
+    "name" to "Micael",
+    "address" to 10L,
+    "roles" to listOf(1L, 2L)
+  ))
 }
