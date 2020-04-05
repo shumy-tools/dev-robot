@@ -12,9 +12,10 @@ import dr.schema.*
 import dr.spi.*
 import java.time.LocalDateTime
 
+// reusable constraint check
 class EmailCheck: FieldCheck<String> {
   override fun check(value: String): String? {
-    return null
+    return if (!value.contains('@')) "invalid email" else null
   }
 }
 
@@ -34,7 +35,7 @@ data class User(
 ) {
   val timestamp = LocalDateTime.now()
 }
-  // process events
+  // process events and check business rules (can plug a rule engine)
   class UserListener: EListener<User>() {
     @Events(EventType.STARTED, EventType.VALIDATED)
     override fun onCreate(type: EventType, id: Long, new: User) {
@@ -126,7 +127,7 @@ fun main(args: Array<String>) {
 
   DrServer.schema.print()
 
-  /*println("Q1")
+  println("Q1")
   DrServer.qEngine.compile("""dr.User | name == "Mica*" | limit 10 {
     (asc 1) name
   }""".trimIndent())
@@ -153,5 +154,5 @@ fun main(args: Array<String>) {
   DrServer.mEngine.update(User::class.qualifiedName!!, 10L, mapOf(
     "name" to "Micael",
     "email" to "email@gmail.com"
-  ))*/
+  ))
 }

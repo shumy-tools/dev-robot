@@ -2,11 +2,8 @@ package dr.modification
 
 import dr.DrServer
 import dr.schema.EventType.*
-import dr.schema.FieldType
-import dr.schema.RelationType
 import dr.schema.Schema
 import dr.schema.TypeEngine
-import kotlin.reflect.full.isSubclassOf
 
 /* ------------------------- api -------------------------*/
 class ModificationEngine {
@@ -38,10 +35,17 @@ class ModificationEngine {
       val field = sEntity.fields[key] ?: throw Exception("Entity field not found! - ($name, $key)")
       val type = value.javaClass.kotlin
 
+      if (!field.isInput)
+        throw Exception("Invalid input field! - ($name, $key)")
+
       if (!TypeEngine.check(field.type, type))
         throw Exception("Invalid field type! - ($name, $key) (expected ${field.type} found ${type.simpleName})")
 
-      // TODO: check other field constraints
+      field.checks.forEach {
+        it.check(value)?.let { msg ->
+          throw Exception("Failed check constraint '$msg'! - ($name, $key)")
+        }
+      }
     }
 
     sEntity.onUpdate(VALIDATED, id, data)

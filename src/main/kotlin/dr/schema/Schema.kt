@@ -104,13 +104,14 @@ class Schema(
         internal set
     }
 
-    class SCheck(
-      val name: String,
-      val checks: FieldCheck<*>
-    )
+    class SCheck(val name: String, private val check: FieldCheck<Any>) {
+      fun check(value: Any): String? {
+        return this.check.check(value)
+      }
+    }
 
     @Suppress("UNCHECKED_CAST")
-    class SListener(val listener: EListener<*>, val enabled: Map<ActionType, Set<EventType>>) {
+    class SListener(internal val listener: EListener<*>, internal val enabled: Map<ActionType, Set<EventType>>) {
       internal fun get(action: ActionType, event: EventType): EListener<Any>? {
         return enabled[action]?.let {
           if (it.contains(event)) listener as EListener<Any> else null

@@ -114,6 +114,7 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
   }
 }
 
+@Suppress("UNCHECKED_CAST")
 private fun KProperty1<*, *>.processChecks(): Set<SCheck> {
   val checks = findAnnotation<Checks>() ?: return setOf()
   return checks.value.map {
@@ -126,7 +127,7 @@ private fun KProperty1<*, *>.processChecks(): Set<SCheck> {
       throw throw Exception("Check '${it.qualifiedName}: ${FieldCheck::class.qualifiedName}<${(tRef.classifier as KClass<*>).simpleName}>' is not compatible with the field type '${(this.returnType.classifier as KClass<*>).simpleName}'!")
 
     // instantiate check
-    val instance = it.createInstance() as FieldCheck<*>
+    val instance = it.createInstance() as FieldCheck<Any>
     SCheck(it.qualifiedName!!, instance)
   }.toSet()
 }
