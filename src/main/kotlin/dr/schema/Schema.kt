@@ -1,14 +1,7 @@
 package dr.schema
 
-import kotlin.reflect.KClass
 import dr.schema.ActionType.*
-import dr.schema.EventType.*
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
-import kotlin.reflect.KType
-import kotlin.reflect.full.isSubtypeOf
-import kotlin.reflect.typeOf
+import kotlin.reflect.KClass
 
 /* ------------------------- annotations -------------------------*/
 @Target(AnnotationTarget.CLASS)
@@ -37,7 +30,7 @@ annotation class Link(val value: KClass<out Any>, vararg val traits: KClass<out 
 
 /* ------------------------- enums -------------------------*/
 enum class EntityType {
-  MASTER, DETAIL
+  MASTER, DETAIL, TRAIT
 }
 
 enum class RelationType {
@@ -48,11 +41,11 @@ enum class RelationType {
 class Schema(
   val masters: Map<String, SEntity>,
   val entities: Map<String, SEntity>,
-  val traits: Map<String, STrait>
+  val traits: Map<String, SEntity>
 )
 
   /* ------------------------- entity -------------------------*/
-  class SEntity(val name: String, val type: EntityType, val listeners: List<SListener>): EListener<Any>() {
+  class SEntity(val name: String, val type: EntityType, val listeners: Set<SListener>): EListener<Any>() {
     lateinit var fields: Map<String, SField>
       internal set
 
@@ -67,8 +60,8 @@ class Schema(
       listeners.forEach { it.get(CREATE, type)?.onCreate(type, id, new) }
     }
 
-    override fun onUpdate(type: EventType, id: Long, tree: Map<String, Any>) {
-      listeners.forEach { it.get(UPDATE, type)?.onUpdate(type, id, tree) }
+    override fun onUpdate(type: EventType, id: Long, data: Map<String, Any>) {
+      listeners.forEach { it.get(UPDATE, type)?.onUpdate(type, id, data) }
     }
 
     override fun onDelete(type: EventType, id: Long) {
@@ -90,17 +83,30 @@ class Schema(
 
     class SField(
       val type: FieldType,
+      val checks: Set<SCheck>,
+
       val isOptional: Boolean
-    )
+    ) {
+      var isInput: Boolean = false
+        internal set
+    }
 
     class SRelation(
       val type: RelationType,
       val ref: SEntity,
-      val traits: Set<STrait>,
+      val traits: Set<SEntity>,
 
       val isCollection: Boolean,
       val isOpen: Boolean,
       val isOptional: Boolean
+    ) {
+      var isInput: Boolean = false
+        internal set
+    }
+
+    class SCheck(
+      val name: String,
+      val checks: FieldCheck<*>
     )
 
     @Suppress("UNCHECKED_CAST")
@@ -111,15 +117,6 @@ class Schema(
         }
       }
     }
-
-  /* ------------------------- trait -------------------------*/
-  class STrait(val name: String, val listeners: List<SListener>) {
-    lateinit var fields: Map<String, SField>
-      internal set
-
-    lateinit var refs: Map<String, SRelation>
-      internal set
-  }
 
 /* ----------- Helper printer functions ----------- */
 fun Schema.print(filter: String = "all") {
@@ -153,29 +150,14 @@ fun SEntity.print(spaces: Int) {
   }
 }
 
-fun STrait.print(spaces: Int) {
-  val tab = " ".repeat(spaces)
-
-  this.fields.print(tab)
-
-  for ((name, ref) in this.refs) {
-    val opt = if (ref.isOptional) "OPT " else ""
-    println("${tab}$name: ${ref.ref.name} - ${opt}REF")
-    if (ref.ref.type != EntityType.MASTER) {
-      ref.ref.print(spaces + 2)
-    }
-  }
-
-  if (this.listeners.isNotEmpty()) {
-    println("${tab}(listeners)")
-    this.listeners.print(spaces + 2)
-  }
-}
-
 fun Map<String, SField>.print(tab: String) {
   for ((name, field) in this) {
-    val opt = if (field.isOptional) "OPT " else ""
-    println("${tab}$name: ${field.type} - ${opt}FIELD")
+    val isOptional = if (field.isOptional) "OPT " else ""
+    val isInput = if (field.isInput) "IN-" else "DER-"
+
+    val checks = field.checks.map{ it.name }
+    val sChecks = if (checks.isEmpty()) "" else " CHECKS-$checks"
+    println("${tab}$name: ${field.type} - ${isOptional}${isInput}FIELD${sChecks}")
   }
 }
 
@@ -183,17 +165,18 @@ fun Map<String, SRelation>.print(tab: String, spaces: Int) {
   for ((name, rel) in this) {
     val isOpen = if (rel.isOpen) "OPEN " else ""
     val isOptional = if (rel.isOptional) "OPT " else ""
+    val isInput = if (rel.isInput) "IN-" else "DER-"
 
     val traits = rel.traits.map{ it.name }
-    val sTraits = if (traits.isEmpty()) "" else " $traits"
-    println("${tab}$name: ${rel.ref.name} - ${isOpen}${isOptional}${rel.type}${sTraits}")
+    val sTraits = if (traits.isEmpty()) "" else " TRAITS-$traits"
+    println("${tab}$name: ${rel.ref.name} - ${isOpen}${isOptional}${isInput}${rel.type}${sTraits}")
     if (rel.ref.type != EntityType.MASTER) {
       rel.ref.print(spaces + 2)
     }
   }
 }
 
-fun List<SListener>.print(spaces: Int) {
+fun Set<SListener>.print(spaces: Int) {
   val tab = " ".repeat(spaces)
   for (lis in this) {
     val name = lis.listener.javaClass.kotlin.qualifiedName

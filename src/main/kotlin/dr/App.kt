@@ -12,6 +12,12 @@ import dr.schema.*
 import dr.spi.*
 import java.time.LocalDateTime
 
+class EmailCheck: FieldCheck<String> {
+  override fun check(value: String): String? {
+    return null
+  }
+}
+
 @Trait
 data class Trace(
   val date: LocalDateTime,
@@ -21,11 +27,13 @@ data class Trace(
 @Master @Listeners(UserListener::class)
 data class User(
   val name: String,
-  val email: String,
+  @Checks(EmailCheck::class) val email: String,
 
   @Link(Address::class) val address: Long,
   @Open @Link(Role::class, traits = [Trace::class]) val roles: List<Long>
-)
+) {
+  val timestamp = LocalDateTime.now()
+}
   // process events
   class UserListener: EListener<User>() {
     @Events(EventType.STARTED, EventType.VALIDATED)
@@ -118,7 +126,7 @@ fun main(args: Array<String>) {
 
   DrServer.schema.print()
 
-  println("Q1")
+  /*println("Q1")
   DrServer.qEngine.compile("""dr.User | name == "Mica*" | limit 10 {
     (asc 1) name
   }""".trimIndent())
@@ -144,7 +152,6 @@ fun main(args: Array<String>) {
 
   DrServer.mEngine.update(User::class.qualifiedName!!, 10L, mapOf(
     "name" to "Micael",
-    "address" to 10L,
-    "roles" to listOf(1L, 2L)
-  ))
+    "email" to "email@gmail.com"
+  ))*/
 }

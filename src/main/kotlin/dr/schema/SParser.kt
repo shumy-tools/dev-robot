@@ -27,13 +27,10 @@ private val MAP = typeOf<Map<*, *>?>()
 private val LIST = typeOf<List<*>?>()
 private val SET = typeOf<Set<*>?>()
 
-private val LISTENER = typeOf<EListener<*>>()
-private val LNAME = (LISTENER.classifier as KClass<*>).qualifiedName
-
 private class TempSchema(
   val masters: MutableMap<String, SEntity> = LinkedHashMap(),
   val entities: MutableMap<String, SEntity> = LinkedHashMap(),
-  val traits: MutableMap<String, STrait> = LinkedHashMap()
+  val traits: MutableMap<String, SEntity> = LinkedHashMap()
 )
 
 private fun KClass<*>.checkEntityNumber(name: String) {
@@ -69,18 +66,39 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
     this.checkEntityNumber(name)
 
     println("  Entity: $name")
-    val type = this.getEntityType() ?: throw Exception("Required annotation (Master, Detail)! - ($name)")
+    if(!this.isData)
+      throw Exception("Entities must be data classes! - ($name)")
+
+    val type = this.getEntityType() ?: throw Exception("Required annotation (Master, Detail, Trait)! - ($name)")
     val entity = SEntity(name, type, processListeners())
 
     tmpSchema.entities[name] = entity
-    if (entity.type == EntityType.MASTER) {
+    if (entity.type == EntityType.TRAIT) {
+      tmpSchema.traits[name] = entity
+    } else if (entity.type == EntityType.MASTER) {
       tmpSchema.masters[name] = entity
     }
+
+    val tmpAllProps = this.memberProperties.map { it.name to it }.toMap()
+    val tmpInputProps = this.primaryConstructor!!.parameters.map { it.name }.toSet()
 
     val tmpFields = LinkedHashMap<String, SField>()
     val tmpRels = LinkedHashMap<String, SRelation>()
 
-    for (field in this.memberProperties) {
+    // process input fields
+    for (field in this.primaryConstructor!!.parameters) {
+      tmpAllProps[field.name]?.let {
+        val fieldOrRelation = it.processFieldOrRelation(name, tmpSchema)
+        if (fieldOrRelation is SField) {
+          tmpFields[field.name!!] = fieldOrRelation.apply { isInput = true }
+        } else {
+          tmpRels[field.name!!] = (fieldOrRelation as SRelation).apply { isInput = true }
+        }
+      }
+    }
+
+    // process internal fields
+    for (field in this.memberProperties.filter { !tmpInputProps.contains(it.name) }) {
       val fieldOrRelation = field.processFieldOrRelation(name, tmpSchema)
       if (fieldOrRelation is SField) {
         tmpFields[field.name] = fieldOrRelation
@@ -96,52 +114,33 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
   }
 }
 
-private fun KClass<*>.processTrait(tmpSchema: TempSchema): STrait {
-  val name = this.qualifiedName ?: throw Exception("No Trait name!")
-  return tmpSchema.traits.getOrElse(name) {
-    this.checkEntityNumber(name)
+private fun KProperty1<*, *>.processChecks(): Set<SCheck> {
+  val checks = findAnnotation<Checks>() ?: return setOf()
+  return checks.value.map {
+    val sType = it.supertypes.firstOrNull {
+      sType -> FieldCheck::class.qualifiedName == (sType.classifier as KClass<*>).qualifiedName
+    } ?: throw Exception("Check '${it.qualifiedName}' must implement '${FieldCheck::class.qualifiedName}'")
 
-    if (!this.hasAnnotation<Trait>())
-      throw Exception("Required annotation (Trait)! - ($name)")
+    val tRef = sType.arguments.first().type ?: throw Exception("Check '${it.qualifiedName}' requires generic type!")
+    if (tRef != this.returnType)
+      throw throw Exception("Check '${it.qualifiedName}: ${FieldCheck::class.qualifiedName}<${(tRef.classifier as KClass<*>).simpleName}>' is not compatible with the field type '${(this.returnType.classifier as KClass<*>).simpleName}'!")
 
-    println("    Trait: $name")
-    val trait = STrait(name, processListeners())
-    tmpSchema.traits[name] = trait
-
-    val tmpFields = LinkedHashMap<String, SField>()
-    val tmpRefs = LinkedHashMap<String, SRelation>()
-
-    for (field in this.memberProperties) {
-      val fieldOrRelation = field.processFieldOrRelation(name, tmpSchema)
-      if (fieldOrRelation is SField) {
-        tmpFields[field.name] = fieldOrRelation
-      } else {
-        val rel = fieldOrRelation as SRelation
-        if (rel.isCollection)
-          throw Exception("Traits do not support collections! - ($name, ${field.name})")
-
-        tmpRefs[field.name] = fieldOrRelation
-      }
-    }
-
-    trait.apply {
-      fields = tmpFields
-      refs = tmpRefs
-    }
-  }
+    // instantiate check
+    val instance = it.createInstance() as FieldCheck<*>
+    SCheck(it.qualifiedName!!, instance)
+  }.toSet()
 }
 
-private fun KClass<*>.processListeners(): List<SListener> {
-  val listeners = findAnnotation<Listeners>() ?: return listOf()
+private fun KClass<*>.processListeners(): Set<SListener> {
+  val listeners = findAnnotation<Listeners>() ?: return setOf()
   return listeners.value.map {
-    val sType = it.supertypes.lastOrNull() ?: throw Exception("No supertype found for listener '${it.qualifiedName}'")
-    println("$sType")
-    if (LISTENER.isSubtypeOf(sType))
-      throw Exception("Listener '${it.qualifiedName}' must inherit from '${LNAME}'")
+    val sType = it.supertypes.firstOrNull {
+      sType -> EListener::class.qualifiedName == (sType.classifier as KClass<*>).qualifiedName
+    } ?: throw Exception("Listener '${it.qualifiedName}' must inherit '${EListener::class.qualifiedName}'")
 
     val tRef = sType.arguments.first().type ?: throw Exception("Listener '${it.qualifiedName}' requires generic type!")
     if (tRef != this.createType())
-      throw throw Exception("Listener '${it.qualifiedName}' must inherit from '$LNAME<${this.qualifiedName}>'")
+      throw throw Exception("Listener '${it.qualifiedName}' must inherit from '${EListener::class.qualifiedName}<${this.qualifiedName}>'")
 
     // instantiate listener
     val instance = it.createInstance() as EListener<*>
@@ -166,10 +165,13 @@ private fun KClass<*>.processListeners(): List<SListener> {
     }.toMap()
 
     SListener(instance, enabled)
-  }
+  }.toSet()
 }
 
 private fun KProperty1<*, *>.processFieldOrRelation(name: String, tmpSchema: TempSchema): Any {
+  if (this is KMutableProperty1<*, *>)
+    throw Exception("All fields must be immutable! - ($name, ${this.name})")
+
   val rType = this.returnType
   if (rType.isSubtypeOf(MAP))
     throw Exception("Map is not supported in relations! - ($name, ${this.name})")
@@ -180,7 +182,8 @@ private fun KProperty1<*, *>.processFieldOrRelation(name: String, tmpSchema: Tem
   } else {
     // SField
     val type = TypeEngine.convert(rType) ?: throw Exception("Unrecognized field type! - ($name, ${this.name})")
-    SField(type, rType.isMarkedNullable)
+    val checks = this.processChecks()
+    SField(type, checks, rType.isMarkedNullable)
   }
 }
 
@@ -191,14 +194,14 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
   val isOpen = this.hasAnnotation<Open>()
   val isOptional = type.isMarkedNullable
 
-  val traits = LinkedHashSet<STrait>()
+  val traits = LinkedHashSet<SEntity>()
   val link = this.findAnnotation<Link>()
 
   val rType: RelationType = when {
     this.hasAnnotation<Create>() -> RelationType.CREATE
     link != null -> {
       for (trait in link.traits)
-        traits.add(trait.processTrait(tmpSchema))
+        traits.add(trait.processEntity(tmpSchema))
       RelationType.LINK
     }
     else -> throw Exception("Required annotation (Create, Link)! - ($name, ${this.name})")
@@ -247,5 +250,6 @@ private fun Link.processLink(tRef: KType, name: String, field: String, tmpSchema
 private fun KClass<*>.getEntityType(): EntityType? {
   if (this.hasAnnotation<Master>()) return EntityType.MASTER
   if (this.hasAnnotation<Detail>()) return EntityType.DETAIL
+  if (this.hasAnnotation<Trait>()) return EntityType.TRAIT
   return null
 }

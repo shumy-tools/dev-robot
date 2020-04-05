@@ -16,18 +16,22 @@ annotation class Listeners(vararg val value: KClass<out Any>)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Events(vararg val value: EventType)
 
+@Target(AnnotationTarget.PROPERTY)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Checks(vararg val value: KClass<out Any>)
+
 /* ------------------------- enums -------------------------*/
 enum class EventType {
   STARTED, VALIDATED, COMMITED
 }
 
 enum class ActionType {
-  READ, CREATE, UPDATE, DELETE,
+  CREATE, UPDATE, DELETE,
   ADD_CREATE, ADD_LINK, REMOVE_LINK
 }
 
 /* ------------------------- api -------------------------*/
-open class EListener<T>() {
+open class EListener<T> {
   val qEngine: QueryEngine by lazy { DrServer.qEngine }
   val mEngine: ModificationEngine by lazy { DrServer.mEngine }
   val aEngine: ActionEngine by lazy { DrServer.aEngine }
@@ -36,10 +40,15 @@ open class EListener<T>() {
   open fun onRead(id: Long, tree: Map<String, Any>) {}
 
   open fun onCreate(type: EventType, id: Long, new: T) {}
-  open fun onUpdate(type: EventType, id: Long, tree: Map<String, Any>) {}
+  open fun onUpdate(type: EventType, id: Long, data: Map<String, Any>) {}
   open fun onDelete(type: EventType, id: Long) {}
 
   open fun onAddCreate(type: EventType, id: Long, field: String, new: Any) {}
   open fun onAddLink(type: EventType, id: Long, field: String, link: Long) {}
   open fun onRemoveLink(type: EventType, id: Long, field: String, link: Long) {}
+}
+
+@FunctionalInterface
+interface FieldCheck<T> {
+  fun check(value: T): String?
 }
