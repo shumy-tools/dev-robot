@@ -22,7 +22,7 @@ annotation class Checks(vararg val value: KClass<out Any>)
 
 /* ------------------------- enums -------------------------*/
 enum class EventType {
-  STARTED, VALIDATED, COMMITED
+  STARTED, CHECKED, COMMITED
 }
 
 enum class ActionType {
@@ -39,13 +39,13 @@ open class EListener<T> {
 
   open fun onRead(id: Long, tree: Map<String, Any>) {}
 
-  open fun onCreate(type: EventType, id: Long, new: T) {}
-  open fun onUpdate(type: EventType, id: Long, data: Map<String, Any>) {}
+  open fun onCreate(type: EventType, id: Long?, new: T) {}
+  open fun onUpdate(type: EventType, id: Long, data: Map<String, Any?>) {}
   open fun onDelete(type: EventType, id: Long) {}
 
-  open fun onAddCreate(type: EventType, id: Long, field: String, new: Any) {}
-  open fun onAddLink(type: EventType, id: Long, field: String, link: Long) {}
-  open fun onRemoveLink(type: EventType, id: Long, field: String, link: Long) {}
+  open fun onAdd(type: EventType, id: Long, sRelation: SRelation, link: Long?, new: Any?) {}
+  open fun onLink(type: EventType, id: Long, sRelation: SRelation, link: Long) {}
+  open fun onRemove(type: EventType, id: Long, sRelation: SRelation, link: Long) {}
 }
 
 @FunctionalInterface

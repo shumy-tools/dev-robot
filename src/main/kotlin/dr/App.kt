@@ -37,9 +37,14 @@ data class User(
 }
   // process events and check business rules (can plug a rule engine)
   class UserListener: EListener<User>() {
-    @Events(EventType.STARTED, EventType.VALIDATED)
-    override fun onCreate(type: EventType, id: Long, new: User) {
+    @Events(EventType.CHECKED, EventType.COMMITED)
+    override fun onCreate(type: EventType, id: Long?, new: User) {
       println("CREATE($type) - ($id, $new)")
+    }
+
+    @Events(EventType.CHECKED)
+    override fun onUpdate(type: EventType, id: Long, data: Map<String, Any?>) {
+      println("UPDATE($type) - ($id, $data)")
     }
   }
 
@@ -60,25 +65,31 @@ data class Role(
 data class Auction(
   val name: String,
 
-  @Create val items: List<AuctionItem>,
+  @Create val items: Set<AuctionItem>,
   @Open @Create val bids: List<Bid>
-)
+) {
+  val timestamp = LocalDateTime.now()
+}
 
 @Detail
 data class AuctionItem(
   val name: String,
   val price: Float
-)
+) {
+  val timestamp = LocalDateTime.now()
+}
 
 @Detail
 data class Bid(
   val price: Float,
   val boxes: Int,
-  val comments: String?,
+  val comments: String? = null,
   
   @Link(User::class) val from: Long,
-  @Create val item: AuctionItem
-)
+  @Link(AuctionItem::class) val item: Long
+) {
+  val timestamp = LocalDateTime.now()
+}
 
 
 val mapper: ObjectWriter = jacksonObjectMapper()
@@ -116,11 +127,42 @@ class TestQueryAuthorizer : IQueryAuthorizer {
   }
 }
 
+class TestModificationAdaptor: IModificationAdaptor {
+  override fun start(): ITransaction {
+    return TestTransaction()
+  }
+}
+
+class TestTransaction: ITransaction {
+  override fun create(sEntity: SEntity, new: Any): Long {
+    return 0L
+  }
+
+  override fun update(sEntity: SEntity, id: Long, data: Map<String, Any?>) {
+  }
+
+  override fun add(sEntity: SEntity, id: Long, sRelation: SRelation, new: Any): Long {
+    return 0L
+  }
+
+  override fun link(sEntity: SEntity, id: Long, sRelation: SRelation, link: Long) {
+  }
+
+  override fun remove(sEntity: SEntity, id: Long, sRelation: SRelation, link: Long) {
+  }
+
+  override fun commit() {
+  }
+
+  override fun rollback() {
+  }
+}
+
 fun main(args: Array<String>) {
   DrServer.apply {
     schema = SParser.parse(User::class, Role::class, Auction::class)
     qEngine = QueryEngine(TestQueryAdaptor(), TestQueryAuthorizer())
-    mEngine = ModificationEngine()
+    mEngine = ModificationEngine(TestModificationAdaptor())
 
     start(8080)
   }
@@ -151,8 +193,26 @@ fun main(args: Array<String>) {
   val query = DrServer.qEngine.compile("""dr.User |  email == "email" and (name == "Mica*" or roles..name == ?name) | { * }""")
   query.exec(mapOf("name" to "admin"))
 
-  DrServer.mEngine.update(User::class.qualifiedName!!, 10L, mapOf(
+  val user = DrServer.mEngine.create(
+    User(
+      name = "Micael",
+      email = "email@gmail.com",
+      address = 1L,
+      roles = listOf(1L, 2L)
+    )
+  )
+  println("User: $user")
+
+  DrServer.mEngine.update(User::class.qualifiedName!!, user.first, mapOf(
     "name" to "Micael",
     "email" to "email@gmail.com"
   ))
+
+  val auction = DrServer.mEngine.create(
+    Auction(
+      name = "Continente",
+      items = setOf(AuctionItem("Barco", 100.0F)),
+      bids = listOf(Bid(price = 10F, boxes = 10, from = user.first, item = 1L))
+    )
+  )
 }

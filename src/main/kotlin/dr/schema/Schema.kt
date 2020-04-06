@@ -2,6 +2,7 @@ package dr.schema
 
 import dr.schema.ActionType.*
 import kotlin.reflect.KClass
+import kotlin.reflect.KProperty1
 
 /* ------------------------- annotations -------------------------*/
 @Target(AnnotationTarget.CLASS)
@@ -56,11 +57,11 @@ class Schema(
       listeners.forEach { it.listener.onRead(id, tree) }
     }
 
-    override fun onCreate(type: EventType, id: Long, new: Any) {
+    override fun onCreate(type: EventType, id: Long?, new: Any) {
       listeners.forEach { it.get(CREATE, type)?.onCreate(type, id, new) }
     }
 
-    override fun onUpdate(type: EventType, id: Long, data: Map<String, Any>) {
+    override fun onUpdate(type: EventType, id: Long, data: Map<String, Any?>) {
       listeners.forEach { it.get(UPDATE, type)?.onUpdate(type, id, data) }
     }
 
@@ -68,33 +69,41 @@ class Schema(
       listeners.forEach { it.get(DELETE, type)?.onDelete(type, id) }
     }
 
-    override fun onAddCreate(type: EventType, id: Long, field: String, new: Any) {
-      listeners.forEach { it.get(ADD_CREATE, type)?.onAddCreate(type, id, field, new) }
+    override fun onAdd(type: EventType, id: Long, sRelation: SRelation, link: Long?, new: Any?) {
+      listeners.forEach { it.get(ADD_CREATE, type)?.onAdd(type, id, sRelation, link, new) }
     }
 
-    override fun onAddLink(type: EventType, id: Long, field: String, link: Long) {
-      listeners.forEach { it.get(ADD_LINK, type)?.onAddLink(type, id, field, link) }
+    override fun onLink(type: EventType, id: Long, sRelation: SRelation, link: Long) {
+      listeners.forEach { it.get(ADD_LINK, type)?.onLink(type, id, sRelation, link) }
     }
 
-    override fun onRemoveLink(type: EventType, id: Long, field: String, link: Long) {
-      listeners.forEach { it.get(REMOVE_LINK, type)?.onRemoveLink(type, id, field, link) }
+    override fun onRemove(type: EventType, id: Long, sRelation: SRelation, link: Long) {
+      listeners.forEach { it.get(REMOVE_LINK, type)?.onRemove(type, id, sRelation, link) }
     }
   }
 
     class SField(
+      val name: String,
       val type: FieldType,
       val checks: Set<SCheck>,
+      private val property: KProperty1<Any, *>,
 
       val isOptional: Boolean
     ) {
       var isInput: Boolean = false
         internal set
+
+      fun getValue(instance: Any): Any? {
+        return this.property.get(instance)
+      }
     }
 
     class SRelation(
+      val name: String,
       val type: RelationType,
       val ref: SEntity,
       val traits: Set<SEntity>,
+      private val property: KProperty1<Any, *>,
 
       val isCollection: Boolean,
       val isOpen: Boolean,
@@ -102,6 +111,10 @@ class Schema(
     ) {
       var isInput: Boolean = false
         internal set
+
+      fun getValue(instance: Any): Any? {
+        return this.property.get(instance)
+      }
     }
 
     class SCheck(val name: String, private val check: FieldCheck<Any>) {
@@ -111,7 +124,7 @@ class Schema(
     }
 
     @Suppress("UNCHECKED_CAST")
-    class SListener(internal val listener: EListener<*>, internal val enabled: Map<ActionType, Set<EventType>>) {
+    class SListener(val name: String, internal val listener: EListener<*>, internal val enabled: Map<ActionType, Set<EventType>>) {
       internal fun get(action: ActionType, event: EventType): EListener<Any>? {
         return enabled[action]?.let {
           if (it.contains(event)) listener as EListener<Any> else null

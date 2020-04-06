@@ -26,6 +26,8 @@ private val DATETIME = typeOf<LocalDateTime?>()
 
 object TypeEngine {
   val ID = LONG
+  val PAIR = typeOf<Pair<Long, *>>()
+  val MAP = typeOf<Map<Long, *>>()
 
   private val typeToClass = mutableMapOf<FieldType, KClass<*>>().apply {
     put(FieldType.TEXT, String::class)
