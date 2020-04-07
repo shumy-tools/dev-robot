@@ -20,7 +20,8 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
 
     sEntity.onCreate(STARTED, null, new)
 
-    checkEntityCreate(sEntity, new)
+    val output = checkEntityAndMap(sEntity, new)
+    println(output)
 
     val tx = adaptor.start()
     val id = try {
@@ -83,7 +84,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     sEntity.onAdd(STARTED, id, sRelation, null, new)
     sEntity.onCreate(STARTED,null, new)
 
-    checkEntityCreate(sRelation.ref, new)
+    checkEntityAndMap(sRelation.ref, new)
 
     val tx = adaptor.start()
     val link = try {
@@ -133,49 +134,81 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     val sField = sEntity.fields[field] ?: throw Exception("Entity field not found! - ($entity, $field)")
     checkFieldUpdate(sEntity, field, sField, value)
   }
+
+  @Suppress("UNCHECKED_CAST")
+  private fun checkEntityAndMap(sEntity: SEntity, new: Any): Map<String, Any> {
+    val vType = new.javaClass.kotlin
+    val entity = vType.qualifiedName
+
+    // TODO: list of create operations for the relational db instead of map?
+    val output = mutableMapOf<String, Any>()
+
+    for (param in vType.memberProperties) {
+      val prop = param.name
+      val sField = sEntity.fields[prop]
+      val sRelation = sEntity.rels[prop]
+      when {
+        sField != null -> {
+          val fValue = sField.getValue(new)
+          fValue?.let {
+            if (sField.isInput)
+              checkFieldConstraints(sEntity, prop, sField, fValue)
+            output[prop] = fValue
+          }
+        }
+
+        sRelation != null -> {
+          val rValue = sRelation.getValue(new)!!
+          when (sRelation.type) {
+            RelationType.CREATE -> if (!sRelation.isCollection) {
+              output[prop] = checkEntityAndMap(sRelation.ref, rValue)
+            } else {
+              val col = (rValue as Collection<Any>)
+              output[prop] = col.map { checkEntityAndMap(sRelation.ref, it) }
+            }
+
+            RelationType.LINK -> if (sRelation.traits.isEmpty()) {
+              output[prop] = rValue // Long or Collection<Long>
+            } else {
+              if (!sRelation.isCollection) {
+                val (id, traits) = rValue as Pair<Long, Traits>
+                output[prop] = Pair(id, checkTraitsAndMap(sEntity, sRelation, traits))
+              } else {
+                val map = rValue as Map<Long, Traits>
+                output[prop] = map.map { (id, traits) -> Pair(id, checkTraitsAndMap(sEntity, sRelation, traits)) }
+              }
+            }
+          }
+        }
+
+        else -> throw Exception("Entity field/relation not found! - ($entity, $prop)")
+      }
+    }
+
+    return output
+  }
+
+  private fun checkTraitsAndMap(sEntity: SEntity, sRelation: SRelation, traits: Traits): Map<String, Any> {
+    val tMap = traits.traits.map {
+      val name = it.javaClass.kotlin.qualifiedName
+      val sTrait = schema.traits[name] ?: throw Exception("Trait type not found! - ($name)")
+
+      if (!sRelation.traits.contains(sTrait))
+        throw Exception("Trait '${sTrait.name}' not part of the model! - (${sEntity.name}, ${sRelation.name})")
+
+      sTrait to checkEntityAndMap(sTrait, it)
+    }.toMap()
+
+    for (trait in sRelation.traits) {
+      if (!tMap.containsKey(trait))
+        throw Exception("Trait '${trait.name}' not present in data! - (${sEntity.name}, ${sRelation.name})")
+    }
+
+    return tMap.mapKeys { (sTrait, _) -> sTrait.name }
+  }
 }
 
 /* ------------------------- helpers -------------------------*/
-@Suppress("UNCHECKED_CAST")
-private fun checkEntityCreate(sEntity: SEntity, new: Any): Map<String, Any> {
-  val vType = new.javaClass.kotlin
-  val entity = vType.qualifiedName
-
-  val output = mutableMapOf<String, Any>()
-  for (param in vType.memberProperties) {
-    val prop = param.name
-    val sField = sEntity.fields[prop]
-    val sRelation = sEntity.rels[prop]
-    when {
-      sField != null -> {
-        val fValue = sField.getValue(new)
-        fValue?.let {
-          if (sField.isInput)
-            checkFieldConstraints(sEntity, prop, sField, fValue)
-          output[prop] = fValue
-        }
-      }
-
-      sRelation != null -> {
-        val rValue = sRelation.getValue(new)!!
-        if (sRelation.type == RelationType.CREATE) {
-          if (!sRelation.isCollection) {
-            output[prop] = checkEntityCreate(sRelation.ref, rValue)
-          } else {
-            output[prop] = (rValue as Collection<Any>).map { checkEntityCreate(sRelation.ref, it) }
-          }
-        } else {
-          output[prop] = rValue
-        }
-      }
-
-      else -> throw Exception("Entity field/relation not found! - ($entity, $prop)")
-    }
-  }
-
-  return output
-}
-
 private fun checkFieldUpdate(sEntity: SEntity, field: String, sField: SField, value: Any?) {
   if (!sField.isInput)
     throw Exception("Invalid input field! - (${sEntity.name}, $field)")
