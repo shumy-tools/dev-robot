@@ -5,13 +5,12 @@ import dr.schema.*
 import dr.schema.EventType.*
 import dr.spi.IModificationAdaptor
 import kotlin.reflect.full.memberProperties
-import kotlin.reflect.full.primaryConstructor
 
 /* ------------------------- api -------------------------*/
 class ModificationEngine(private val adaptor: IModificationAdaptor) {
   private val schema: Schema by lazy { DrServer.schema }
 
-  fun create(new: Any): Pair<Long, Map<String, Any?>> {
+  fun create(new: Any): Long {
     val vType = new.javaClass.kotlin
     val entity = vType.qualifiedName
 
@@ -20,7 +19,8 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
       throw Exception("Creation is only valid for master entities! - ($entity)")
 
     sEntity.onCreate(STARTED, null, new)
-    checkEntity(sEntity, new)
+
+    checkEntityCreate(sEntity, new)
 
     val tx = adaptor.start()
     val id = try {
@@ -35,7 +35,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     sEntity.onCreate(COMMITED, id, new)
 
     // return derived values
-    return Pair(id, derived(sEntity, new))
+    return id
   }
 
   fun update(entity: String, id: Long, data: Map<String, Any?>) {
@@ -82,7 +82,8 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
 
     sEntity.onAdd(STARTED, id, sRelation, null, new)
     sEntity.onCreate(STARTED,null, new)
-    checkEntity(sRelation.ref, new)
+
+    checkEntityCreate(sRelation.ref, new)
 
     val tx = adaptor.start()
     val link = try {
@@ -136,103 +137,43 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
 
 /* ------------------------- helpers -------------------------*/
 @Suppress("UNCHECKED_CAST")
-private fun derived(sEntity: SEntity, new: Any): Map<String, Any?> {
-  val derived = mutableMapOf<String, Any?>()
-  // TODO: get derived tree
-
+private fun checkEntityCreate(sEntity: SEntity, new: Any): Map<String, Any> {
   val vType = new.javaClass.kotlin
+  val entity = vType.qualifiedName
+
+  val output = mutableMapOf<String, Any>()
   for (param in vType.memberProperties) {
     val prop = param.name
     val sField = sEntity.fields[prop]
     val sRelation = sEntity.rels[prop]
     when {
-      sField != null -> if (!sField.isInput) {
-        derived[prop] = sField.getValue(new)
-      }
-
-      sRelation != null -> if (!sRelation.isInput) {
-        val rValue = sRelation.getValue(new)
-        rValue?.let {
-          if (sRelation.type == RelationType.CREATE) {
-            if (!sRelation.isCollection) {
-              derived[prop] = derived(sRelation.ref, it)
-            } else {
-              derived[prop] = (rValue as Collection<Any?>).map { item ->
-                if (item == null)
-                  throw Exception("Invalid 'null' derived on map-item! - (${sEntity.name}, $prop)")
-
-                // TODO: how to set id
-                0L to derived(sRelation.ref, item)
-              }.toMap()
-            }
-          } else {
-            if (!sRelation.isCollection) {
-              derived[prop] = rValue as Long
-            } else {
-              derived[prop] = (rValue as Collection<Long?>).map { key ->
-                if (key == null)
-                  throw Exception("Invalid 'null' derived on collection-item! - (${sEntity.name}, $prop)")
-                key
-              }
-            }
-          }
+      sField != null -> {
+        val fValue = sField.getValue(new)
+        fValue?.let {
+          if (sField.isInput)
+            checkFieldConstraints(sEntity, prop, sField, fValue)
+          output[prop] = fValue
         }
       }
 
-      else -> throw Exception("Entity field/relation not found! - (${sEntity.name}, $prop)")
-    }
-  }
-
-  return derived
-}
-
-@Suppress("UNCHECKED_CAST")
-private fun checkEntity(sEntity: SEntity, new: Any) {
-  val vType = new.javaClass.kotlin
-  val entity = vType.qualifiedName
-
-  // TODO: check if entity exist? (by id)
-
-  // only check inputs (no need for 'if (!sRelation.isInput)' )
-  for (param in vType.primaryConstructor!!.parameters) {
-    val prop = param.name!!
-    val sField = sEntity.fields[prop]
-    val sRelation = sEntity.rels[prop]
-    when {
-      sField != null -> {
-        val fValue = sField.getValue(new)
-        if (!sField.isOptional && fValue == null)
-          throw Exception("Invalid 'null' input! - (${sEntity.name}, $prop)")
-
-        fValue?.let { checkFieldConstraints(sEntity, prop, sField, fValue) }
-      }
-
       sRelation != null -> {
-        val rValue = sRelation.getValue(new)
-        if (!sRelation.isOptional && rValue == null)
-          throw Exception("Invalid 'null' input! - (${sEntity.name}, $prop)")
-
+        val rValue = sRelation.getValue(new)!!
         if (sRelation.type == RelationType.CREATE) {
           if (!sRelation.isCollection) {
-            rValue?.let { checkEntity(sRelation.ref, it) }
+            output[prop] = checkEntityCreate(sRelation.ref, rValue)
           } else {
-            if (rValue == null)
-              throw Exception("Invalid 'null' input! - (${sEntity.name}, $prop)")
-
-            (rValue as Collection<Any?>).forEach { item ->
-              if (item == null)
-                throw Exception("Invalid 'null' input on map-item! - (${sEntity.name}, $prop)")
-              checkEntity(sRelation.ref, item)
-            }
+            output[prop] = (rValue as Collection<Any>).map { checkEntityCreate(sRelation.ref, it) }
           }
         } else {
-          // TODO: check if links exist?  (by id)
+          output[prop] = rValue
         }
       }
 
       else -> throw Exception("Entity field/relation not found! - ($entity, $prop)")
     }
   }
+
+  return output
 }
 
 private fun checkFieldUpdate(sEntity: SEntity, field: String, sField: SField, value: Any?) {

@@ -39,6 +39,8 @@ enum class RelationType {
 }
 
 /* ------------------------- structures -------------------------*/
+class Traits(vararg val traits: Any)
+
 class Schema(
   val masters: Map<String, SEntity>,
   val entities: Map<String, SEntity>,

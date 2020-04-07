@@ -23,10 +23,6 @@ class SParser {
 }
 
 /* ------------------------- helpers -------------------------*/
-private val MAP = typeOf<Map<*, *>?>()
-private val LIST = typeOf<List<*>?>()
-private val SET = typeOf<Set<*>?>()
-
 private class TempSchema(
   val masters: MutableMap<String, SEntity> = LinkedHashMap(),
   val entities: MutableMap<String, SEntity> = LinkedHashMap(),
@@ -45,7 +41,7 @@ private fun KClass<*>.checkEntityNumber(name: String) {
     aNumber++
 
   if (aNumber > 1)
-    throw Exception("KClass with multiple types! Select one of (Master, Detail, Trait). - ($name)")
+    throw Exception("KClass with multiple entity types! Select one of (Master, Detail, Trait). - ($name)")
 }
 
 private fun KProperty1<*, *>.checkRelationNumber(name: String) {
@@ -57,7 +53,7 @@ private fun KProperty1<*, *>.checkRelationNumber(name: String) {
     aNumber++
 
   if (aNumber > 1)
-    throw Exception("KProperty with multiple associations! Select one of (Composition, Aggregation). - ($name, ${this.name})")
+    throw Exception("KProperty with multiple relation types! Select one of (Create, Link). - ($name, ${this.name})")
 }
 
 private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
@@ -69,7 +65,7 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
     if(!this.isData)
       throw Exception("Entities must be data classes! - ($name)")
 
-    val type = this.getEntityType() ?: throw Exception("Required annotation (Master, Detail, Trait)! - ($name)")
+    val type = this.getEntityType() ?: throw Exception("Required annotation, one of (Master, Detail, Trait)! - ($name)")
     val entity = SEntity(name, type, processListeners())
 
     tmpSchema.entities[name] = entity
@@ -137,7 +133,7 @@ private fun KClass<*>.processListeners(): Set<SListener> {
   return listeners.value.map {
     val sType = it.supertypes.firstOrNull {
       sType -> EListener::class.qualifiedName == (sType.classifier as KClass<*>).qualifiedName
-    } ?: throw Exception("Listener '${it.qualifiedName}' must inherit '${EListener::class.qualifiedName}'")
+    } ?: throw Exception("Listener '${it.qualifiedName}' must inherit from '${EListener::class.qualifiedName}'")
 
     val tRef = sType.arguments.first().type ?: throw Exception("Listener '${it.qualifiedName}' requires generic type!")
     if (tRef != this.createType())
@@ -171,9 +167,6 @@ private fun KClass<*>.processListeners(): Set<SListener> {
 
 private fun KProperty1<*, *>.processFieldOrRelation(name: String, tmpSchema: TempSchema): Any {
   val rType = this.returnType
-  if (rType.isSubtypeOf(MAP))
-    throw Exception("Map is not supported in relations! - ($name, ${this.name})")
-
   if (this is KMutableProperty1<*, *>)
     throw Exception("All fields must be immutable! - ($name, ${this.name})")
 
@@ -200,24 +193,38 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
   val traits = LinkedHashSet<SEntity>()
   val link = this.findAnnotation<Link>()
 
-  val rType: RelationType = when {
+  val rType = when {
     this.hasAnnotation<Create>() -> RelationType.CREATE
     link != null -> {
       for (trait in link.traits)
         traits.add(trait.processEntity(tmpSchema))
       RelationType.LINK
     }
-    else -> throw Exception("Required annotation (Create, Link)! - ($name, ${this.name})")
+    else -> throw Exception("Required annotation, one of (Create, Link)! - ($name, ${this.name})")
   }
 
-  val (ref, isCollection) = if (type.isSubtypeOf(LIST) || type.isSubtypeOf(SET)) {
+  val (ref, isCollection) = if (type.isSubtypeOf(TypeEngine.LIST) || type.isSubtypeOf(TypeEngine.SET) || type.isSubtypeOf(TypeEngine.MAP_ID_TRAITS)) {
     if (isOptional)
       throw Exception("Collections cannot be optional! - ($name, ${this.name})")
 
-    val tRef = type.arguments.last().type ?: throw Exception("Required generic type! - ($name, ${this.name})")
     val ref = when(rType) {
-      RelationType.CREATE -> tRef.processCreate(tmpSchema)
-      RelationType.LINK -> link!!.processLink(tRef, name, this.name, tmpSchema)
+      RelationType.CREATE -> {
+        if (!type.isSubtypeOf(TypeEngine.LIST) && !type.isSubtypeOf(TypeEngine.SET))
+          throw Exception("Create-collection must be of type, one of (Set<*>, List<*>)! - ($name, ${this.name})")
+
+        val tRef = type.arguments.last().type ?: throw Exception("Required generic type! - ($name, ${this.name})")
+        tRef.processCreate(tmpSchema)
+      }
+
+      RelationType.LINK -> {
+        if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.LIST_ID) && !type.isSubtypeOf(TypeEngine.SET_ID))
+          throw Exception("Link-collection without traits must be of type, one of (List<Long>, Set<Long>)! - ($name, ${this.name})")
+
+        if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.MAP_ID_TRAITS))
+          throw Exception("Link-collection with traits type must be of type Map<Long, Traits>! - ($name, ${this.name})")
+
+        link!!.value.processEntity(tmpSchema)
+      }
     }
 
     Pair(ref, true)
@@ -225,7 +232,15 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
     // reference
     val ref = when(rType) {
       RelationType.CREATE -> type.processCreate(tmpSchema)
-      RelationType.LINK -> link!!.processLink(type, name, this.name, tmpSchema)
+      RelationType.LINK -> {
+        if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.ID))
+          throw Exception("Link-reference without traits must be of type Long! - ($name, ${this.name})")
+
+        if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.PAIR_ID_TRAITS))
+          throw Exception("Link-reference with traits must be of type Pair<Long, Traits>! - ($name, ${this.name})")
+
+        link!!.value.processEntity(tmpSchema)
+      }
     }
 
     Pair(ref, false)
@@ -241,13 +256,6 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
 private fun KType.processCreate(tmpSchema: TempSchema): SEntity {
   val entity = this.classifier as KClass<*>
   return entity.processEntity(tmpSchema)
-}
-
-private fun Link.processLink(tRef: KType, name: String, field: String, tmpSchema: TempSchema): SEntity {
-  if (!tRef.isSubtypeOf(TypeEngine.ID))
-    throw Exception("Link type should be Long! - ($name, $field)")
-
-  return this.value.processEntity(tmpSchema)
 }
 
 private fun KClass<*>.getEntityType(): EntityType? {

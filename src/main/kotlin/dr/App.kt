@@ -20,10 +20,10 @@ class EmailCheck: FieldCheck<String> {
 }
 
 @Trait
-data class Trace(
-  val date: LocalDateTime,
-  @Link(User::class) val user: Long
-)
+data class Trace(val date: LocalDateTime)
+
+@Master
+data class Market(val name: String)
 
 @Master @Listeners(UserListener::class)
 data class User(
@@ -31,7 +31,8 @@ data class User(
   @Checks(EmailCheck::class) val email: String,
 
   @Link(Address::class) val address: Long,
-  @Open @Link(Role::class, traits = [Trace::class]) val roles: List<Long>
+  @Link(Market::class, traits = [Trace::class]) val market: Pair<Long, Traits>,
+  @Open @Link(Role::class, traits = [Trace::class]) val roles: Map<Long, Traits>
 ) {
   val timestamp = LocalDateTime.now()
 }
@@ -65,7 +66,7 @@ data class Role(
 data class Auction(
   val name: String,
 
-  @Create val items: Set<AuctionItem>,
+  @Link(AuctionItem::class) val items: Set<Long>,
   @Open @Create val bids: List<Bid>
 ) {
   val timestamp = LocalDateTime.now()
@@ -193,17 +194,18 @@ fun main(args: Array<String>) {
   val query = DrServer.qEngine.compile("""dr.User |  email == "email" and (name == "Mica*" or roles..name == ?name) | { * }""")
   query.exec(mapOf("name" to "admin"))
 
-  val user = DrServer.mEngine.create(
+  val userId = DrServer.mEngine.create(
     User(
       name = "Micael",
       email = "email@gmail.com",
+      market = Pair(1L, Traits(Trace(LocalDateTime.now()))),
       address = 1L,
-      roles = listOf(1L, 2L)
+      roles = mapOf(1L to Traits(Trace(LocalDateTime.now())), 2L to Traits(Trace(LocalDateTime.now())))
     )
   )
-  println("User: $user")
+  println("User: $userId")
 
-  DrServer.mEngine.update(User::class.qualifiedName!!, user.first, mapOf(
+  DrServer.mEngine.update(User::class.qualifiedName!!, userId, mapOf(
     "name" to "Micael",
     "email" to "email@gmail.com"
   ))
@@ -211,8 +213,8 @@ fun main(args: Array<String>) {
   val auction = DrServer.mEngine.create(
     Auction(
       name = "Continente",
-      items = setOf(AuctionItem("Barco", 100.0F)),
-      bids = listOf(Bid(price = 10F, boxes = 10, from = user.first, item = 1L))
+      items = setOf(1L, 2L),
+      bids = listOf(Bid(price = 10F, boxes = 10, from = userId, item = 1L))
     )
   )
 }
