@@ -22,7 +22,7 @@ annotation class Checks(vararg val value: KClass<out Any>)
 
 /* ------------------------- enums -------------------------*/
 enum class EventType {
-  STARTED, CHECKED, COMMITED
+  CHECKED, COMMITED
 }
 
 enum class ActionType {
@@ -43,8 +43,8 @@ open class EListener<T> {
   open fun onUpdate(type: EventType, id: Long, data: Map<String, Any?>) {}
   open fun onDelete(type: EventType, id: Long) {}
 
-  open fun onAdd(type: EventType, id: Long, sRelation: SRelation, link: Long?, new: Any?) {}
-  open fun onLink(type: EventType, id: Long, sRelation: SRelation, link: Long) {}
+  open fun onAdd(type: EventType, id: Long?, sRelation: SRelation, link: Long?, new: Any) {}
+  open fun onLink(type: EventType, id: Long?, sRelation: SRelation, link: Long) {}
   open fun onRemove(type: EventType, id: Long, sRelation: SRelation, link: Long) {}
 }
 

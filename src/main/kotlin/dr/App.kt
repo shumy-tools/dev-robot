@@ -11,87 +11,7 @@ import dr.query.QueryEngine
 import dr.schema.*
 import dr.spi.*
 import java.time.LocalDateTime
-
-// reusable constraint check
-class EmailCheck: FieldCheck<String> {
-  override fun check(value: String): String? {
-    return if (!value.contains('@')) "invalid email" else null
-  }
-}
-
-@Trait
-data class Trace(val date: LocalDateTime)
-
-@Master
-data class Market(val name: String)
-
-@Master @Listeners(UserListener::class)
-data class User(
-  val name: String,
-  @Checks(EmailCheck::class) val email: String,
-
-  @Link(Address::class) val address: Long,
-  @Link(Market::class, traits = [Trace::class]) val market: Pair<Long, Traits>,
-  @Open @Link(Role::class, traits = [Trace::class]) val roles: Map<Long, Traits>
-) {
-  val timestamp = LocalDateTime.now()
-}
-  // process events and check business rules (can plug a rule engine)
-  class UserListener: EListener<User>() {
-    @Events(EventType.CHECKED, EventType.COMMITED)
-    override fun onCreate(type: EventType, id: Long?, new: User) {
-      println("CREATE($type) - ($id, $new)")
-    }
-
-    @Events(EventType.CHECKED)
-    override fun onUpdate(type: EventType, id: Long, data: Map<String, Any?>) {
-      println("UPDATE($type) - ($id, $data)")
-    }
-  }
-
-@Detail
-data class Address(
-  val country: String,
-  val city: String,
-  val address: String
-)
-
-@Master
-data class Role(
-  val name: String,
-  val order: Int
-)
-
-@Master
-data class Auction(
-  val name: String,
-
-  @Link(AuctionItem::class) val items: Set<Long>,
-  @Open @Create val bids: List<Bid>
-) {
-  val timestamp = LocalDateTime.now()
-}
-
-@Detail
-data class AuctionItem(
-  val name: String,
-  val price: Float
-) {
-  val timestamp = LocalDateTime.now()
-}
-
-@Detail
-data class Bid(
-  val price: Float,
-  val boxes: Int,
-  val comments: String? = null,
-  
-  @Link(User::class) val from: Long,
-  @Link(AuctionItem::class) val item: Long
-) {
-  val timestamp = LocalDateTime.now()
-}
-
+import kotlin.random.Random
 
 val mapper: ObjectWriter = jacksonObjectMapper()
   .registerModule(JavaTimeModule())
@@ -129,33 +49,19 @@ class TestQueryAuthorizer : IQueryAuthorizer {
 }
 
 class TestModificationAdaptor: IModificationAdaptor {
-  override fun start(): ITransaction {
-    return TestTransaction()
-  }
-}
+  var idSeq = 9L;
 
-class TestTransaction: ITransaction {
-  override fun create(sEntity: SEntity, new: Any): Long {
-    return 0L
-  }
-
-  override fun update(sEntity: SEntity, id: Long, data: Map<String, Any?>) {
-  }
-
-  override fun add(sEntity: SEntity, id: Long, sRelation: SRelation, new: Any): Long {
-    return 0L
-  }
-
-  override fun link(sEntity: SEntity, id: Long, sRelation: SRelation, link: Long) {
-  }
-
-  override fun remove(sEntity: SEntity, id: Long, sRelation: SRelation, link: Long) {
-  }
-
-  override fun commit() {
-  }
-
-  override fun rollback() {
+  override fun commit(instructions: Instructions): Long {
+    println("TX-START")
+    val id = instructions.exec {
+      when (it) {
+        is Insert -> { println("  (${++idSeq}) -> $it"); idSeq }
+        is Update -> { println("  (${it.id}) -> $it"); it.id }
+        is Delete -> { println("  (${it.id}) -> $it"); it.id }
+      }
+    }
+    println("TX-COMMIT")
+    return id
   }
 }
 
@@ -203,7 +109,6 @@ fun main(args: Array<String>) {
       roles = mapOf(1L to Traits(Trace(LocalDateTime.now())), 2L to Traits(Trace(LocalDateTime.now())))
     )
   )
-  println("User: $userId")
 
   DrServer.mEngine.update(User::class.qualifiedName!!, userId, mapOf(
     "name" to "Micael",

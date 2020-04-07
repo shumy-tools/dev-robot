@@ -1,20 +1,44 @@
 package dr.spi
 
-import dr.schema.SEntity
-import dr.schema.SRelation
-
 interface IModificationAdaptor {
-  fun start(): ITransaction
+  fun commit(instructions: Instructions): Long
 }
 
-  interface ITransaction {
-    fun create(sEntity: SEntity, new: Any): Long
-    fun update(sEntity: SEntity, id: Long, data: Map<String, Any?>)
+  class Instructions() {
+    internal val list = mutableListOf<Instruction>()
 
-    fun add(sEntity: SEntity, id: Long, sRelation: SRelation, new: Any): Long
-    fun link(sEntity: SEntity, id: Long, sRelation: SRelation, link: Long)
-    fun remove(sEntity: SEntity, id: Long, sRelation: SRelation, link: Long)
+    fun exec(eFun: (Instruction) -> Long): Long {
+      val ids = mutableMapOf<Instruction, Long>()
 
-    fun commit()
-    fun rollback()
+      val first = list.first()
+      val id = eFun(first)
+      ids[first] = id
+
+      for (inst in list.drop(1)) {
+        if (inst is InsertOrUpdate) {
+          val mutData = inst.data as MutableMap<String, Any?>
+          inst.nativeRefs.forEach { (refField, toInst) ->
+            val refId = ids[toInst] ?: throw Exception("ID not found for reference! - (${inst.entity}, $refField)")
+            mutData[refField] = refId
+          }
+        }
+
+        ids[inst] = eFun(inst)
+      }
+
+      return id
+    }
   }
+
+    sealed class Instruction {
+      abstract val entity: String
+    }
+
+      sealed class InsertOrUpdate: Instruction() {
+        abstract val data: Map<String, Any?>
+        internal val nativeRefs = mutableMapOf<String, Instruction>()
+      }
+
+      data class Insert(override val entity: String, override val data: Map<String, Any?>): InsertOrUpdate()
+      data class Update(override val entity: String, val id: Long, override val data: Map<String, Any?>): InsertOrUpdate()
+      data class Delete(override val entity: String, val id: Long): Instruction()

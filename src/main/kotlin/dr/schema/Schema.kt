@@ -39,7 +39,11 @@ enum class RelationType {
 }
 
 /* ------------------------- structures -------------------------*/
-class Traits(vararg val traits: Any)
+class Traits(vararg val traits: Any) /*{
+  override fun toString(): String {
+    return "[${traits.forEach { it.javaClass.kotlin.qualifiedName }}]"
+  }
+}*/
 
 class Schema(
   val masters: Map<String, SEntity>,
@@ -71,11 +75,11 @@ class Schema(
       listeners.forEach { it.get(DELETE, type)?.onDelete(type, id) }
     }
 
-    override fun onAdd(type: EventType, id: Long, sRelation: SRelation, link: Long?, new: Any?) {
+    override fun onAdd(type: EventType, id: Long?, sRelation: SRelation, link: Long?, new: Any) {
       listeners.forEach { it.get(ADD_CREATE, type)?.onAdd(type, id, sRelation, link, new) }
     }
 
-    override fun onLink(type: EventType, id: Long, sRelation: SRelation, link: Long) {
+    override fun onLink(type: EventType, id: Long?, sRelation: SRelation, link: Long) {
       listeners.forEach { it.get(ADD_LINK, type)?.onLink(type, id, sRelation, link) }
     }
 

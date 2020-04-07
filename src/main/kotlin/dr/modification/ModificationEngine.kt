@@ -3,12 +3,16 @@ package dr.modification
 import dr.DrServer
 import dr.schema.*
 import dr.schema.EventType.*
-import dr.spi.IModificationAdaptor
+import dr.spi.*
 import kotlin.reflect.full.memberProperties
 
 /* ------------------------- api -------------------------*/
 class ModificationEngine(private val adaptor: IModificationAdaptor) {
   private val schema: Schema by lazy { DrServer.schema }
+
+  private val tableTranslator = schema.entities.map { (name, _) ->
+    name to name.replace('.', '_').toLowerCase()
+  }.toMap()
 
   fun create(new: Any): Long {
     val vType = new.javaClass.kotlin
@@ -18,48 +22,36 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     if (sEntity.type != EntityType.MASTER)
       throw Exception("Creation is only valid for master entities! - ($entity)")
 
-    sEntity.onCreate(STARTED, null, new)
+    val instructions = Instructions()
+    checkEntityAndInsert(sEntity, new, instructions)
 
-    val output = checkEntityAndMap(sEntity, new)
-    println(output)
-
-    val tx = adaptor.start()
-    val id = try {
-      sEntity.onCreate(CHECKED, null, new)
-      tx.create(sEntity, new)
-    } catch (ex: Exception) {
-      tx.rollback()
-      throw ex
-    }
-
-    tx.commit()
+    val id = adaptor.commit(instructions)
     sEntity.onCreate(COMMITED, id, new)
 
-    // return derived values
+    // TODO: return derived values?
     return id
   }
 
   fun update(entity: String, id: Long, data: Map<String, Any?>) {
     val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
-    sEntity.onUpdate(STARTED, id, data) // TODO: changed fields?
+
+    val instructions = Instructions()
+    val uData = linkedMapOf<String, Any?>()
+    val update = Update(sEntity.name, id, uData)
+    instructions.list.add(update)
 
     for ((field, value) in data) {
+      // TODO: check references
       val sField = sEntity.fields[field] ?: throw Exception("Entity field not found! - ($entity, $field)")
       checkFieldUpdate(sEntity, field, sField, value)
+      uData[field] = value
     }
+    sEntity.onUpdate(CHECKED, id, data) // TODO: changed fields?
 
-    val tx = adaptor.start()
-    try {
-      sEntity.onUpdate(CHECKED, id, data)
-      tx.update(sEntity, id, data)
-    } catch (ex: Exception) {
-      tx.rollback()
-      throw ex
-    }
-
-    tx.commit()
+    adaptor.commit(instructions)
     sEntity.onUpdate(COMMITED, id, data)
-    // TODO: (return changed values)
+
+    // TODO: return changed values?
   }
 
   fun add(entity: String, id: Long, rel: String, new: Any): Long {
@@ -81,24 +73,14 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     if (sRelation.type != RelationType.CREATE)
       throw Exception("Relation is not 'create'! - ($entity, $rel)")
 
-    sEntity.onAdd(STARTED, id, sRelation, null, new)
-    sEntity.onCreate(STARTED,null, new)
+    val instructions = Instructions()
+    checkEntityAndInsert(sRelation.ref, new, instructions)
+    sEntity.onAdd(CHECKED, id, sRelation, null, new)
 
-    checkEntityAndMap(sRelation.ref, new)
-
-    val tx = adaptor.start()
-    val link = try {
-      sEntity.onCreate(CHECKED, null, new)
-      sEntity.onAdd(CHECKED, id, sRelation, null, new)
-      tx.add(sEntity, id, sRelation, new)
-    } catch (ex: Exception) {
-      tx.rollback()
-      throw ex
-    }
-
-    tx.commit()
-    sEntity.onCreate(COMMITED, link, new)
+    val link = adaptor.commit(instructions)
+    //sEntity.onCreate(COMMITED, link, new)
     sEntity.onAdd(COMMITED, id, sRelation, link, new)
+
     return link
   }
 
@@ -112,20 +94,9 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     if (sRelation.type != RelationType.LINK)
       throw Exception("Relation is not 'link'! - ($entity, $rel)")
 
-    sEntity.onLink(STARTED, id, sRelation, link)
+    // TODO: check constraints
 
-      // TODO: check constraints
-
-    val tx = adaptor.start()
-    try {
-      sEntity.onLink(CHECKED, id, sRelation, link)
-      tx.link(sEntity, id, sRelation, link)
-    } catch (ex: Exception) {
-      tx.rollback()
-      throw ex
-    }
-
-    tx.commit()
+    adaptor.commit(Instructions())
     sEntity.onLink(COMMITED, id, sRelation, link)
   }
 
@@ -136,12 +107,15 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun checkEntityAndMap(sEntity: SEntity, new: Any): Map<String, Any> {
+  private fun checkEntityAndInsert(sEntity: SEntity, new: Any, instructions: Instructions, include: Boolean = true): Insert {
     val vType = new.javaClass.kotlin
     val entity = vType.qualifiedName
 
-    // TODO: list of create operations for the relational db instead of map?
-    val output = mutableMapOf<String, Any>()
+    val data = linkedMapOf<String, Any?>()
+    val insert = Insert(tableTranslator.getValue(sEntity.name), data)
+
+    if (include)
+      instructions.list.add(insert)
 
     for (param in vType.memberProperties) {
       val prop = param.name
@@ -153,7 +127,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
           fValue?.let {
             if (sField.isInput)
               checkFieldConstraints(sEntity, prop, sField, fValue)
-            output[prop] = fValue
+            data[prop] = fValue
           }
         }
 
@@ -161,21 +135,46 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
           val rValue = sRelation.getValue(new)!!
           when (sRelation.type) {
             RelationType.CREATE -> if (!sRelation.isCollection) {
-              output[prop] = checkEntityAndMap(sRelation.ref, rValue)
+              val childInsert = checkEntityAndInsert(sRelation.ref, rValue, instructions)
+              insert.nativeRefs["ref_$prop"] = childInsert                        // direct reference
+              sEntity.onAdd(CHECKED, null, sRelation, null,  rValue)
             } else {
               val col = (rValue as Collection<Any>)
-              output[prop] = col.map { checkEntityAndMap(sRelation.ref, it) }
+              col.forEach {
+                val childInsert = checkEntityAndInsert(sRelation.ref, it, instructions)
+                val table = tableTranslator.getValue(sEntity.name)
+                childInsert.nativeRefs["inv_ref_${table}_$prop"] = insert             // inverted reference
+                sEntity.onAdd(CHECKED, null, sRelation, null,  rValue)
+              }
             }
 
             RelationType.LINK -> if (sRelation.traits.isEmpty()) {
-              output[prop] = rValue // Long or Collection<Long>
+              if (!sRelation.isCollection) {
+                val link = rValue as Long
+                val linkInsert = insertLink(sEntity, sRelation, link, instructions)
+                linkInsert.nativeRefs["inv_ref"] = insert                         // inverted reference
+                sEntity.onLink(CHECKED, null, sRelation, link)
+              } else {
+                val list = rValue as Collection<Long>
+                list.forEach { link ->
+                  val linkInsert = insertLink(sEntity, sRelation, link, instructions)
+                  linkInsert.nativeRefs["inv_ref"] = insert                       // inverted reference
+                  sEntity.onLink(CHECKED, null, sRelation, link)
+                }
+              }
             } else {
               if (!sRelation.isCollection) {
-                val (id, traits) = rValue as Pair<Long, Traits>
-                output[prop] = Pair(id, checkTraitsAndMap(sEntity, sRelation, traits))
+                val (link, traits) = rValue as Pair<Long, Traits>
+                val linkInsert = checkTraitsAndInsert(sEntity, sRelation, link, traits, instructions)
+                linkInsert.nativeRefs["inv_ref"] = insert                         // inverted reference
+                sEntity.onLink(CHECKED, null, sRelation, link)
               } else {
                 val map = rValue as Map<Long, Traits>
-                output[prop] = map.map { (id, traits) -> Pair(id, checkTraitsAndMap(sEntity, sRelation, traits)) }
+                map.forEach { (link, traits) ->
+                  val linkInsert = checkTraitsAndInsert(sEntity, sRelation, link, traits, instructions)
+                  linkInsert.nativeRefs["inv_ref"] = insert                       // inverted reference
+                  sEntity.onLink(CHECKED, null, sRelation, link)
+                }
               }
             }
           }
@@ -185,26 +184,46 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
       }
     }
 
-    return output
+    sEntity.onCreate(CHECKED, null, new)
+    return insert
   }
 
-  private fun checkTraitsAndMap(sEntity: SEntity, sRelation: SRelation, traits: Traits): Map<String, Any> {
-    val tMap = traits.traits.map {
-      val name = it.javaClass.kotlin.qualifiedName
+  private fun insertLink(sEntity: SEntity, sRelation: SRelation, link: Long, instructions: Instructions): Insert {
+    val table = tableTranslator.getValue(sEntity.name)
+    val linkInsert = Insert("${table}_${sRelation.name}", linkedMapOf("ref" to link))
+    instructions.list.add(linkInsert)
+    return linkInsert
+  }
+
+  private fun checkTraitsAndInsert(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Traits, instructions: Instructions): Insert {
+    if (sRelation.traits.size != traits.traits.size)
+      throw Exception("Invalid number of traits, expected '${sRelation.traits.size}' found '${traits.traits.size}'! - (${sEntity.name}, ${sRelation.name})")
+
+    val table = tableTranslator.getValue(sEntity.name)
+    val linkData: MutableMap<String, Any?> = linkedMapOf("ref" to link)
+    val linkInsert = Insert("${table}_${sRelation.name}", linkData)
+    instructions.list.add(linkInsert)
+
+    val processedTraits = mutableSetOf<Any>()
+    for (trait in traits.traits) {
+      val name = trait.javaClass.kotlin.qualifiedName
       val sTrait = schema.traits[name] ?: throw Exception("Trait type not found! - ($name)")
 
+      processedTraits.add(sTrait)
       if (!sRelation.traits.contains(sTrait))
         throw Exception("Trait '${sTrait.name}' not part of the model! - (${sEntity.name}, ${sRelation.name})")
 
-      sTrait to checkEntityAndMap(sTrait, it)
-    }.toMap()
+      // Does not insert. Compact all traits fields
+      val childInsert = checkEntityAndInsert(sTrait, trait, instructions, false)
+      linkData.putAll(childInsert.data)
 
-    for (trait in sRelation.traits) {
-      if (!tMap.containsKey(trait))
-        throw Exception("Trait '${trait.name}' not present in data! - (${sEntity.name}, ${sRelation.name})")
+      sTrait to childInsert
     }
 
-    return tMap.mapKeys { (sTrait, _) -> sTrait.name }
+    if (sRelation.traits.size != processedTraits.size)
+      throw Exception("Invalid number of traits, expected '${sRelation.traits.size}' found '${traits.traits.size}'! - (${sEntity.name}, ${sRelation.name})")
+
+    return linkInsert
   }
 }
 
