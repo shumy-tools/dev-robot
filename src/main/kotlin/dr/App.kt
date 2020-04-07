@@ -11,6 +11,7 @@ import dr.query.QueryEngine
 import dr.schema.*
 import dr.spi.*
 import java.time.LocalDateTime
+import java.time.Month
 import kotlin.random.Random
 
 val mapper: ObjectWriter = jacksonObjectMapper()
@@ -104,22 +105,26 @@ fun main(args: Array<String>) {
     User(
       name = "Micael",
       email = "email@gmail.com",
-      market = Pair(1L, Traits(Trace(LocalDateTime.now()))),
-      address = 1L,
+      market = Pair(1L, Traits(UserMarket(Trace(LocalDateTime.now()),1L))),
+      address = Address("Portugal", "Aveiro", "Some street and number"),
       roles = mapOf(1L to Traits(Trace(LocalDateTime.now())), 2L to Traits(Trace(LocalDateTime.now())))
     )
   )
 
   DrServer.mEngine.update(User::class.qualifiedName!!, userId, mapOf(
     "name" to "Micael",
-    "email" to "email@gmail.com"
+    "email" to "email@gmail.com",
+    "market" to Pair(5L, Traits(UserMarket(Trace(LocalDateTime.of(2000, Month.JANUARY, 1, 12, 0,0)),2L)))
   ))
 
   val auction = DrServer.mEngine.create(
     Auction(
       name = "Continente",
       items = setOf(1L, 2L),
-      bids = listOf(Bid(price = 10F, boxes = 10, from = userId, item = 1L))
+      bids = listOf(
+        Bid(price = 10F, boxes = 10, from = userId, item = 1L, detail = BidDetail("detail-1")),
+        Bid(price = 13F, boxes = 5, from = userId, item = 2L, detail = BidDetail("detail-2"))
+      )
     )
   )
 }

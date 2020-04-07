@@ -13,6 +13,14 @@ class EmailCheck: FieldCheck<String> {
 @Trait
 data class Trace(val date: LocalDateTime)
 
+@Trait
+data class UserMarket(
+  @Create val trace: Trace,         // Trace.date overrides UserMarket.date
+  @Link(User::class) val boss: Long
+) {
+  val date: LocalDateTime = LocalDateTime.now()
+}
+
 @Master
 data class Market(val name: String)
 
@@ -21,8 +29,9 @@ data class User(
   val name: String,
   @Checks(EmailCheck::class) val email: String,
 
-  @Link(Address::class) val address: Long,
-  @Link(Market::class, traits = [Trace::class]) val market: Pair<Long, Traits>,
+  @Create val address: Address,
+
+  @Open @Link(Market::class, traits = [UserMarket::class]) val market: Pair<Long, Traits>,
   @Open @Link(Role::class, traits = [Trace::class]) val roles: Map<Long, Traits>
 ) {
   val timestamp = LocalDateTime.now()
@@ -94,8 +103,14 @@ data class Bid(
   val boxes: Int,
   val comments: String? = null,
 
+  @Create val detail: BidDetail,
   @Link(User::class) val from: Long,
   @Link(AuctionItem::class) val item: Long
 ) {
   val timestamp = LocalDateTime.now()
 }
+
+@Detail
+data class BidDetail(
+  val some: String
+)

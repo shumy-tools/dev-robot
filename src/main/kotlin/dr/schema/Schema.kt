@@ -100,7 +100,11 @@ class Schema(
         internal set
 
       fun getValue(instance: Any): Any? {
-        return this.property.get(instance)
+        return if (instance is Map<*, *>) {
+          instance[name]
+        } else {
+          this.property.get(instance)
+        }
       }
     }
 
@@ -119,7 +123,11 @@ class Schema(
         internal set
 
       fun getValue(instance: Any): Any? {
-        return this.property.get(instance)
+        return if (instance is Map<*, *>) {
+          instance[name]
+        } else {
+          this.property.get(instance)
+        }
       }
     }
 
