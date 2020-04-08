@@ -68,8 +68,8 @@ data class Address(
     }
 
     @Events(EventType.CHECKED)
-    override fun onLink(type: EventType, id: Long?, sRelation: SRelation, link: Long) {
-      println("LINK-Address($type) - ($id, ${sRelation.name}, $link)")
+    override fun onLink(type: EventType, id: Long?, sRelation: SRelation, new: Any) {
+      println("LINK-Address($type) - ($id, ${sRelation.name}, $new)")
     }
   }
 

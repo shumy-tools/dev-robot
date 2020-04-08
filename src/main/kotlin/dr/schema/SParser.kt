@@ -143,12 +143,12 @@ private fun KClass<*>.processListeners(): Set<SListener> {
     val instance = it.createInstance() as EListener<*>
     val enabled = it.declaredFunctions.mapNotNull { member ->
       val action = when(member.name) {
-        "onCreate" -> ActionType.CREATE
-        "onUpdate" -> ActionType.UPDATE
-        "onDelete" -> ActionType.DELETE
-        "onAddCreate" -> ActionType.ADD_CREATE
-        "onAddLink" -> ActionType.ADD_LINK
-        "onRemoveLink" -> ActionType.REMOVE_LINK
+        ActionType.CREATE.funName -> ActionType.CREATE
+        ActionType.UPDATE.funName -> ActionType.UPDATE
+        ActionType.DELETE.funName -> ActionType.DELETE
+        ActionType.ADD.funName -> ActionType.ADD
+        ActionType.LINK.funName -> ActionType.LINK
+        ActionType.REMOVE.funName -> ActionType.REMOVE
         else -> null
       }
 

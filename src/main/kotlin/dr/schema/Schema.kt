@@ -76,15 +76,15 @@ class Schema(
     }
 
     override fun onAdd(type: EventType, id: Long?, sRelation: SRelation, link: Long?, new: Any) {
-      listeners.forEach { it.get(ADD_CREATE, type)?.onAdd(type, id, sRelation, link, new) }
+      listeners.forEach { it.get(ADD, type)?.onAdd(type, id, sRelation, link, new) }
     }
 
-    override fun onLink(type: EventType, id: Long?, sRelation: SRelation, link: Long) {
-      listeners.forEach { it.get(ADD_LINK, type)?.onLink(type, id, sRelation, link) }
+    override fun onLink(type: EventType, id: Long?, sRelation: SRelation, new: Any) {
+      listeners.forEach { it.get(LINK, type)?.onLink(type, id, sRelation, new) }
     }
 
     override fun onRemove(type: EventType, id: Long, sRelation: SRelation, link: Long) {
-      listeners.forEach { it.get(REMOVE_LINK, type)?.onRemove(type, id, sRelation, link) }
+      listeners.forEach { it.get(REMOVE, type)?.onRemove(type, id, sRelation, link) }
     }
   }
 
@@ -100,11 +100,7 @@ class Schema(
         internal set
 
       fun getValue(instance: Any): Any? {
-        return if (instance is Map<*, *>) {
-          instance[name]
-        } else {
-          this.property.get(instance)
-        }
+        return this.property.get(instance)
       }
     }
 
@@ -123,11 +119,7 @@ class Schema(
         internal set
 
       fun getValue(instance: Any): Any? {
-        return if (instance is Map<*, *>) {
-          instance[name]
-        } else {
-          this.property.get(instance)
-        }
+        return this.property.get(instance)
       }
     }
 

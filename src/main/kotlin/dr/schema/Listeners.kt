@@ -25,9 +25,9 @@ enum class EventType {
   CHECKED, COMMITED
 }
 
-enum class ActionType {
-  CREATE, UPDATE, DELETE,
-  ADD_CREATE, ADD_LINK, REMOVE_LINK
+enum class ActionType(val funName: String) {
+  CREATE("onCreate"), UPDATE("onUpdate"), DELETE("onDelete"),
+  ADD("onAdd"), LINK("onLink"), REMOVE("onRemove")
 }
 
 /* ------------------------- api -------------------------*/
@@ -44,7 +44,7 @@ open class EListener<T> {
   open fun onDelete(type: EventType, id: Long) {}
 
   open fun onAdd(type: EventType, id: Long?, sRelation: SRelation, link: Long?, new: Any) {}
-  open fun onLink(type: EventType, id: Long?, sRelation: SRelation, link: Long) {}
+  open fun onLink(type: EventType, id: Long?, sRelation: SRelation, new: Any) {}
   open fun onRemove(type: EventType, id: Long, sRelation: SRelation, link: Long) {}
 }
 
