@@ -1,13 +1,18 @@
 package dr.spi
 
 interface IModificationAdaptor {
-  fun commit(instructions: Instructions): Long
+  fun commit(instructions: Instructions): List<Long>
 }
 
-  class Instructions(private val parent: Instruction) {
+  class Instructions() {
+    internal val roots = mutableListOf<Instruction>()
     internal val list = mutableListOf<Instruction>()
 
-    fun exec(eFun: (Instruction) -> Long): Long {
+    constructor(first: Instruction): this() {
+      roots.add(first)
+    }
+
+    fun exec(eFun: (Instruction) -> Long): List<Long> {
       val ids = mutableMapOf<Instruction, Long>()
 
       // top entity must have all direct references already resolved
@@ -28,7 +33,7 @@ interface IModificationAdaptor {
         ids[inst] = eFun(inst)
       }
 
-      return ids[parent]!!
+      return roots.map { ids[it]!! }
     }
   }
 

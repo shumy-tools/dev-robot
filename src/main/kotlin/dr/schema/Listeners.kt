@@ -37,7 +37,7 @@ open class EListener<T> {
   val aEngine: ActionEngine by lazy { DrServer.aEngine }
   val nEngine: NotificationEngine by lazy { DrServer.nEngine }
 
-  open fun onRead(id: Long, tree: Map<String, Any>) {}
+  open fun onRead(id: Long, tree: Map<String, Any?>) {}
 
   open fun onCreate(type: EventType, id: Long?, new: T) {}
   open fun onUpdate(type: EventType, id: Long, data: Map<String, Any?>) {}

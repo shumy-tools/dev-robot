@@ -11,6 +11,7 @@ object DrServer {
     private set
 
   lateinit var schema: Schema
+  lateinit var tableTranslator: Map<String, String>
 
   lateinit var qEngine: QueryEngine
   lateinit var mEngine: ModificationEngine
@@ -18,6 +19,10 @@ object DrServer {
   lateinit var nEngine: NotificationEngine
 
   fun start(port: Int) {
+    tableTranslator = schema.entities.map { (name, _) ->
+      name to name.replace('.', '_').toLowerCase()
+    }.toMap()
+
     this.enabled = true
   }
 }

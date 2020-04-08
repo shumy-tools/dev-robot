@@ -52,9 +52,9 @@ class TestQueryAuthorizer : IQueryAuthorizer {
 class TestModificationAdaptor: IModificationAdaptor {
   var idSeq = 9L;
 
-  override fun commit(instructions: Instructions): Long {
+  override fun commit(instructions: Instructions): List<Long> {
     println("TX-START")
-    val id = instructions.exec {
+    val ids = instructions.exec {
       when (it) {
         is Insert -> { println("  (${++idSeq}) -> $it"); idSeq }
         is Update -> { println("  (${it.id}) -> $it"); it.id }
@@ -62,7 +62,7 @@ class TestModificationAdaptor: IModificationAdaptor {
       }
     }
     println("TX-COMMIT")
-    return id
+    return ids
   }
 }
 
@@ -110,23 +110,34 @@ fun main(args: Array<String>) {
       roles = mapOf(1L to Traits(Trace(LocalDateTime.now())), 2L to Traits(Trace(LocalDateTime.now())))
     )
   )
+  println("USER-ID: $userId")
 
+  println("")
   DrServer.mEngine.update(User::class.qualifiedName!!, userId, mapOf(
     "name" to "Micael",
     "email" to "email@gmail.com",
     "market" to Pair(5L, Traits(UserMarket(Trace(LocalDateTime.of(2000, Month.JANUARY, 1, 12, 0,0)),2L)))
   ))
 
+  println("")
   val auctionId = DrServer.mEngine.create(
     Auction(
       name = "Continente",
-      items = setOf(1L, 2L),
+      items = setOf(1L, 2L, 3L),
       bids = listOf(
         Bid(price = 10F, boxes = 10, from = userId, item = 1L, detail = BidDetail("detail-1")),
         Bid(price = 13F, boxes = 5, from = userId, item = 2L, detail = BidDetail("detail-2"))
       )
     )
   )
-
   println("AUCTION-ID: $auctionId")
+
+  println("")
+  val bidId = DrServer.mEngine.add(Auction::class.qualifiedName!!, auctionId, "bids", Bid(price = 23F, boxes = 1, from = userId, item = 3L, detail = BidDetail("detail-3")))
+  println("BID-ID: $bidId")
+
+  println("")
+  val roles = mapOf(6L to Traits(Trace(LocalDateTime.now())), 7L to Traits(Trace(LocalDateTime.now())))
+  val roleId = DrServer.mEngine.link(User::class.qualifiedName!!, userId, "roles", roles)
+  println("ROLE-ID: $roleId")
 }

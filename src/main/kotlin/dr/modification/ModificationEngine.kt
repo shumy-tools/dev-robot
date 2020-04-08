@@ -12,11 +12,8 @@ import kotlin.reflect.typeOf
 
 /* ------------------------- api -------------------------*/
 class ModificationEngine(private val adaptor: IModificationAdaptor) {
-  private val schema: Schema by lazy { DrServer.schema }
-
-  private val tableTranslator = schema.entities.map { (name, _) ->
-    name to name.replace('.', '_').toLowerCase()
-  }.toMap()
+  private val schema by lazy { DrServer.schema }
+  private val tableTranslator by lazy { DrServer.tableTranslator }
 
   fun create(new: Any): Long {
     val entity = new.javaClass.kotlin.qualifiedName
@@ -30,7 +27,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     checkEntityAndInsert(sEntity, null, new, instructions, insert)
 
     // commit instructions
-    val id = adaptor.commit(instructions)
+    val id = adaptor.commit(instructions).first()
     sEntity.onCreate(COMMITED, id, new)
 
     return id
@@ -49,7 +46,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     sEntity.onUpdate(COMMITED, id, new)
   }
 
-  fun add(entity: String, id: Long, rel: String, new: Any): Long {
+  fun add(entity: String, id: Long, rel: String, new: Any): List<Long> {
     val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
     val sRelation = sEntity.rels[rel] ?: throw Exception("Entity relation not found! - ($entity, $rel)")
 
@@ -66,27 +63,22 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     if (sRelation.type != RelationType.CREATE)
       throw Exception("Relation is not 'create'! - ($entity, $rel)")
 
-    //TODO: add support for many?
+    // creates one/many related entities
+    val instructions = Instructions()
 
-    // creates one child entity
-    val childInsert = Insert(tableTranslator.getValue(sRelation.ref.name))
-    val instructions = Instructions(childInsert)
-    checkEntityAndInsert(sRelation.ref, null, new, instructions, childInsert)
-
-    // add inv relation (already resolved)
-    val table = tableTranslator.getValue(sEntity.name)
-    childInsert.putData("inv_${table}_${sRelation.name}", id)
-    sEntity.onAdd(CHECKED, id, sRelation, null, new)
+    // supports new as Entity or Collection<Entity>
+    val children = addRelations(sEntity, sRelation, new, instructions, invRef = id)
+    instructions.roots.addAll(children)
 
     // commit instructions
-    val link = adaptor.commit(instructions)
-    sEntity.onCreate(COMMITED, link, new)
-    sEntity.onAdd(COMMITED, id, sRelation, link, new)
+    val ids = adaptor.commit(instructions)
+    //sEntity.onCreate(COMMITED, link, new)
+    //sEntity.onAdd(COMMITED, id, sRelation, link, new)
 
-    return link
+    return ids
   }
 
-  fun link(entity: String, id: Long, rel: String, new: Any) {
+  fun link(entity: String, id: Long, rel: String, new: Any): List<Long> {
     val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
     val sRelation = sEntity.rels[rel] ?: throw Exception("Entity relation not found! - ($entity, $rel)")
 
@@ -104,19 +96,21 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
       throw Exception("Relation is not 'link'! - ($entity, $rel)")
 
     // creates one/many links
-    val childInsert = Insert(tableTranslator.getValue(sRelation.ref.name))
-    val instructions = Instructions(childInsert)
-    if (sRelation.traits.isEmpty()) {
+    val instructions = Instructions()
+    val children = if (sRelation.traits.isEmpty()) {
       // supports new as Long or Collection<Long>
-      addLinksNoTraits(sEntity, sRelation, new, instructions, childInsert)
+      addLinksNoTraits(sEntity, sRelation, new, instructions, invRef = id)
     } else {
       // supports new as Pair<Long, Traits> or Map<Long, Traits>
-      addLinksWithTraits(sEntity, sRelation, new, instructions, childInsert)
+      addLinksWithTraits(sEntity, sRelation, new, instructions, invRef = id)
     }
+    instructions.roots.addAll(children)
 
     // commit instructions
-    adaptor.commit(instructions)
+    val ids = adaptor.commit(instructions)
     sEntity.onLink(COMMITED, id, sRelation, new)
+
+    return ids
   }
 
   fun check(entity: String, field: String, value: Any?) {
@@ -245,7 +239,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
 
     when (insOrUpd) {
       is Insert -> sEntity.onCreate(CHECKED, null, new)
-      is Update -> sEntity.onUpdate(CHECKED, id!!, new as Map<String, Any?>) // TODO: changed fields?
+      is Update -> sEntity.onUpdate(CHECKED, id!!, new as Map<String, Any?>)
     }
   }
 
@@ -306,68 +300,80 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun addRelations(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate) {
+  private fun addRelations(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): List<Insert> {
     if (insOrUpd is Update)
       throw Exception("Cannot update collections, use 'add/link' instead! - (${sEntity.name}, ${sRelation.name})")
 
-    if (rValue !is Collection<*>) {
-      addOneRelation(sEntity, sRelation, rValue, instructions, insOrUpd)
+    return if (rValue !is Collection<*>) {
+      listOf(addOneRelation(sEntity, sRelation, rValue, instructions, insOrUpd, invRef))
     } else {
       val col = (rValue as Collection<Any>)
-      col.forEach { addOneRelation(sEntity, sRelation, it, instructions, insOrUpd) }
+      col.map { addOneRelation(sEntity, sRelation, it, instructions, insOrUpd, invRef) }
     }
   }
 
-  private fun addOneRelation(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate) {
+  private fun addOneRelation(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): Insert {
     val childInsert = Insert(tableTranslator.getValue(sRelation.ref.name))
     checkEntityAndInsert(sRelation.ref, null, rValue, instructions, childInsert)
     val table = tableTranslator.getValue(sEntity.name)
-    childInsert.nativeRefs["inv_${table}_${sRelation.name}"] = insOrUpd
+
+    // select between not-resolved/resolved reference
+    if (invRef == null) childInsert.nativeRefs["inv_${table}_${sRelation.name}"] = insOrUpd!! else childInsert.putData("inv_${table}_${sRelation.name}", invRef)
+
     sEntity.onAdd(CHECKED, null, sRelation, null,  rValue)
+    return childInsert
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun addLinksNoTraits(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate) {
+  private fun addLinksNoTraits(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): List<Insert> {
     if (insOrUpd is Update)
       throw Exception("Cannot update collections, use 'add/link' instead! - (${sEntity.name}, ${sRelation.name})")
 
     // TODO: should traits support collections? (more tests required!) - change schema support
 
-    if (rValue !is Collection<*>) {
-      addOneLinkNoTraits(sEntity, sRelation, rValue as Long, instructions, insOrUpd)
+    return if (rValue !is Collection<*>) {
+      listOf(addOneLinkNoTraits(sEntity, sRelation, rValue as Long, instructions, insOrUpd, invRef))
     } else {
       val col = (rValue as Collection<Long>)
-      col.forEach { addOneLinkNoTraits(sEntity, sRelation, it, instructions, insOrUpd) }
+      col.map { addOneLinkNoTraits(sEntity, sRelation, it, instructions, insOrUpd, invRef) }
     }
   }
 
-  private fun addOneLinkNoTraits(sEntity: SEntity, sRelation: SRelation, link: Long, instructions: Instructions, insOrUpd: InsertOrUpdate) {
+  private fun addOneLinkNoTraits(sEntity: SEntity, sRelation: SRelation, link: Long, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): Insert {
     val table = tableTranslator.getValue(sEntity.name)
     val linkInsert = insertLink(table, sRelation, link, instructions)
-    linkInsert.nativeRefs["inv"] = insOrUpd
+
+    // select between not-resolved/resolved reference
+    if (invRef == null) linkInsert.nativeRefs["inv"] = insOrUpd!! else linkInsert.putData("inv", invRef)
+
     sEntity.onLink(CHECKED, null, sRelation, link)
+    return linkInsert
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun addLinksWithTraits(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate) {
+  private fun addLinksWithTraits(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): List<Insert> {
     if (insOrUpd is Update)
       throw Exception("Cannot update collections, use 'add/link' instead! - (${sEntity.name}, ${sRelation.name})")
 
     // TODO: should traits support collections? (more tests required!) - change schema support
 
-    if (rValue !is Map<*, *>) {
+    return if (rValue !is Map<*, *>) {
       val (link, traits) = rValue as Pair<Long, Traits>
-      addOneLinkWithTraits(sEntity, sRelation, link, traits, instructions, insOrUpd)
+      listOf(addOneLinkWithTraits(sEntity, sRelation, link, traits, instructions, insOrUpd, invRef))
     } else {
       val map = rValue as Map<Long, Traits>
-      map.forEach { (link, traits) -> addOneLinkWithTraits(sEntity, sRelation, link, traits, instructions, insOrUpd) }
+      map.map { (link, traits) -> addOneLinkWithTraits(sEntity, sRelation, link, traits, instructions, insOrUpd, invRef) }
     }
   }
 
-  private fun addOneLinkWithTraits(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Traits, instructions: Instructions, insOrUpd: InsertOrUpdate) {
+  private fun addOneLinkWithTraits(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Traits, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): Insert {
     val linkInsert = checkTraitsAndInsert(sEntity, sRelation, link, traits, instructions)
-    linkInsert.nativeRefs["inv"] = insOrUpd
+
+    // select between not-resolved/resolved reference
+    if (invRef == null) linkInsert.nativeRefs["inv"] = insOrUpd!! else linkInsert.putData("inv", invRef)
+
     sEntity.onLink(CHECKED, null, sRelation, link)
+    return linkInsert
   }
 
   private fun checkTraitsAndInsert(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Traits, instructions: Instructions): Insert {

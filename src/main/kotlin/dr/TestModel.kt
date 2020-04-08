@@ -24,7 +24,7 @@ data class UserMarket(
 @Master
 data class Market(val name: String)
 
-@Master @Listeners(UserListener::class)
+@Master
 data class User(
   val name: String,
   @Checks(EmailCheck::class) val email: String,
@@ -36,42 +36,13 @@ data class User(
 ) {
   val timestamp = LocalDateTime.now()
 }
-  // process events and check business rules (can plug a rule engine)
-  class UserListener: EListener<User>() {
-    @Events(EventType.CHECKED, EventType.COMMITED)
-    override fun onCreate(type: EventType, id: Long?, new: User) {
-      println("CREATE-User($type) - ($id, $new)")
-    }
 
-    @Events(EventType.CHECKED)
-    override fun onUpdate(type: EventType, id: Long, data: Map<String, Any?>) {
-      println("UPDATE-User($type) - ($id, $data)")
-    }
-  }
-
-@Detail  @Listeners(AddressListener::class)
+@Detail
 data class Address(
   val country: String,
   val city: String,
   val address: String
 )
-  // process events and check business rules (can plug a rule engine)
-  class AddressListener: EListener<Address>() {
-    @Events(EventType.CHECKED, EventType.COMMITED)
-    override fun onCreate(type: EventType, id: Long?, new: Address) {
-      println("CREATE-Address($type) - ($id, $new)")
-    }
-
-    @Events(EventType.CHECKED)
-    override fun onUpdate(type: EventType, id: Long, data: Map<String, Any?>) {
-      println("UPDATE-Address($type) - ($id, $data)")
-    }
-
-    @Events(EventType.CHECKED)
-    override fun onLink(type: EventType, id: Long?, sRelation: SRelation, new: Any) {
-      println("LINK-Address($type) - ($id, ${sRelation.name}, $new)")
-    }
-  }
 
 @Master
 data class Role(
