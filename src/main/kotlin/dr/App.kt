@@ -56,9 +56,9 @@ class TestModificationAdaptor: IModificationAdaptor {
     println("TX-START")
     val ids = instructions.exec {
       when (it) {
-        is Insert -> { println("  (${++idSeq}) -> $it"); idSeq }
-        is Update -> { println("  (${it.id}) -> $it"); it.id }
-        is Delete -> { println("  (${it.id}) -> $it"); it.id }
+        is Insert -> ++idSeq
+        is Update -> it.id
+        is Delete -> it.id
       }
     }
     println("TX-COMMIT")

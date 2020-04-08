@@ -52,57 +52,54 @@ class Schema(
 )
 
   /* ------------------------- entity -------------------------*/
-  class SEntity(val name: String, val type: EntityType, val listeners: Set<SListener>): EListener<Any>() {
+  class SEntity(val name: String, val type: EntityType, val listeners: Set<SListener>) {
     lateinit var fields: Map<String, SField>
       internal set
 
     lateinit var rels: Map<String, SRelation>
       internal set
 
-    override fun onRead(id: Long, tree: Map<String, Any?>) {
-      println("onRead($name, $id) - (tree=$tree)")
+    /*override fun onRead(id: Long, tree: Map<String, Any?>) {
+      //println("onRead($name, $id) - {tree=$tree}")
       listeners.forEach { it.listener.onRead(id, tree) }
     }
 
     override fun onCreate(type: EventType, id: Long?, new: Any) {
-      println("onCreate($type, $name, $id) - (new=$new)")
+      //println("onCreate($type, $name, $id) - {new=$new}")
       listeners.forEach { it.get(CREATE, type)?.onCreate(type, id, new) }
     }
 
     override fun onUpdate(type: EventType, id: Long, data: Map<String, Any?>) {
-      println("onUpdate($type, $name, $id) - (data=$data)")
+      //println("onUpdate($type, $name, $id) - {data=$data}")
       listeners.forEach { it.get(UPDATE, type)?.onUpdate(type, id, data) }
     }
 
     override fun onDelete(type: EventType, id: Long) {
-      println("onDelete($type, $name, $id)")
+      //println("onDelete($type, $name, $id)")
       listeners.forEach { it.get(DELETE, type)?.onDelete(type, id) }
     }
 
     override fun onAdd(type: EventType, id: Long?, sRelation: SRelation, link: Long?, new: Any) {
-      println("onAdd($type, $name, $id) - (rel=${sRelation.name}, link=$link, new=$new)")
+      //println("onAdd($type, $name, $id) - {rel=${sRelation.name}, link=$link, new=$new}")
       listeners.forEach { it.get(ADD, type)?.onAdd(type, id, sRelation, link, new) }
     }
 
     override fun onLink(type: EventType, id: Long?, sRelation: SRelation, new: Any) {
-      println("onLink($type, $name, $id) - (rel=${sRelation.name}, new=$new)")
+      //println("onLink($type, $name, $id) - {rel=${sRelation.name}, new=$new}")
       listeners.forEach { it.get(LINK, type)?.onLink(type, id, sRelation, new) }
     }
 
     override fun onRemove(type: EventType, id: Long, sRelation: SRelation, link: Long) {
-      println("onRemove($type, $name, $id) - (rel=${sRelation.name}, link=$link)")
+      //println("onRemove($type, $name, $id) - {rel=${sRelation.name}, link=$link}")
       listeners.forEach { it.get(REMOVE, type)?.onRemove(type, id, sRelation, link) }
-    }
+    }*/
   }
 
-    class SField(
-      val name: String,
-      val type: FieldType,
-      val checks: Set<SCheck>,
-      private val property: KProperty1<Any, *>,
+    abstract class SFieldOrRelation {
+      abstract val name: String
+      abstract val property: KProperty1<Any, *>
+      abstract val isOptional: Boolean
 
-      val isOptional: Boolean
-    ) {
       var isInput: Boolean = false
         internal set
 
@@ -111,24 +108,26 @@ class Schema(
       }
     }
 
-    class SRelation(
-      val name: String,
+    class SField (
+      override val name: String,
+      val type: FieldType,
+      val checks: Set<SCheck>,
+      override val property: KProperty1<Any, *>,
+
+      override val isOptional: Boolean
+    ): SFieldOrRelation()
+
+    class SRelation (
+      override val name: String,
       val type: RelationType,
       val ref: SEntity,
       val traits: Set<SEntity>,
-      private val property: KProperty1<Any, *>,
+      override val property: KProperty1<Any, *>,
 
       val isCollection: Boolean,
       val isOpen: Boolean,
-      val isOptional: Boolean
-    ) {
-      var isInput: Boolean = false
-        internal set
-
-      fun getValue(instance: Any): Any? {
-        return this.property.get(instance)
-      }
-    }
+      override val isOptional: Boolean
+    ): SFieldOrRelation()
 
     class SCheck(val name: String, private val check: FieldCheck<Any>) {
       fun check(value: Any): String? {

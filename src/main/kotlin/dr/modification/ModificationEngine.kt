@@ -2,13 +2,9 @@ package dr.modification
 
 import dr.DrServer
 import dr.schema.*
-import dr.schema.EventType.*
+import dr.schema.ActionType.*
 import dr.spi.*
-import kotlin.reflect.full.createType
-import kotlin.reflect.full.isSubclassOf
-import kotlin.reflect.full.isSubtypeOf
 import kotlin.reflect.full.memberProperties
-import kotlin.reflect.typeOf
 
 /* ------------------------- api -------------------------*/
 class ModificationEngine(private val adaptor: IModificationAdaptor) {
@@ -22,13 +18,14 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
       throw Exception("Creation is only valid for master entities! - ($entity)")
 
     // create entity
-    val insert = Insert(tableTranslator.getValue(sEntity.name))
+    val insert = Insert(tableTranslator.getValue(sEntity.name), CreateAction(sEntity))
     val instructions = Instructions(insert)
-    checkEntityAndInsert(sEntity, null, new, instructions, insert)
+    checkEntityAndInsert(sEntity, new, instructions, insert)
 
     // commit instructions
+    instructions.fireCheckedListeners()
     val id = adaptor.commit(instructions).first()
-    sEntity.onCreate(COMMITED, id, new)
+    instructions.fireCommittedListeners()
 
     return id
   }
@@ -37,13 +34,14 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
 
     // update entity
-    val update = Update(sEntity.name, id)
+    val update = Update(sEntity.name, id, UpdateAction(sEntity, id))
     val instructions = Instructions(update)
-    checkEntityAndInsert(sEntity, id, new, instructions, update)
+    checkEntityAndInsert(sEntity, new, instructions, update)
 
     // commit instructions
+    instructions.fireCheckedListeners()
     adaptor.commit(instructions)
-    sEntity.onUpdate(COMMITED, id, new)
+    instructions.fireCommittedListeners()
   }
 
   fun add(entity: String, id: Long, rel: String, new: Any): List<Long> {
@@ -71,9 +69,9 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     instructions.roots.addAll(children)
 
     // commit instructions
+    instructions.fireCheckedListeners()
     val ids = adaptor.commit(instructions)
-    //sEntity.onCreate(COMMITED, link, new)
-    //sEntity.onAdd(COMMITED, id, sRelation, link, new)
+    instructions.fireCommittedListeners()
 
     return ids
   }
@@ -107,8 +105,9 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     instructions.roots.addAll(children)
 
     // commit instructions
+    instructions.fireCheckedListeners()
     val ids = adaptor.commit(instructions)
-    sEntity.onLink(COMMITED, id, sRelation, new)
+    instructions.fireCommittedListeners()
 
     return ids
   }
@@ -133,13 +132,11 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun checkEntityAndInsert(sEntity: SEntity, id: Long?, new: Any, instructions: Instructions, insOrUpd: InsertOrUpdate, include: Boolean = true) {
-    val instData = insOrUpd.data as LinkedHashMap<String, Any?>
-
+  private fun checkEntityAndInsert(sEntity: SEntity, new: Any, instructions: Instructions, insOrUpd: InsertOrUpdate, include: Boolean = true) {
     // index before adding the instruction (direct references appear before this index)
-    val index = if (instructions.list.size == 0) 0 else instructions.list.size - 1
+    val index = if (instructions.size == 0) 0 else instructions.size - 1
     if (include)
-      instructions.list.add(insOrUpd)
+      instructions.addInstruction(insOrUpd)
 
     // get input fields/relations (any values not part of the schema are ignored)
     val props = if (insOrUpd is Update) {
@@ -185,7 +182,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
       }
 
       // set even if null
-      instData[prop] = fValue
+      insOrUpd.putData(prop, fValue)
     }
 
     // --------------------------------- check and process relations ---------------------------------
@@ -214,7 +211,8 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
       // check relations constraints and create instruction (insert)
       when (sRelation.type) {
         RelationType.CREATE -> if (!sRelation.isCollection) {
-          if (rValue != null) setRelation(sEntity, sRelation, rValue, instructions, insOrUpd, index) else instData["ref_$prop"] = null
+          // TODO: should the ref-entity be deleted when null?
+          if (rValue != null) setRelation(sEntity, sRelation, rValue, instructions, insOrUpd, index) else insOrUpd.putResolvedRef("ref_$prop", null)
         } else {
           addRelations(sEntity, sRelation, rValue!!, instructions, insOrUpd)
         }
@@ -222,24 +220,21 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
         RelationType.LINK -> if (sRelation.traits.isEmpty()) {
           // links with no traits
           if (!sRelation.isCollection) {
-            if (rValue != null) setLinkNoTraits(sEntity, sRelation, rValue, instructions, insOrUpd) else instData["inv"] = null
+            // TODO: should the link be deleted when null?
+            if (rValue != null) setLinkNoTraits(sEntity, sRelation, rValue, instructions, insOrUpd) else insOrUpd.putResolvedRef("inv", null)
           } else {
             addLinksNoTraits(sEntity, sRelation, rValue!!, instructions, insOrUpd)
           }
         } else {
           // links with traits
           if (!sRelation.isCollection) {
-            if (rValue != null) setLinkWithTraits(sEntity, sRelation, rValue, instructions, insOrUpd) else instData["inv"] = null
+            // TODO: should the link be deleted when null?
+            if (rValue != null) setLinkWithTraits(sEntity, sRelation, rValue, instructions, insOrUpd) else insOrUpd.putResolvedRef("inv", null)
           } else {
             addLinksWithTraits(sEntity, sRelation, rValue!!, instructions, insOrUpd)
           }
         }
       }
-    }
-
-    when (insOrUpd) {
-      is Insert -> sEntity.onCreate(CHECKED, null, new)
-      is Update -> sEntity.onUpdate(CHECKED, id!!, new as Map<String, Any?>)
     }
   }
 
@@ -251,15 +246,14 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     }
 
     if (sEntity.type != EntityType.TRAIT) {
-      val refInsert = Insert(tableTranslator.getValue(sRelation.ref.name))
-      checkEntityAndInsert(sRelation.ref, null, rValue, instructions, refInsert, false)
-      insOrUpd.nativeRefs["ref_${sRelation.name}"] = refInsert
+      val refInsert = Insert(tableTranslator.getValue(sRelation.ref.name), CreateAction(sRelation.ref))
+      checkEntityAndInsert(sRelation.ref, rValue, instructions, refInsert, false)
 
       // direct references must be inserted before the parent insert
-      instructions.list.add(index, refInsert)
+      insOrUpd.putUnresolvedRef("ref_${sRelation.name}", refInsert)
+      instructions.addInstruction(index, refInsert)
     } else {
-      // TODO: experimental embedded traits
-      checkEntityAndInsert(sRelation.ref, null, rValue, instructions, insOrUpd, false)
+      checkEntityAndInsert(sRelation.ref, rValue, instructions, insOrUpd, false)
     }
   }
 
@@ -267,20 +261,14 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     try {
       val link = rValue as Long
       if (sEntity.type != EntityType.TRAIT) {
-        /* experimental embedded links!
-        val linkInsert = insertLink(sEntity, sRelation, link, instructions, false)
-        insOrUpd.nativeRefs["ref_$prop"] = linkInsert
-
-        // direct references must be inserted before the parent insert
-        instructions.list.add(index, linkInsert)
-        */
-
         val table = tableTranslator.getValue(sEntity.name)
-        val linkInsert = insertLink(table, sRelation, link, instructions)
-        linkInsert.nativeRefs["inv"] = insOrUpd
+        Insert("${table}__${sRelation.name}", LinkAction(sEntity, sRelation)).apply {
+          putResolvedRef("ref", link)
+          putUnresolvedRef("inv", insOrUpd)
+          instructions.addInstruction(this)
+        }
       } else {
-        // TODO: experimental embedded traits
-        insOrUpd.putData("ref_${sRelation.name}", link)
+        insOrUpd.putResolvedRef("ref_${sRelation.name}", link)
       }
     } catch (ex: ClassCastException) {
       throw Exception("Invalid field type, expected Long found ${rValue.javaClass.kotlin.qualifiedName}! - (${sEntity.name}, ${sRelation.name})")
@@ -291,9 +279,11 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
   private fun setLinkWithTraits(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate) {
     try {
       val (link, traits) = rValue as Pair<Long, Traits>
-      val linkInsert = checkTraitsAndInsert(sEntity, sRelation, link, traits, instructions)
-      linkInsert.nativeRefs["inv"] = insOrUpd
-      sEntity.onLink(CHECKED, null, sRelation, link)
+      checkTraitsAndInsert(sEntity, sRelation, link, traits, instructions).apply {
+        putUnresolvedRef("inv", insOrUpd)
+      }
+
+      //sEntity.onLink(CHECKED, null, sRelation, link)
     } catch (ex: ClassCastException) {
       throw Exception("Invalid field type, expected Pair<Long, Traits> found ${rValue.javaClass.kotlin.qualifiedName}! - (${sEntity.name}, ${sRelation.name})")
     }
@@ -313,14 +303,12 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
   }
 
   private fun addOneRelation(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): Insert {
-    val childInsert = Insert(tableTranslator.getValue(sRelation.ref.name))
-    checkEntityAndInsert(sRelation.ref, null, rValue, instructions, childInsert)
-    val table = tableTranslator.getValue(sEntity.name)
+    val invTable = tableTranslator.getValue(sEntity.name)
+    val childInsert = Insert(tableTranslator.getValue(sRelation.ref.name), AddAction(sEntity, sRelation)).apply {
+      if (invRef == null) putUnresolvedRef("inv_${invTable}_${sRelation.name}", insOrUpd!!) else putResolvedRef("inv_${invTable}_${sRelation.name}", invRef)
+    }
 
-    // select between not-resolved/resolved reference
-    if (invRef == null) childInsert.nativeRefs["inv_${table}_${sRelation.name}"] = insOrUpd!! else childInsert.putData("inv_${table}_${sRelation.name}", invRef)
-
-    sEntity.onAdd(CHECKED, null, sRelation, null,  rValue)
+    checkEntityAndInsert(sRelation.ref, rValue, instructions, childInsert)
     return childInsert
   }
 
@@ -341,13 +329,11 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
 
   private fun addOneLinkNoTraits(sEntity: SEntity, sRelation: SRelation, link: Long, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): Insert {
     val table = tableTranslator.getValue(sEntity.name)
-    val linkInsert = insertLink(table, sRelation, link, instructions)
-
-    // select between not-resolved/resolved reference
-    if (invRef == null) linkInsert.nativeRefs["inv"] = insOrUpd!! else linkInsert.putData("inv", invRef)
-
-    sEntity.onLink(CHECKED, null, sRelation, link)
-    return linkInsert
+    return Insert("${table}__${sRelation.name}", LinkAction(sEntity, sRelation)).apply {
+      putResolvedRef("ref", link)
+      if (invRef == null) putUnresolvedRef("inv", insOrUpd!!) else putResolvedRef("inv", invRef)
+      instructions.addInstruction(this)
+    }
   }
 
   @Suppress("UNCHECKED_CAST")
@@ -367,13 +353,9 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
   }
 
   private fun addOneLinkWithTraits(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Traits, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): Insert {
-    val linkInsert = checkTraitsAndInsert(sEntity, sRelation, link, traits, instructions)
-
-    // select between not-resolved/resolved reference
-    if (invRef == null) linkInsert.nativeRefs["inv"] = insOrUpd!! else linkInsert.putData("inv", invRef)
-
-    sEntity.onLink(CHECKED, null, sRelation, link)
-    return linkInsert
+    return checkTraitsAndInsert(sEntity, sRelation, link, traits, instructions).apply {
+      if (invRef == null) putUnresolvedRef("inv", insOrUpd!!) else putResolvedRef("inv", invRef)
+    }
   }
 
   private fun checkTraitsAndInsert(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Traits, instructions: Instructions): Insert {
@@ -381,9 +363,10 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
       throw Exception("Invalid number of traits, expected '${sRelation.traits.size}' found '${traits.traits.size}'! - (${sEntity.name}, ${sRelation.name})")
 
     val table = tableTranslator.getValue(sEntity.name)
-    val traitInsert = Insert("${table}__${sRelation.name}")
-    traitInsert.putData("ref", link)
-    instructions.list.add(traitInsert)
+    val traitInsert = Insert("${table}__${sRelation.name}", LinkAction(sEntity, sRelation)).apply {
+      putResolvedRef("ref", link)
+      instructions.addInstruction(this)
+    }
 
     val processedTraits = mutableSetOf<Any>()
     for (trait in traits.traits) {
@@ -395,7 +378,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
         throw Exception("Trait '${sTrait.name}' not part of the model! - (${sEntity.name}, ${sRelation.name})")
 
       // Does not insert. Compact all trait fields
-      checkEntityAndInsert(sTrait, null, trait, instructions, traitInsert, false)
+      checkEntityAndInsert(sTrait, trait, instructions, traitInsert, false)
     }
 
     if (sRelation.traits.size != processedTraits.size)
@@ -407,16 +390,6 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
 
 
 /* ------------------------- helpers -------------------------*/
-private fun insertLink(table: String, sRelation: SRelation, link: Long, instructions: Instructions, include: Boolean = true): Insert {
-  val linkInsert = Insert("${table}__${sRelation.name}")
-  linkInsert.putData("ref", link)
-
-  if (include)
-    instructions.list.add(linkInsert)
-
-  return linkInsert
-}
-
 private fun checkFieldConstraints(sEntity: SEntity, field: String, sField: SField, value: Any) {
   sField.checks.forEach {
     it.check(value)?.let { msg ->

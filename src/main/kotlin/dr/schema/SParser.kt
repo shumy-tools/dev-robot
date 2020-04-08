@@ -75,31 +75,20 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
       tmpSchema.masters[name] = entity
     }
 
-    val tmpAllProps = this.memberProperties.map { it.name to it }.toMap()
+    // process fields and relations
     val tmpInputProps = this.primaryConstructor!!.parameters.map { it.name }.toSet()
-
     val tmpFields = LinkedHashMap<String, SField>()
     val tmpRels = LinkedHashMap<String, SRelation>()
 
-    // process input fields
-    for (field in this.primaryConstructor!!.parameters) {
-      tmpAllProps[field.name]?.let {
-        val fieldOrRelation = it.processFieldOrRelation(name, tmpSchema)
-        if (fieldOrRelation is SField) {
-          tmpFields[field.name!!] = fieldOrRelation.apply { isInput = true }
-        } else {
-          tmpRels[field.name!!] = (fieldOrRelation as SRelation).apply { isInput = true }
-        }
-      }
-    }
+    for (prop in memberProperties) {
+      if (prop.name.startsWith("ref") || prop.name.startsWith("inv"))
+        throw Exception("Reserved names starting with 'ref' or 'inv'! - ($name, ${prop.name})")
 
-    // process internal fields
-    for (field in this.memberProperties.filter { !tmpInputProps.contains(it.name) }) {
-      val fieldOrRelation = field.processFieldOrRelation(name, tmpSchema)
+      val fieldOrRelation = prop.processFieldOrRelation(name, tmpSchema).apply { isInput = tmpInputProps.contains(prop.name) }
       if (fieldOrRelation is SField) {
-        tmpFields[field.name] = fieldOrRelation
+        tmpFields[prop.name] = fieldOrRelation
       } else {
-        tmpRels[field.name] = fieldOrRelation as SRelation
+        tmpRels[prop.name] = (fieldOrRelation as SRelation)
       }
     }
 
@@ -165,7 +154,7 @@ private fun KClass<*>.processListeners(): Set<SListener> {
   }.toSet()
 }
 
-private fun KProperty1<*, *>.processFieldOrRelation(name: String, tmpSchema: TempSchema): Any {
+private fun KProperty1<*, *>.processFieldOrRelation(name: String, tmpSchema: TempSchema): SFieldOrRelation {
   val rType = this.returnType
   if (this is KMutableProperty1<*, *>)
     throw Exception("All fields must be immutable! - ($name, ${this.name})")
