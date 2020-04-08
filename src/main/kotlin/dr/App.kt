@@ -117,7 +117,7 @@ fun main(args: Array<String>) {
     "market" to Pair(5L, Traits(UserMarket(Trace(LocalDateTime.of(2000, Month.JANUARY, 1, 12, 0,0)),2L)))
   ))
 
-  val auction = DrServer.mEngine.create(
+  val auctionId = DrServer.mEngine.create(
     Auction(
       name = "Continente",
       items = setOf(1L, 2L),
@@ -127,4 +127,6 @@ fun main(args: Array<String>) {
       )
     )
   )
+
+  println("AUCTION-ID: $auctionId")
 }

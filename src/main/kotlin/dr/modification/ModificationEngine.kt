@@ -190,7 +190,6 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
               // TODO: experimental embedded traits
               checkEntityAndInsert(sRelation.ref, null, rValue, instructions, insOrUpd, false)
             }
-
           } else {
             instData["ref_$prop"] = null
           }
@@ -212,21 +211,18 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
           if (!sRelation.isCollection) {
             if (rValue != null) {
               try {
-                /*val link = rValue as Long
-                val linkInsert = insertLink(sEntity, sRelation, link, instructions)
-                linkInsert.nativeRefs["inv"] = insOrUpd*/
-
-                // TODO: experimental embedded traits
                   val link = rValue as Long
-                  //val linkInsert = insertLink(sEntity, sRelation, link, instructions, false)
-                  //insOrUpd.nativeRefs["ref_$prop"] = linkInsert
-
                   if (sEntity.type != EntityType.TRAIT) {
+                    /* experimental embedded links!
                     val linkInsert = insertLink(sEntity, sRelation, link, instructions, false)
                     insOrUpd.nativeRefs["ref_$prop"] = linkInsert
 
                     // direct references must be inserted before the parent insert
                     instructions.list.add(index, linkInsert)
+                    */
+
+                    val linkInsert = insertLink(sEntity, sRelation, link, instructions)
+                    linkInsert.nativeRefs["inv"] = insOrUpd
                   } else {
                     // TODO: experimental embedded traits
                     insOrUpd.putData("ref_$prop", link)
@@ -241,7 +237,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
             if (insOrUpd is Update)
               throw Exception("Cannot update collections, use 'add/link' instead! - (${sEntity.name}, $prop)")
 
-            // TODO: no collection support on traits?
+            // TODO: should traits support collections? (more tests required!) - change schema support
 
             val list = rValue as Collection<Long>
             list.forEach { link ->
@@ -267,6 +263,8 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
           } else {
             if (insOrUpd is Update)
               throw Exception("Cannot update collections, use 'add/link' instead! - (${sEntity.name}, $prop)")
+
+            // TODO: should traits support collections? (more tests required!) - change schema support
 
             val map = rValue as Map<Long, Traits>
             map.forEach { (link, traits) ->
