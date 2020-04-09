@@ -85,7 +85,7 @@ interface IModificationAdaptor {
 
       class DeleteAction(override val sEntity: SEntity, val id: Long): Action(DELETE) {
         override fun toString(): String {
-          return "(UPDATE - ${sEntity.name}, $id)"
+          return "(DELETE - ${sEntity.name}, $id)"
         }
       }
 

@@ -5,10 +5,7 @@ import com.fasterxml.jackson.databind.ObjectWriter
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import dr.modification.Delete
-import dr.modification.Insert
-import dr.modification.ModificationEngine
-import dr.modification.Update
+import dr.modification.*
 import dr.query.QTree
 import dr.query.QueryEngine
 import dr.schema.SParser
@@ -116,10 +113,11 @@ fun main(args: Array<String>) {
   println("USER-ID: $userId")
 
   println("")
+  val marketLink = Pair(5L, Traits(UserMarket(Trace(LocalDateTime.of(2000, Month.JANUARY, 1, 12, 0,0)),2L)))
   DrServer.mEngine.update(User::class.qualifiedName!!, userId, mapOf(
     "name" to "Micael",
     "email" to "email@gmail.com",
-    "market" to Pair(5L, Traits(UserMarket(Trace(LocalDateTime.of(2000, Month.JANUARY, 1, 12, 0,0)),2L)))
+    "market" to OneLinkWithTraits(marketLink)
   ))
 
   println("")
@@ -141,9 +139,9 @@ fun main(args: Array<String>) {
 
   println("")
   val roles = mapOf(6L to Traits(Trace(LocalDateTime.now())), 7L to Traits(Trace(LocalDateTime.now())))
-  val roleId = DrServer.mEngine.link(User::class.qualifiedName!!, userId, "roles", roles)
-  println("ROLE-ID: $roleId")
+  val roleIds = DrServer.mEngine.link(User::class.qualifiedName!!, userId, "roles", ManyLinksWithTraits(roles))
+  println("ROLE-ID: $roleIds")
 
   println("")
-  DrServer.mEngine.unlink(User::class.qualifiedName!!, "roles", roleId)
+  DrServer.mEngine.unlink(User::class.qualifiedName!!, "roles", ManyLinkDelete(roleIds))
 }
