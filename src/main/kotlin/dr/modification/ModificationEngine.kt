@@ -1,5 +1,8 @@
 package dr.modification
 
+import com.fasterxml.jackson.annotation.JsonSubTypes
+import com.fasterxml.jackson.annotation.JsonTypeInfo
+import com.fasterxml.jackson.annotation.JsonTypeName
 import dr.DrServer
 import dr.schema.*
 import dr.spi.*
@@ -7,18 +10,32 @@ import kotlin.reflect.full.memberProperties
 import kotlin.reflect.typeOf
 
 /* ------------------------- api -------------------------*/
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME)
 sealed class LinkData
   sealed class LinkCreate: LinkData()
+    @JsonTypeName("many-link")
     class ManyLinksWithoutTraits(val refs: Collection<Long>): LinkCreate()
+
+    @JsonTypeName("one-link")
     class OneLinkWithoutTraits(val ref: Long): LinkCreate()
 
+    @JsonTypeName("many-link-traits")
     class ManyLinksWithTraits(val refs: Map<Long, Traits>): LinkCreate()
-    class OneLinkWithTraits(val ref: Pair<Long, Traits>): LinkCreate()
+
+    @JsonTypeName("one-link-traits")
+    class OneLinkWithTraits(val ref: Long, val traits: Traits): LinkCreate()
 
   sealed class LinkDelete: LinkData()
+    @JsonTypeName("many-unlink")
     class ManyLinkDelete(val links: Collection<Long>): LinkDelete()
+
+    @JsonTypeName("one-unlink")
     class OneLinkDelete(val link: Long): LinkDelete()
 
+class UpdateData(
+  @JsonTypeInfo(use = JsonTypeInfo.Id.NAME)
+  val data: Map<String, Any?>
+)
 
 class ModificationEngine(private val adaptor: IModificationAdaptor) {
   private val schema by lazy { DrServer.schema }
@@ -43,13 +60,13 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     return id
   }
 
-  fun update(entity: String, id: Long, new: Map<String, Any?>) {
+  fun update(entity: String, id: Long, new: UpdateData) {
     val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
 
     // update entity
     val update = Update(sEntity.name, id, UpdateAction(sEntity, id))
     val instructions = Instructions(update)
-    checkEntityAndInsert(sEntity, new, instructions, update)
+    checkEntityAndInsert(sEntity, new.data, instructions, update)
 
     // commit instructions
     instructions.fireCheckedListeners()
@@ -243,7 +260,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
   }
 
   private fun setLinkWithTraits(sEntity: SEntity, sRelation: SRelation, data: OneLinkWithTraits, instructions: Instructions, unresolvedRef: InsertOrUpdate) {
-    checkTraitsAndInsert(sEntity, sRelation, data.ref.first, data.ref.second, instructions).apply {
+    checkTraitsAndInsert(sEntity, sRelation, data.ref, data.traits, instructions).apply {
       putUnresolvedRef("inv", unresolvedRef)
     }
   }
@@ -280,8 +297,8 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     return when (data) {
       is OneLinkWithoutTraits -> listOf(addOneLinkNoTraits(sEntity, sRelation, data.ref, instructions, unresolvedRef, resolvedRef))
       is ManyLinksWithoutTraits -> data.refs.map { addOneLinkNoTraits(sEntity, sRelation, it, instructions, unresolvedRef, resolvedRef) }
-      is OneLinkWithTraits -> listOf(addOneLinkWithTraits(sEntity, sRelation, data.ref, instructions, unresolvedRef, resolvedRef))
-      is ManyLinksWithTraits -> data.refs.map { addOneLinkWithTraits(sEntity, sRelation, it.toPair(), instructions, unresolvedRef, resolvedRef) }
+      is OneLinkWithTraits -> listOf(addOneLinkWithTraits(sEntity, sRelation, data.ref, data.traits, instructions, unresolvedRef, resolvedRef))
+      is ManyLinksWithTraits -> data.refs.map { addOneLinkWithTraits(sEntity, sRelation, it.key, it.value, instructions, unresolvedRef, resolvedRef) }
     }
   }
 
@@ -294,8 +311,8 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     }
   }
 
-  private fun addOneLinkWithTraits(sEntity: SEntity, sRelation: SRelation, ref: Pair<Long, Traits>, instructions: Instructions, unresolvedRef: InsertOrUpdate? = null, resolvedRef: Long? = null): Insert {
-    return checkTraitsAndInsert(sEntity, sRelation, ref.first, ref.second, instructions).apply {
+  private fun addOneLinkWithTraits(sEntity: SEntity, sRelation: SRelation, ref: Long, traits: Traits, instructions: Instructions, unresolvedRef: InsertOrUpdate? = null, resolvedRef: Long? = null): Insert {
+    return checkTraitsAndInsert(sEntity, sRelation, ref, traits, instructions).apply {
       if (resolvedRef == null) putUnresolvedRef("inv", unresolvedRef!!) else putResolvedRef("inv", resolvedRef)
     }
   }
@@ -417,7 +434,7 @@ private fun Any?.translate(sRelation: SRelation): Any? {
   return if (sRelation.type == RelationType.LINK) {
     when (val data = this!!) {
       is Long -> OneLinkWithoutTraits(data)
-      is Pair<*, *> -> OneLinkWithTraits(data as Pair<Long, Traits>)
+      is Pair<*, *> -> OneLinkWithTraits(data.first as Long, data.second as Traits)
       is Collection<*> -> ManyLinksWithoutTraits(data as Collection<Long>)
       is Map<*, *> -> ManyLinksWithTraits(data as Map<Long, Traits>)
       else -> throw  Exception("Unable to translate link '${data.javaClass.kotlin.qualifiedName}'! - (Code bug, please report the issue)")

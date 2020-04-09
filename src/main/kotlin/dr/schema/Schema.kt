@@ -1,5 +1,6 @@
 package dr.schema
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo
 import dr.modification.Delete
 import dr.modification.Insert
 import dr.modification.Instruction
@@ -42,7 +43,10 @@ enum class RelationType {
 }
 
 /* ------------------------- structures -------------------------*/
-class Traits(vararg val traits: Any)
+class Traits(
+  @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
+  vararg val traits: Any
+)
 
 class Schema(
   val masters: Map<String, SEntity>,
