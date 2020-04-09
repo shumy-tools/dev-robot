@@ -5,7 +5,10 @@ import com.fasterxml.jackson.databind.ObjectWriter
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import dr.modification.Delete
+import dr.modification.Insert
 import dr.modification.ModificationEngine
+import dr.modification.Update
 import dr.query.QTree
 import dr.query.QueryEngine
 import dr.schema.SParser
@@ -54,7 +57,6 @@ class TestModificationAdaptor: IModificationAdaptor {
   var idSeq = 9L;
 
   override fun commit(instructions: Instructions): List<Long> {
-    println("TX-START")
     val ids = instructions.exec {
       when (it) {
         is Insert -> ++idSeq
@@ -62,7 +64,7 @@ class TestModificationAdaptor: IModificationAdaptor {
         is Delete -> it.id
       }
     }
-    println("TX-COMMIT")
+    println("  --COMMITTED--")
     return ids
   }
 }
@@ -141,4 +143,7 @@ fun main(args: Array<String>) {
   val roles = mapOf(6L to Traits(Trace(LocalDateTime.now())), 7L to Traits(Trace(LocalDateTime.now())))
   val roleId = DrServer.mEngine.link(User::class.qualifiedName!!, userId, "roles", roles)
   println("ROLE-ID: $roleId")
+
+  println("")
+  DrServer.mEngine.unlink(User::class.qualifiedName!!, "roles", roleId)
 }

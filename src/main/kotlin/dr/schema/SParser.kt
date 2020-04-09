@@ -144,7 +144,7 @@ private fun KClass<*>.processListeners(): Set<SListener> {
         ActionType.DELETE.funName -> ActionType.DELETE
         ActionType.ADD.funName -> ActionType.ADD
         ActionType.LINK.funName -> ActionType.LINK
-        ActionType.REMOVE.funName -> ActionType.REMOVE
+        ActionType.UNLINK.funName -> ActionType.UNLINK
         else -> null
       }
 

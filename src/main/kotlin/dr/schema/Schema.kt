@@ -1,5 +1,9 @@
 package dr.schema
 
+import dr.modification.Delete
+import dr.modification.Insert
+import dr.modification.Instruction
+import dr.modification.Update
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty1
 
@@ -38,11 +42,7 @@ enum class RelationType {
 }
 
 /* ------------------------- structures -------------------------*/
-class Traits(vararg val traits: Any) /*{
-  override fun toString(): String {
-    return "[${traits.forEach { it.javaClass.kotlin.qualifiedName }}]"
-  }
-}*/
+class Traits(vararg val traits: Any)
 
 class Schema(
   val masters: Map<String, SEntity>,
@@ -58,40 +58,19 @@ class Schema(
     lateinit var rels: Map<String, SRelation>
       internal set
 
-    /*override fun onRead(id: Long, tree: Map<String, Any?>) {
-      //println("onRead($name, $id) - {tree=$tree}")
-      listeners.forEach { it.listener.onRead(id, tree) }
+    fun fireListeners(event: EventType, inst: Instruction, id: Long? = null) {
+      println("($event, $id) -> $inst")
+      inst.action.sEntity.listeners.forEach {
+        when (inst.action.type) {
+          ActionType.CREATE -> it.get(ActionType.CREATE, event)?.onCreate(inst as Insert)
+          ActionType.UPDATE -> it.get(ActionType.UPDATE, event)?.onUpdate(inst as Update)
+          ActionType.DELETE -> it.get(ActionType.DELETE, event)?.onDelete(inst as Delete)
+          ActionType.ADD -> it.get(ActionType.ADD, event)?.onAdd(inst as Insert)
+          ActionType.LINK -> it.get(ActionType.LINK, event)?.onLink(inst as Insert)
+          ActionType.UNLINK -> it.get(ActionType.UNLINK, event)?.onUnlink(inst as Delete)
+        }
+      }
     }
-
-    override fun onCreate(type: EventType, id: Long?, new: Any) {
-      //println("onCreate($type, $name, $id) - {new=$new}")
-      listeners.forEach { it.get(CREATE, type)?.onCreate(type, id, new) }
-    }
-
-    override fun onUpdate(type: EventType, id: Long, data: Map<String, Any?>) {
-      //println("onUpdate($type, $name, $id) - {data=$data}")
-      listeners.forEach { it.get(UPDATE, type)?.onUpdate(type, id, data) }
-    }
-
-    override fun onDelete(type: EventType, id: Long) {
-      //println("onDelete($type, $name, $id)")
-      listeners.forEach { it.get(DELETE, type)?.onDelete(type, id) }
-    }
-
-    override fun onAdd(type: EventType, id: Long?, sRelation: SRelation, link: Long?, new: Any) {
-      //println("onAdd($type, $name, $id) - {rel=${sRelation.name}, link=$link, new=$new}")
-      listeners.forEach { it.get(ADD, type)?.onAdd(type, id, sRelation, link, new) }
-    }
-
-    override fun onLink(type: EventType, id: Long?, sRelation: SRelation, new: Any) {
-      //println("onLink($type, $name, $id) - {rel=${sRelation.name}, new=$new}")
-      listeners.forEach { it.get(LINK, type)?.onLink(type, id, sRelation, new) }
-    }
-
-    override fun onRemove(type: EventType, id: Long, sRelation: SRelation, link: Long) {
-      //println("onRemove($type, $name, $id) - {rel=${sRelation.name}, link=$link}")
-      listeners.forEach { it.get(REMOVE, type)?.onRemove(type, id, sRelation, link) }
-    }*/
   }
 
     abstract class SFieldOrRelation {

@@ -45,26 +45,12 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
   }
 
   fun add(entity: String, id: Long, rel: String, new: Any): List<Long> {
-    val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
-    val sRelation = sEntity.rels[rel] ?: throw Exception("Entity relation not found! - ($entity, $rel)")
-
-    // check model constraints
-    if (!sRelation.isInput)
-      throw Exception("Invalid input relation! - (${sEntity.name}, $rel)")
-
-    if (!sRelation.isCollection)
-      throw Exception("Relation is not a collection! - ($entity, $rel)")
-
-    if (!sRelation.isOpen)
-      throw Exception("Relation is not 'open'! - ($entity, $rel)")
-
+    val (sEntity, sRelation) = checkRelation(entity, rel)
     if (sRelation.type != RelationType.CREATE)
       throw Exception("Relation is not 'create'! - ($entity, $rel)")
 
     // creates one/many related entities
     val instructions = Instructions()
-
-    // supports new as Entity or Collection<Entity>
     val children = addRelations(sEntity, sRelation, new, instructions, invRef = id)
     instructions.roots.addAll(children)
 
@@ -76,20 +62,8 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     return ids
   }
 
-  fun link(entity: String, id: Long, rel: String, new: Any): List<Long> {
-    val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
-    val sRelation = sEntity.rels[rel] ?: throw Exception("Entity relation not found! - ($entity, $rel)")
-
-    // check model constraints
-    if (!sRelation.isInput)
-      throw Exception("Invalid input relation! - (${sEntity.name}, $rel)")
-
-    if (!sRelation.isCollection)
-      throw Exception("Relation is not a collection! - ($entity, $rel)")
-
-    if (!sRelation.isOpen)
-      throw Exception("Relation is not 'open'! - ($entity, $rel)")
-
+  fun link(entity: String, id: Long, rel: String, links: Any): List<Long> {
+    val (sEntity, sRelation) = checkRelation(entity, rel)
     if (sRelation.type != RelationType.LINK)
       throw Exception("Relation is not 'link'! - ($entity, $rel)")
 
@@ -97,10 +71,10 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     val instructions = Instructions()
     val children = if (sRelation.traits.isEmpty()) {
       // supports new as Long or Collection<Long>
-      addLinksNoTraits(sEntity, sRelation, new, instructions, invRef = id)
+      addLinksNoTraits(sEntity, sRelation, links, instructions, invRef = id)
     } else {
       // supports new as Pair<Long, Traits> or Map<Long, Traits>
-      addLinksWithTraits(sEntity, sRelation, new, instructions, invRef = id)
+      addLinksWithTraits(sEntity, sRelation, links, instructions, invRef = id)
     }
     instructions.roots.addAll(children)
 
@@ -110,6 +84,29 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     instructions.fireCommittedListeners()
 
     return ids
+  }
+
+  fun unlink(entity: String, rel: String, links: Any) {
+    val (sEntity, sRelation) = checkRelation(entity, rel)
+    if (sRelation.type != RelationType.LINK)
+      throw Exception("Relation is not 'link'! - ($entity, $rel)")
+
+    // delete one/many links
+    val instructions = Instructions()
+    if (links !is Collection<*>) {
+      tryCast<Long, Unit>(sEntity.name, sRelation.name, links) { link ->
+        removeLink(sEntity, sRelation, link, instructions)
+      }
+    } else {
+      tryCast<Collection<Long>, Unit>(sEntity.name, sRelation.name, links) { col ->
+        col.forEach { removeLink(sEntity, sRelation, it, instructions) }
+      }
+    }
+
+    // commit instructions
+    instructions.fireCheckedListeners()
+    adaptor.commit(instructions)
+    instructions.fireCommittedListeners()
   }
 
   fun check(entity: String, field: String, value: Any?) {
@@ -127,8 +124,25 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
       if (!TypeEngine.check(sField.type, type))
         throw Exception("Invalid field type, expected ${sField.type} found ${type.simpleName}! - (${sEntity.name}, $field)")
 
-      checkFieldConstraints(sEntity, field, sField, value)
+      checkFieldConstraints(sEntity, sField, value)
     }
+  }
+
+  private fun checkRelation(entity: String, rel: String): Pair<SEntity, SRelation> {
+    val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
+    val sRelation = sEntity.rels[rel] ?: throw Exception("Entity relation not found! - ($entity, $rel)")
+
+    // check model constraints
+    if (!sRelation.isInput)
+      throw Exception("Invalid input relation! - (${sEntity.name}, $rel)")
+
+    if (!sRelation.isCollection)
+      throw Exception("Relation is not a collection! - ($entity, $rel)")
+
+    if (!sRelation.isOpen)
+      throw Exception("Relation is not 'open'! - ($entity, $rel)")
+
+    return sEntity to sRelation
   }
 
   @Suppress("UNCHECKED_CAST")
@@ -178,7 +192,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
             throw Exception("Invalid field type, expected ${sField.type} found ${type.simpleName}! - (${sEntity.name}, $prop)")
         }
 
-        checkFieldConstraints(sEntity, prop, sField, fValue)
+        checkFieldConstraints(sEntity, sField, fValue)
       }
 
       // set even if null
@@ -306,18 +320,18 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun addLinksNoTraits(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): List<Insert> {
+  private fun addLinksNoTraits(sEntity: SEntity, sRelation: SRelation, links: Any, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): List<Insert> {
     if (insOrUpd is Update)
       throw Exception("Cannot update collections, use 'add/link' instead! - (${sEntity.name}, ${sRelation.name})")
 
     // TODO: should traits support collections? (more tests required!) - change schema support
 
-    return if (rValue !is Collection<*>) {
-      tryCast<Long, List<Insert>>(sEntity.name, sRelation.name, rValue) { value ->
+    return if (links !is Collection<*>) {
+      tryCast<Long, List<Insert>>(sEntity.name, sRelation.name, links) { value ->
         listOf(addOneLinkNoTraits(sEntity, sRelation, value, instructions, insOrUpd, invRef))
       }
     } else {
-      tryCast<Collection<Long>, List<Insert>>(sEntity.name, sRelation.name, rValue) { col ->
+      tryCast<Collection<Long>, List<Insert>>(sEntity.name, sRelation.name, links) { col ->
         col.map { addOneLinkNoTraits(sEntity, sRelation, it, instructions, insOrUpd, invRef) }
       }
     }
@@ -333,18 +347,18 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun addLinksWithTraits(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): List<Insert> {
+  private fun addLinksWithTraits(sEntity: SEntity, sRelation: SRelation, links: Any, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): List<Insert> {
     if (insOrUpd is Update)
       throw Exception("Cannot update collections, use 'add/link' instead! - (${sEntity.name}, ${sRelation.name})")
 
     // TODO: should traits support collections? (more tests required!) - change schema support
 
-    return if (rValue !is Map<*, *>) {
-      tryCast<Pair<Long, Traits>, List<Insert>>(sEntity.name, sRelation.name, rValue) { (link, traits) ->
+    return if (links !is Map<*, *>) {
+      tryCast<Pair<Long, Traits>, List<Insert>>(sEntity.name, sRelation.name, links) { (link, traits) ->
         listOf(addOneLinkWithTraits(sEntity, sRelation, link, traits, instructions, insOrUpd, invRef))
       }
     } else {
-      tryCast<Map<Long, Traits>, List<Insert>>(sEntity.name, sRelation.name, rValue) { map ->
+      tryCast<Map<Long, Traits>, List<Insert>>(sEntity.name, sRelation.name, links) { map ->
         map.map { (link, traits) -> addOneLinkWithTraits(sEntity, sRelation, link, traits, instructions, insOrUpd, invRef) }
       }
     }
@@ -353,6 +367,13 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
   private fun addOneLinkWithTraits(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Traits, instructions: Instructions, insOrUpd: InsertOrUpdate? = null, invRef: Long? = null): Insert {
     return checkTraitsAndInsert(sEntity, sRelation, link, traits, instructions).apply {
       if (invRef == null) putUnresolvedRef("inv", insOrUpd!!) else putResolvedRef("inv", invRef)
+    }
+  }
+
+  private fun removeLink(sEntity: SEntity, sRelation: SRelation, link: Long, instructions: Instructions): Delete {
+    val table = tableTranslator.getValue(sEntity.name)
+    return Delete("${table}__${sRelation.name}", link, UnlinkAction(sEntity, sRelation)).apply {
+      instructions.addInstruction(this)
     }
   }
 
@@ -388,10 +409,10 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
 
 
 /* ------------------------- helpers -------------------------*/
-private fun checkFieldConstraints(sEntity: SEntity, field: String, sField: SField, value: Any) {
+private fun checkFieldConstraints(sEntity: SEntity, sField: SField, value: Any) {
   sField.checks.forEach {
     it.check(value)?.let { msg ->
-      throw Exception("Constraint check failed '$msg'! - (${sEntity.name}, $field)")
+      throw Exception("Constraint check failed '$msg'! - (${sEntity.name}, ${sField.name})")
     }
   }
 }

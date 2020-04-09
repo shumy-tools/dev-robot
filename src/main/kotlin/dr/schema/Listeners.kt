@@ -2,7 +2,10 @@ package dr.schema
 
 import dr.DrServer
 import dr.action.ActionEngine
+import dr.modification.Delete
+import dr.modification.Insert
 import dr.modification.ModificationEngine
+import dr.modification.Update
 import dr.notification.NotificationEngine
 import dr.query.QueryEngine
 import kotlin.reflect.KClass
@@ -22,12 +25,12 @@ annotation class Checks(vararg val value: KClass<out Any>)
 
 /* ------------------------- enums -------------------------*/
 enum class EventType {
-  CHECKED, COMMITED
+  CHECKED, COMMITTED
 }
 
 enum class ActionType(val funName: String) {
   CREATE("onCreate"), UPDATE("onUpdate"), DELETE("onDelete"),
-  ADD("onAdd"), LINK("onLink"), REMOVE("onRemove")
+  ADD("onAdd"), LINK("onLink"), UNLINK("onUnlink")
 }
 
 /* ------------------------- api -------------------------*/
@@ -39,13 +42,14 @@ open class EListener<T> {
 
   open fun onRead(id: Long, tree: Map<String, Any?>) {}
 
-  open fun onCreate(type: EventType, id: Long?, new: T) {}
-  open fun onUpdate(type: EventType, id: Long, data: Map<String, Any?>) {}
-  open fun onDelete(type: EventType, id: Long) {}
+  open fun onCreate(instruction: Insert) {}
+  open fun onUpdate(instruction: Update) {}
+  open fun onDelete(instruction: Delete) {}
 
-  open fun onAdd(type: EventType, id: Long?, sRelation: SRelation, link: Long?, new: Any) {}
-  open fun onLink(type: EventType, id: Long?, sRelation: SRelation, new: Any) {}
-  open fun onRemove(type: EventType, id: Long, sRelation: SRelation, link: Long) {}
+  open fun onAdd(instruction: Insert) {}
+
+  open fun onLink(instruction: Insert) {}
+  open fun onUnlink(instruction: Delete) {}
 }
 
 @FunctionalInterface
