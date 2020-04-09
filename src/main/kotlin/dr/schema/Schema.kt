@@ -1,6 +1,5 @@
 package dr.schema
 
-import dr.schema.ActionType.*
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty1
 

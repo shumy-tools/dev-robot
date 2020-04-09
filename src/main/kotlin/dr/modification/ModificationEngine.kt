@@ -2,9 +2,9 @@ package dr.modification
 
 import dr.DrServer
 import dr.schema.*
-import dr.schema.ActionType.*
 import dr.spi.*
 import kotlin.reflect.full.memberProperties
+import kotlin.reflect.typeOf
 
 /* ------------------------- api -------------------------*/
 class ModificationEngine(private val adaptor: IModificationAdaptor) {
@@ -258,8 +258,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
   }
 
   private fun setLinkNoTraits(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate) {
-    try {
-      val link = rValue as Long
+    tryCast<Long, Unit>(sEntity.name, sRelation.name, rValue) { link ->
       if (sEntity.type != EntityType.TRAIT) {
         val table = tableTranslator.getValue(sEntity.name)
         Insert("${table}__${sRelation.name}", LinkAction(sEntity, sRelation)).apply {
@@ -270,22 +269,15 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
       } else {
         insOrUpd.putResolvedRef("ref_${sRelation.name}", link)
       }
-    } catch (ex: ClassCastException) {
-      throw Exception("Invalid field type, expected Long found ${rValue.javaClass.kotlin.qualifiedName}! - (${sEntity.name}, ${sRelation.name})")
     }
   }
 
   @Suppress("UNCHECKED_CAST")
   private fun setLinkWithTraits(sEntity: SEntity, sRelation: SRelation, rValue: Any, instructions: Instructions, insOrUpd: InsertOrUpdate) {
-    try {
-      val (link, traits) = rValue as Pair<Long, Traits>
+    tryCast<Pair<Long, Traits>, Unit>(sEntity.name, sRelation.name, rValue) { (link, traits) ->
       checkTraitsAndInsert(sEntity, sRelation, link, traits, instructions).apply {
         putUnresolvedRef("inv", insOrUpd)
       }
-
-      //sEntity.onLink(CHECKED, null, sRelation, link)
-    } catch (ex: ClassCastException) {
-      throw Exception("Invalid field type, expected Pair<Long, Traits> found ${rValue.javaClass.kotlin.qualifiedName}! - (${sEntity.name}, ${sRelation.name})")
     }
   }
 
@@ -297,8 +289,9 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     return if (rValue !is Collection<*>) {
       listOf(addOneRelation(sEntity, sRelation, rValue, instructions, insOrUpd, invRef))
     } else {
-      val col = (rValue as Collection<Any>)
-      col.map { addOneRelation(sEntity, sRelation, it, instructions, insOrUpd, invRef) }
+      tryCast<Collection<Any>, List<Insert>>(sEntity.name, sRelation.name, rValue) { col ->
+        col.map { addOneRelation(sEntity, sRelation, it, instructions, insOrUpd, invRef) }
+      }
     }
   }
 
@@ -320,10 +313,13 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     // TODO: should traits support collections? (more tests required!) - change schema support
 
     return if (rValue !is Collection<*>) {
-      listOf(addOneLinkNoTraits(sEntity, sRelation, rValue as Long, instructions, insOrUpd, invRef))
+      tryCast<Long, List<Insert>>(sEntity.name, sRelation.name, rValue) { value ->
+        listOf(addOneLinkNoTraits(sEntity, sRelation, value, instructions, insOrUpd, invRef))
+      }
     } else {
-      val col = (rValue as Collection<Long>)
-      col.map { addOneLinkNoTraits(sEntity, sRelation, it, instructions, insOrUpd, invRef) }
+      tryCast<Collection<Long>, List<Insert>>(sEntity.name, sRelation.name, rValue) { col ->
+        col.map { addOneLinkNoTraits(sEntity, sRelation, it, instructions, insOrUpd, invRef) }
+      }
     }
   }
 
@@ -344,11 +340,13 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     // TODO: should traits support collections? (more tests required!) - change schema support
 
     return if (rValue !is Map<*, *>) {
-      val (link, traits) = rValue as Pair<Long, Traits>
-      listOf(addOneLinkWithTraits(sEntity, sRelation, link, traits, instructions, insOrUpd, invRef))
+      tryCast<Pair<Long, Traits>, List<Insert>>(sEntity.name, sRelation.name, rValue) { (link, traits) ->
+        listOf(addOneLinkWithTraits(sEntity, sRelation, link, traits, instructions, insOrUpd, invRef))
+      }
     } else {
-      val map = rValue as Map<Long, Traits>
-      map.map { (link, traits) -> addOneLinkWithTraits(sEntity, sRelation, link, traits, instructions, insOrUpd, invRef) }
+      tryCast<Map<Long, Traits>, List<Insert>>(sEntity.name, sRelation.name, rValue) { map ->
+        map.map { (link, traits) -> addOneLinkWithTraits(sEntity, sRelation, link, traits, instructions, insOrUpd, invRef) }
+      }
     }
   }
 
@@ -395,5 +393,16 @@ private fun checkFieldConstraints(sEntity: SEntity, field: String, sField: SFiel
     it.check(value)?.let { msg ->
       throw Exception("Constraint check failed '$msg'! - (${sEntity.name}, $field)")
     }
+  }
+}
+
+private inline fun <reified T, R> tryCast(entity: String, field: String, value: Any, exec: (T) -> R): R {
+  val expectedType = typeOf<T>()
+  val foundType = value.javaClass.kotlin.qualifiedName
+
+  try {
+    return exec(value as T)
+  } catch (ex: ClassCastException) {
+    throw Exception("Invalid field type, expected $expectedType found $foundType! - ($entity, $field)")
   }
 }

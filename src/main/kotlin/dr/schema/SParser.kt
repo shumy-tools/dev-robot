@@ -14,7 +14,7 @@ class SParser {
           throw Exception("Include only master entities!")
         }
 
-        kc.processEntity(tmpSchema)
+        kc.processEntity(true, tmpSchema)
       }
 
       return Schema(tmpSchema.masters, tmpSchema.entities, tmpSchema.traits)
@@ -24,6 +24,7 @@ class SParser {
 
 /* ------------------------- helpers -------------------------*/
 private class TempSchema(
+  val tmpOwned: MutableMap<String, SEntity> = LinkedHashMap(),
   val masters: MutableMap<String, SEntity> = LinkedHashMap(),
   val entities: MutableMap<String, SEntity> = LinkedHashMap(),
   val traits: MutableMap<String, SEntity> = LinkedHashMap()
@@ -56,8 +57,11 @@ private fun KProperty1<*, *>.checkRelationNumber(name: String) {
     throw Exception("KProperty with multiple relation types! Select one of (Create, Link). - ($name, ${this.name})")
 }
 
-private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
+private fun KClass<*>.processEntity(owned: Boolean, tmpSchema: TempSchema): SEntity {
   val name = this.qualifiedName ?: throw Exception("No Entity name!")
+  if (owned && tmpSchema.tmpOwned[name] != null)
+    throw Exception("Entity already owned! - ($name)")
+
   return tmpSchema.entities.getOrElse(name) {
     this.checkEntityNumber(name)
 
@@ -67,6 +71,9 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema): SEntity {
 
     val type = this.getEntityType() ?: throw Exception("Required annotation, one of (Master, Detail, Trait)! - ($name)")
     val entity = SEntity(name, type, processListeners())
+
+    if (owned)
+      tmpSchema.tmpOwned[name] = entity
 
     tmpSchema.entities[name] = entity
     if (entity.type == EntityType.TRAIT) {
@@ -186,7 +193,7 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
     this.hasAnnotation<Create>() -> RelationType.CREATE
     link != null -> {
       for (trait in link.traits)
-        traits.add(trait.processEntity(tmpSchema))
+        traits.add(trait.processEntity(false, tmpSchema))
       RelationType.LINK
     }
     else -> throw Exception("Required annotation, one of (Create, Link)! - ($name, ${this.name})")
@@ -212,15 +219,15 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.MAP_ID_TRAITS))
           throw Exception("Link-collection with traits type must be of type Map<Long, Traits>! - ($name, ${this.name})")
 
-        link!!.value.processEntity(tmpSchema)
+        link!!.value.processEntity(false, tmpSchema)
       }
     }
 
     Pair(ref, true)
   } else {
-    // reference
     val ref = when(rType) {
       RelationType.CREATE -> type.processCreate(tmpSchema)
+
       RelationType.LINK -> {
         if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.ID))
           throw Exception("Link-reference without traits must be of type Long! - ($name, ${this.name})")
@@ -228,7 +235,7 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.PAIR_ID_TRAITS))
           throw Exception("Link-reference with traits must be of type Pair<Long, Traits>! - ($name, ${this.name})")
 
-        link!!.value.processEntity(tmpSchema)
+        link!!.value.processEntity(false, tmpSchema)
       }
     }
 
@@ -244,7 +251,7 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
 
 private fun KType.processCreate(tmpSchema: TempSchema): SEntity {
   val entity = this.classifier as KClass<*>
-  return entity.processEntity(tmpSchema)
+  return entity.processEntity(true, tmpSchema)
 }
 
 private fun KClass<*>.getEntityType(): EntityType? {
