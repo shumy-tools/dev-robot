@@ -3,6 +3,7 @@ package dr.modification
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.annotation.JsonTypeName
+import com.fasterxml.jackson.annotation.JsonUnwrapped
 import dr.DrServer
 import dr.schema.*
 import dr.spi.*
@@ -22,8 +23,17 @@ sealed class LinkData
     @JsonTypeName("many-link-traits")
     class ManyLinksWithTraits(val refs: Map<Long, Traits>): LinkCreate()
 
+    // hack? jackson doesn't support Creator with @JsonUnwrapped
     @JsonTypeName("one-link-traits")
-    class OneLinkWithTraits(val ref: Long, val traits: Traits): LinkCreate()
+    class OneLinkWithTraits(val ref: Long): LinkCreate() {
+      @JsonUnwrapped
+      lateinit var traits: Traits
+        private set
+
+      constructor(ref: Long, traits: Traits): this(ref) {
+        this.traits = traits
+      }
+    }
 
   sealed class LinkDelete: LinkData()
     @JsonTypeName("many-unlink")
