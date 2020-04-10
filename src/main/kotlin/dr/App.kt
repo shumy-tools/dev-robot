@@ -66,7 +66,8 @@ fun main(args: Array<String>) {
 
   val userType = UserType("shumy", "mail@google.pt", "pass-1")
   val customer = Customer("Address of customer")
-  DrServer.mEngine.create(Pack(userType, customer))
+  val userTypeId = DrServer.mEngine.create(Pack(userType, customer))
+  println("USER-TYPE-ID: $userTypeId")
 
   /*
   println("Q1")
@@ -92,7 +93,7 @@ fun main(args: Array<String>) {
   println("Q5")
   val query = DrServer.qEngine.compile("""dr.User |  email == "email" and (name == "Mica*" or roles..name == ?name) | { * }""")
   query.exec(mapOf("name" to "admin"))
-
+  */
 
   println("")
   val jsonUserCreate = DrServer.serialize(User(
@@ -112,28 +113,7 @@ fun main(args: Array<String>) {
     "email" to "email@gmail.com",
     "market" to OneLinkWithTraits(5L, Pack(UserMarket(Trace(LocalDateTime.of(2000, Month.JANUARY, 1, 12, 0,0)),2L)))
   ))
-
-  val jsonUU = """{
-      "name" : "Micael",
-      "email" : "email@gmail.com",
-      "market" : {
-        "@type" : "one-link-traits",
-        "ref" : 5,
-        "traits" : [ {
-          "@type" : "dr.UserMarket",
-          "trace" : {
-            "date" : "2000-01-01T12:00:00"
-          },
-          "boss" : 2,
-          "date" : "2020-04-10T02:34:36.305744"
-        } ]
-      }
-    }
-  """
-
-  val processed = jsonUU.replaceFirst("{", "{\"data\":{").plus("}")
-
-  DrServer.mEngine.update(User::class.qualifiedName!!, userId, DrServer.deserialize(processed, UpdateData::class))
+  DrServer.mEngine.update(User::class.qualifiedName!!, userId, DrServer.deserialize(jsonUserUpdate, UpdateData::class))
 
 
   println("")
@@ -171,5 +151,4 @@ fun main(args: Array<String>) {
   println("BID-ADD: $jsonBidAdd\n")
   println("ROLES-LINK: $jsonRolesLink\n")
   println("ROLES-UNLINK: $jsonRolesUnlink\n")
-  */
 }

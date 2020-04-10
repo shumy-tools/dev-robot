@@ -2,10 +2,10 @@ package dr.schema
 
 import dr.DrServer
 import dr.action.ActionEngine
-import dr.modification.Delete
-import dr.modification.Insert
+import dr.spi.Delete
+import dr.spi.Insert
 import dr.modification.ModificationEngine
-import dr.modification.Update
+import dr.spi.Update
 import dr.notification.NotificationEngine
 import dr.query.QueryEngine
 import kotlin.reflect.KClass
