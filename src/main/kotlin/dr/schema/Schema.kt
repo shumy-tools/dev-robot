@@ -33,6 +33,10 @@ annotation class Create
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Link(val value: KClass<out Any>, vararg val traits: KClass<out Any>)
 
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Sealed(vararg val value: KClass<out Any>)
+
 /* ------------------------- enums -------------------------*/
 enum class EntityType {
   MASTER, DETAIL, TRAIT
@@ -43,24 +47,47 @@ enum class RelationType {
 }
 
 /* ------------------------- structures -------------------------*/
-class Traits(
+class Pack(
   @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
-  vararg val traits: Any
+  vararg val values: Any
 )
 
-class Schema(
-  val masters: Map<String, SEntity>,
-  val entities: Map<String, SEntity>,
-  val traits: Map<String, SEntity>
-)
+class Schema {
+  val entities: Map<String, SEntity> = linkedMapOf()
+  val masters: Map<String, SEntity> = linkedMapOf()
+  val traits: Map<String, SEntity> = linkedMapOf()
+
+  fun findEntity(value: Any): SEntity {
+    val name = value.javaClass.kotlin.qualifiedName
+    return this.entities[name] ?: throw Exception("Entity type not found! - ($name)")
+  }
+
+  internal fun addEntity(sEntity: SEntity) {
+    (entities as LinkedHashMap<String, SEntity>)[sEntity.name] = sEntity
+    when (sEntity.type) {
+      EntityType.MASTER -> (masters as LinkedHashMap<String, SEntity>)[sEntity.name] = sEntity
+      EntityType.TRAIT -> (traits as LinkedHashMap<String, SEntity>)[sEntity.name] = sEntity
+      else -> Unit
+    }
+  }
+}
 
   /* ------------------------- entity -------------------------*/
-  class SEntity(val name: String, val type: EntityType, val listeners: Set<SListener>) {
-    lateinit var fields: Map<String, SField>
-      internal set
+  class SEntity(val name: String, val type: EntityType, val isSealed: Boolean, val listeners: Set<SListener>) {
+    val sealed: Map<String, SEntity> = linkedMapOf()
+    val fields: Map<String, SField> = linkedMapOf()
+    val rels: Map<String, SRelation> = linkedMapOf()
 
-    lateinit var rels: Map<String, SRelation>
-      internal set
+    internal fun addSealed(name: String, sEntity: SEntity) {
+      (sealed as LinkedHashMap<String, SEntity>)[name] = sEntity
+    }
+
+    internal fun addProperty(name: String, prop: SFieldOrRelation) {
+      when (prop) {
+        is SField -> (fields as LinkedHashMap<String, SField>)[name] = prop
+        is SRelation -> (rels as LinkedHashMap<String, SRelation>)[name] = prop
+      }
+    }
 
     fun fireListeners(event: EventType, inst: Instruction, id: Long? = null) {
       println("($event, $id) -> $inst")
@@ -77,7 +104,7 @@ class Schema(
     }
   }
 
-    abstract class SFieldOrRelation {
+    sealed class SFieldOrRelation {
       abstract val name: String
       abstract val property: KProperty1<Any, *>
       abstract val isOptional: Boolean
@@ -90,32 +117,32 @@ class Schema(
       }
     }
 
-    class SField (
-      override val name: String,
-      val type: FieldType,
-      val checks: Set<SCheck>,
-      override val property: KProperty1<Any, *>,
+      class SField (
+        override val name: String,
+        val type: FieldType,
+        val checks: Set<SCheck>,
+        override val property: KProperty1<Any, *>,
 
-      override val isOptional: Boolean
-    ): SFieldOrRelation()
+        override val isOptional: Boolean
+      ): SFieldOrRelation()
 
-    class SRelation (
-      override val name: String,
-      val type: RelationType,
-      val ref: SEntity,
-      val traits: Set<SEntity>,
-      override val property: KProperty1<Any, *>,
+      class SRelation (
+        override val name: String,
+        val type: RelationType,
+        val ref: SEntity,
+        val traits: Set<SEntity>,
+        override val property: KProperty1<Any, *>,
 
-      val isCollection: Boolean,
-      val isOpen: Boolean,
-      override val isOptional: Boolean
-    ): SFieldOrRelation()
+        val isCollection: Boolean,
+        val isOpen: Boolean,
+        override val isOptional: Boolean
+      ): SFieldOrRelation()
 
-    class SCheck(val name: String, private val check: FieldCheck<Any>) {
-      fun check(value: Any): String? {
-        return this.check.check(value)
+      class SCheck(val name: String, private val check: FieldCheck<Any>) {
+        fun check(value: Any): String? {
+          return this.check.check(value)
+        }
       }
-    }
 
     @Suppress("UNCHECKED_CAST")
     class SListener(val name: String, internal val listener: EListener<*>, internal val enabled: Map<ActionType, Set<EventType>>) {
@@ -127,22 +154,26 @@ class Schema(
     }
 
 /* ----------- Helper printer functions ----------- */
+const val SPACES = 3
+
 fun Schema.print(filter: String = "all") {
+  val tab = " ".repeat(SPACES)
+
   println("-------SCHEMA (filter=$filter)-------")
-  
   val mFiltered = if (filter == "all") this.masters else this.masters.filter{ (key, _) -> key.startsWith(filter) }
   val mTraits = if (filter == "all") this.traits else this.traits.filter{ (key, _) -> key.startsWith(filter) }
 
   println("<MASTER>")
   for ((name, entity) in mFiltered) {
-    println("  $name")
-    entity.print(4)
+    val sealedText = if (entity.isSealed) " - SEALED" else ""
+    println("$tab$name$sealedText")
+    entity.print(SPACES + SPACES)
   }
 
   println("<TRAIT>")
   for ((name, trait) in mTraits) {
     println("  $name")
-    trait.print(4)
+    trait.print(SPACES + SPACES)
   }
 }
 
@@ -152,9 +183,14 @@ fun SEntity.print(spaces: Int) {
   this.fields.print(tab)
   this.rels.print(tab, spaces)
 
+  for ((sName, sEntity) in this.sealed) {
+    println("$tab@$sName")
+    sEntity.print(spaces + SPACES)
+  }
+
   if (this.listeners.isNotEmpty()) {
     println("${tab}(listeners)")
-    this.listeners.print(spaces + 2)
+    this.listeners.print(spaces + SPACES)
   }
 }
 
@@ -179,7 +215,7 @@ fun Map<String, SRelation>.print(tab: String, spaces: Int) {
     val sTraits = if (traits.isEmpty()) "" else " TRAITS-$traits"
     println("${tab}$name: ${rel.ref.name} - ${isOpen}${isOptional}${isInput}${rel.type}${sTraits}")
     if (rel.ref.type != EntityType.MASTER) {
-      rel.ref.print(spaces + 2)
+      rel.ref.print(spaces + SPACES)
     }
   }
 }

@@ -1,6 +1,5 @@
 package dr.modification
 
-import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.annotation.JsonTypeName
 import com.fasterxml.jackson.annotation.JsonUnwrapped
@@ -10,34 +9,41 @@ import dr.spi.*
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.typeOf
 
+
 /* ------------------------- api -------------------------*/
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME)
 sealed class LinkData
   sealed class LinkCreate: LinkData()
     @JsonTypeName("many-link")
-    class ManyLinksWithoutTraits(val refs: Collection<Long>): LinkCreate()
+    class ManyLinksWithoutTraits(val refs: Collection<Long>): LinkCreate() {
+      constructor(vararg values: Long): this(values.toList())
+    }
 
     @JsonTypeName("one-link")
     class OneLinkWithoutTraits(val ref: Long): LinkCreate()
 
     @JsonTypeName("many-link-traits")
-    class ManyLinksWithTraits(val refs: Map<Long, Traits>): LinkCreate()
+    class ManyLinksWithTraits(val refs: Map<Long, Pack>): LinkCreate() {
+      constructor(vararg values: Pair<Long, Pack>): this(values.toMap())
+    }
 
     // hack? jackson doesn't support Creator with @JsonUnwrapped
     @JsonTypeName("one-link-traits")
     class OneLinkWithTraits(val ref: Long): LinkCreate() {
       @JsonUnwrapped
-      lateinit var traits: Traits
+      lateinit var traits: Pack
         private set
 
-      constructor(ref: Long, traits: Traits): this(ref) {
+      constructor(ref: Long, traits: Pack): this(ref) {
         this.traits = traits
       }
     }
 
   sealed class LinkDelete: LinkData()
     @JsonTypeName("many-unlink")
-    class ManyLinkDelete(val links: Collection<Long>): LinkDelete()
+    class ManyLinkDelete(val links: Collection<Long>): LinkDelete() {
+      constructor(vararg values: Long): this(values.toList())
+    }
 
     @JsonTypeName("one-unlink")
     class OneLinkDelete(val link: Long): LinkDelete()
@@ -45,22 +51,60 @@ sealed class LinkData
 class UpdateData(
   @JsonTypeInfo(use = JsonTypeInfo.Id.NAME)
   val data: Map<String, Any?>
-)
+) {
+  constructor(vararg pairs: Pair<String, Any?>): this(pairs.toMap())
+}
+
 
 class ModificationEngine(private val adaptor: IModificationAdaptor) {
   private val schema by lazy { DrServer.schema }
   private val tableTranslator by lazy { DrServer.tableTranslator }
 
-  fun create(new: Any): Long {
-    val entity = new.javaClass.kotlin.qualifiedName
-    val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
-    if (sEntity.type != EntityType.MASTER)
-      throw Exception("Creation is only valid for master entities! - ($entity)")
+  private fun createSealed(sTop: SEntity, value: Any, instructions: Instructions, tInsert: Insert): Pair<SEntity, Insert> {
+    val sEntity = schema.findEntity(value)
+    if (!sTop.isSealed)
+      throw Exception("Not a top @Sealed entity! - (${sTop.name})")
 
-    // create entity
-    val insert = Insert(tableTranslator.getValue(sEntity.name), CreateAction(sEntity))
-    val instructions = Instructions(insert)
-    checkEntityAndInsert(sEntity, new, instructions, insert)
+    tInsert.putData("type", sEntity.name)
+    val insert = Insert(tableTranslator.getValue(sEntity.name), CreateAction(sEntity)).apply {
+      checkEntityAndInsert(sEntity, value, instructions, this)
+      this.putUnresolvedRef("ref", tInsert)
+    }
+
+    return Pair(sEntity, insert)
+  }
+
+  fun create(new: Any): Long {
+    val (master, extended) = if (new is Pack) {
+      if (new.values.isEmpty())
+        throw Exception("Pack must contain values!")
+      Pair(new.values.first(), new.values.drop(1))
+    } else {
+      Pair(new, listOf<SEntity>())
+    }
+
+    val mEntity = schema.findEntity(master)
+    if (mEntity.type != EntityType.MASTER)
+      throw Exception("Creation is only valid for master entities! - (${mEntity.name})")
+
+    // create master entity
+    val mInsert = Insert(tableTranslator.getValue(mEntity.name), CreateAction(mEntity))
+    val instructions = Instructions(mInsert)
+    checkEntityAndInsert(mEntity, master, instructions, mInsert)
+    instructions.roots.add(mInsert)
+
+    // create extended entities if exist
+    var mTop = mEntity
+    var tInsert = mInsert
+    for (item in extended) {
+      val (top, insert) = createSealed(mTop, item, instructions, tInsert)
+      mTop = top
+      tInsert = insert
+    }
+
+    // sealed chain must be completed!
+    if (mTop.isSealed)
+      throw Exception("Creation of sealed entity must contain extended entities! - (${mTop.name})")
 
     // commit instructions
     instructions.fireCheckedListeners()
@@ -302,7 +346,9 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     if (unresolvedRef is Update)
       throw Exception("Cannot update collections, use 'add/link' instead! - (${sEntity.name}, ${sRelation.name})")
 
-    // TODO: should traits support collections? (more tests required!) - change schema support
+    // this is also checked in the SParser!!
+    if (sEntity.type == EntityType.TRAIT)
+      throw Exception("Collections are not supported in traits! - (${sEntity.name}, ${sRelation.name})")
 
     return when (data) {
       is OneLinkWithoutTraits -> listOf(addOneLinkNoTraits(sEntity, sRelation, data.ref, instructions, unresolvedRef, resolvedRef))
@@ -321,7 +367,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     }
   }
 
-  private fun addOneLinkWithTraits(sEntity: SEntity, sRelation: SRelation, ref: Long, traits: Traits, instructions: Instructions, unresolvedRef: InsertOrUpdate? = null, resolvedRef: Long? = null): Insert {
+  private fun addOneLinkWithTraits(sEntity: SEntity, sRelation: SRelation, ref: Long, traits: Pack, instructions: Instructions, unresolvedRef: InsertOrUpdate? = null, resolvedRef: Long? = null): Insert {
     return checkTraitsAndInsert(sEntity, sRelation, ref, traits, instructions).apply {
       if (resolvedRef == null) putUnresolvedRef("inv", unresolvedRef!!) else putResolvedRef("inv", resolvedRef)
     }
@@ -347,9 +393,9 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     }
   }
 
-  private fun checkTraitsAndInsert(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Traits, instructions: Instructions): Insert {
-    if (sRelation.traits.size != traits.traits.size)
-      throw Exception("Invalid number of traits, expected '${sRelation.traits.size}' found '${traits.traits.size}'! - (${sEntity.name}, ${sRelation.name})")
+  private fun checkTraitsAndInsert(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Pack, instructions: Instructions): Insert {
+    if (sRelation.traits.size != traits.values.size)
+      throw Exception("Invalid number of traits, expected '${sRelation.traits.size}' found '${traits.values.size}'! - (${sEntity.name}, ${sRelation.name})")
 
     val table = tableTranslator.getValue(sEntity.name)
     val traitInsert = Insert("${table}__${sRelation.name}", LinkAction(sEntity, sRelation)).apply {
@@ -358,7 +404,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     }
 
     val processedTraits = mutableSetOf<Any>()
-    for (trait in traits.traits) {
+    for (trait in traits.values) {
       val name = trait.javaClass.kotlin.qualifiedName
       val sTrait = schema.traits[name] ?: throw Exception("Trait type not found! - ($name)")
 
@@ -371,7 +417,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     }
 
     if (sRelation.traits.size != processedTraits.size)
-      throw Exception("Invalid number of traits, expected '${sRelation.traits.size}' found '${traits.traits.size}'! - (${sEntity.name}, ${sRelation.name})")
+      throw Exception("Invalid number of traits, expected '${sRelation.traits.size}' found '${traits.values.size}'! - (${sEntity.name}, ${sRelation.name})")
 
     return traitInsert
   }
@@ -444,9 +490,9 @@ private fun Any?.translate(sRelation: SRelation): Any? {
   return if (sRelation.type == RelationType.LINK) {
     when (val data = this!!) {
       is Long -> OneLinkWithoutTraits(data)
-      is Pair<*, *> -> OneLinkWithTraits(data.first as Long, data.second as Traits)
+      is Pair<*, *> -> OneLinkWithTraits(data.first as Long, data.second as Pack)
       is Collection<*> -> ManyLinksWithoutTraits(data as Collection<Long>)
-      is Map<*, *> -> ManyLinksWithTraits(data as Map<Long, Traits>)
+      is Map<*, *> -> ManyLinksWithTraits(data as Map<Long, Pack>)
       else -> throw  Exception("Unable to translate link '${data.javaClass.kotlin.qualifiedName}'! - (Code bug, please report the issue)")
     }
   } else {

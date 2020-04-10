@@ -57,20 +57,3 @@ object DrServer {
     return mapper.readValue(value, clazz.java)
   }
 }
-
-/*class ItemSerializer(clazz: Class<Traits>? = null): StdSerializer<Traits>(clazz) {
-  override fun serialize(value: Traits, jgen: JsonGenerator, provider: SerializerProvider) {
-    with (jgen) {
-      writeStartObject()
-        writeArrayFieldStart("traits")
-        for (trait in value.traits) {
-          writeStartObject()
-            writeStringField("@type", trait.javaClass.canonicalName)
-            //write
-          writeEndObject()
-        }
-        writeEndArray()
-      writeEndObject()
-    }
-  }
-}*/

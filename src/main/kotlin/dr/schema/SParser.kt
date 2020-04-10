@@ -17,18 +17,16 @@ class SParser {
         kc.processEntity(true, tmpSchema)
       }
 
-      return Schema(tmpSchema.masters, tmpSchema.entities, tmpSchema.traits)
+      return tmpSchema.schema
     }
   }
 }
 
 /* ------------------------- helpers -------------------------*/
-private class TempSchema(
-  val tmpOwned: MutableMap<String, SEntity> = LinkedHashMap(),
-  val masters: MutableMap<String, SEntity> = LinkedHashMap(),
-  val entities: MutableMap<String, SEntity> = LinkedHashMap(),
-  val traits: MutableMap<String, SEntity> = LinkedHashMap()
-)
+private class TempSchema {
+  val tmpOwned = linkedMapOf<String, SEntity>()
+  val schema = Schema()
+}
 
 private fun KClass<*>.checkEntityNumber(name: String) {
   var aNumber = 0
@@ -57,71 +55,55 @@ private fun KProperty1<*, *>.checkRelationNumber(name: String) {
     throw Exception("KProperty with multiple relation types! Select one of (Create, Link). - ($name, ${this.name})")
 }
 
+@Suppress("UNCHECKED_CAST")
 private fun KClass<*>.processEntity(owned: Boolean, tmpSchema: TempSchema): SEntity {
   val name = this.qualifiedName ?: throw Exception("No Entity name!")
   if (owned && tmpSchema.tmpOwned[name] != null)
     throw Exception("Entity already owned! - ($name)")
 
-  return tmpSchema.entities.getOrElse(name) {
+  return tmpSchema.schema.entities.getOrElse(name) {
     this.checkEntityNumber(name)
 
     println("  Entity: $name")
-    if(!this.isData)
-      throw Exception("Entities must be data classes! - ($name)")
+    if (this.isOpen || this.isSealed)
+      throw Exception("Class inheritance is done via @Extend. Remove open or sealed keywords. - ($name)")
 
-    val type = this.getEntityType() ?: throw Exception("Required annotation, one of (Master, Detail, Trait)! - ($name)")
-    val entity = SEntity(name, type, processListeners())
+    val sealed = findAnnotation<Sealed>()
+    val type = this.getEntityType() ?: throw Exception("Required annotation, one of (Master, Detail, Trait, Extend)! - ($name)")
+    val sEntity = SEntity(name, type, sealed != null, processListeners())
 
+    tmpSchema.schema.addEntity(sEntity)
     if (owned)
-      tmpSchema.tmpOwned[name] = entity
+      tmpSchema.tmpOwned[name] = sEntity
 
-    tmpSchema.entities[name] = entity
-    if (entity.type == EntityType.TRAIT) {
-      tmpSchema.traits[name] = entity
-    } else if (entity.type == EntityType.MASTER) {
-      tmpSchema.masters[name] = entity
+    val tmpInputProps = mutableSetOf<KProperty1<Any, *>>()
+    val allProps = memberProperties.map { it.name to (it as KProperty1<Any, *>) }.toMap()
+
+    // process ordered inputs
+    for (param in this.primaryConstructor!!.parameters) {
+      val prop  = allProps[param.name]!!
+      tmpInputProps.add(prop)
+
+      val fieldOrRelation = prop.processFieldOrRelation(sEntity, tmpSchema).apply { isInput = true }
+      sEntity.addProperty(prop.name, fieldOrRelation)
     }
 
-    // process fields and relations
-    val tmpInputProps = this.primaryConstructor!!.parameters.map { it.name }.toSet()
-    val tmpFields = LinkedHashMap<String, SField>()
-    val tmpRels = LinkedHashMap<String, SRelation>()
+    // process derived properties
+    for (prop in allProps.values.filter { !tmpInputProps.contains(it) }) {
+      val fieldOrRelation = prop.processFieldOrRelation(sEntity, tmpSchema)
+      sEntity.addProperty(prop.name, fieldOrRelation)
+    }
 
-    for (prop in memberProperties) {
-      if (prop.name.startsWith("ref") || prop.name.startsWith("inv"))
-        throw Exception("Reserved names starting with 'ref' or 'inv'! - ($name, ${prop.name})")
-
-      val fieldOrRelation = prop.processFieldOrRelation(name, tmpSchema).apply { isInput = tmpInputProps.contains(prop.name) }
-      if (fieldOrRelation is SField) {
-        tmpFields[prop.name] = fieldOrRelation
-      } else {
-        tmpRels[prop.name] = (fieldOrRelation as SRelation)
+    // process sealed inheritance
+    sealed?.let {
+      for (clazz in sealed.value) {
+        val xEntity = clazz.processEntity(true, tmpSchema)
+        sEntity.addSealed(xEntity.name, xEntity)
       }
     }
 
-    entity.apply {
-      fields = tmpFields
-      rels = tmpRels
-    }
+    sEntity
   }
-}
-
-private fun KProperty1<*, *>.processChecks(): Set<SCheck> {
-  val checks = findAnnotation<Checks>() ?: return setOf()
-  return checks.value.map {
-    val sType = it.supertypes.firstOrNull {
-      sType -> FieldCheck::class.qualifiedName == (sType.classifier as KClass<*>).qualifiedName
-    } ?: throw Exception("Check '${it.qualifiedName}' must implement '${FieldCheck::class.qualifiedName}'")
-
-    val tRef = sType.arguments.first().type ?: throw Exception("Check '${it.qualifiedName}' requires generic type!")
-    if (tRef != this.returnType)
-      throw throw Exception("Check '${it.qualifiedName}: ${FieldCheck::class.qualifiedName}<${(tRef.classifier as KClass<*>).simpleName}>' is not compatible with the field type '${(this.returnType.classifier as KClass<*>).simpleName}'!")
-
-    // instantiate check
-    @Suppress("UNCHECKED_CAST")
-    val instance = it.createInstance() as FieldCheck<Any>
-    SCheck(it.qualifiedName!!, instance)
-  }.toSet()
 }
 
 private fun KClass<*>.processListeners(): Set<SListener> {
@@ -161,26 +143,44 @@ private fun KClass<*>.processListeners(): Set<SListener> {
   }.toSet()
 }
 
-private fun KProperty1<*, *>.processFieldOrRelation(name: String, tmpSchema: TempSchema): SFieldOrRelation {
+private fun KProperty1<Any, *>.processFieldOrRelation(sEntity: SEntity, tmpSchema: TempSchema): SFieldOrRelation {
+  if (this.name == "type" || this.name.startsWith("ref") || this.name.startsWith("inv"))
+    throw Exception("Reserved property names: 'type' or starting with 'ref'/'inv'! - (${sEntity.name}, ${this.name})")
+
   val rType = this.returnType
   if (this is KMutableProperty1<*, *>)
-    throw Exception("All fields must be immutable! - ($name, ${this.name})")
+    throw Exception("All properties must be immutable! - (${sEntity.name}, ${this.name})")
 
   return if (this.hasAnnotation<Create>() || this.hasAnnotation<Link>()) {
-    // SRelation
-    this.processRelation(name, tmpSchema)
+    this.processRelation(sEntity, tmpSchema)
   } else {
-    // SField
-    val type = TypeEngine.convert(rType) ?: throw Exception("Unrecognized field type! - ($name, ${this.name})")
+    val type = TypeEngine.convert(rType) ?: throw Exception("Unrecognized field type! - (${sEntity.name}, ${this.name})")
     val checks = this.processChecks()
 
-    @Suppress("UNCHECKED_CAST")
-    SField(this.name, type, checks, this as KProperty1<Any, *>, rType.isMarkedNullable)
+    SField(this.name, type, checks, this, rType.isMarkedNullable)
   }
 }
 
-private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema): SRelation {
-  this.checkRelationNumber(name)
+private fun KProperty1<Any, *>.processChecks(): Set<SCheck> {
+  val checks = findAnnotation<Checks>() ?: return setOf()
+  return checks.value.map {
+    val sType = it.supertypes.firstOrNull {
+      sType -> FieldCheck::class.qualifiedName == (sType.classifier as KClass<*>).qualifiedName
+    } ?: throw Exception("Check '${it.qualifiedName}' must implement '${FieldCheck::class.qualifiedName}'")
+
+    val tRef = sType.arguments.first().type ?: throw Exception("Check '${it.qualifiedName}' requires generic type!")
+    if (tRef != this.returnType)
+      throw throw Exception("Check '${it.qualifiedName}: ${FieldCheck::class.qualifiedName}<${(tRef.classifier as KClass<*>).simpleName}>' is not compatible with the field type '${(this.returnType.classifier as KClass<*>).simpleName}'!")
+
+    // instantiate check
+    @Suppress("UNCHECKED_CAST")
+    val instance = it.createInstance() as FieldCheck<Any>
+    SCheck(it.qualifiedName!!, instance)
+  }.toSet()
+}
+
+private fun KProperty1<Any, *>.processRelation(sEntity: SEntity,  tmpSchema: TempSchema): SRelation {
+  this.checkRelationNumber(sEntity.name)
 
   val type = this.returnType
   val isOpen = this.hasAnnotation<Open>()
@@ -196,28 +196,31 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
         traits.add(trait.processEntity(false, tmpSchema))
       RelationType.LINK
     }
-    else -> throw Exception("Required annotation, one of (Create, Link)! - ($name, ${this.name})")
+    else -> throw Exception("Required annotation, one of (Create, Link)! - (${sEntity.name}, ${this.name})")
   }
 
   val (ref, isCollection) = if (type.isSubtypeOf(TypeEngine.LIST) || type.isSubtypeOf(TypeEngine.SET) || type.isSubtypeOf(TypeEngine.MAP_ID_TRAITS)) {
+    if (sEntity.type == EntityType.TRAIT)
+      throw Exception("Collections are not supported in traits! - (${sEntity.name}, ${this.name})")
+
     if (isOptional)
-      throw Exception("Collections cannot be optional! - ($name, ${this.name})")
+      throw Exception("Collections cannot be optional! - (${sEntity.name}, ${this.name})")
 
     val ref = when(rType) {
       RelationType.CREATE -> {
         if (!type.isSubtypeOf(TypeEngine.LIST) && !type.isSubtypeOf(TypeEngine.SET))
-          throw Exception("Create-collection must be of type, one of (Set<*>, List<*>)! - ($name, ${this.name})")
+          throw Exception("Create-collection must be of type, one of (Set<*>, List<*>)! - (${sEntity.name}, ${this.name})")
 
-        val tRef = type.arguments.last().type ?: throw Exception("Required generic type! - ($name, ${this.name})")
+        val tRef = type.arguments.last().type ?: throw Exception("Required generic type! - (${sEntity.name}, ${this.name})")
         tRef.processCreate(tmpSchema)
       }
 
       RelationType.LINK -> {
         if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.LIST_ID) && !type.isSubtypeOf(TypeEngine.SET_ID))
-          throw Exception("Link-collection without traits must be of type, one of (List<Long>, Set<Long>)! - ($name, ${this.name})")
+          throw Exception("Link-collection without traits must be of type, one of (List<Long>, Set<Long>)! - (${sEntity.name}, ${this.name})")
 
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.MAP_ID_TRAITS))
-          throw Exception("Link-collection with traits type must be of type Map<Long, Traits>! - ($name, ${this.name})")
+          throw Exception("Link-collection with traits type must be of type Map<Long, Traits>! - (${sEntity.name}, ${this.name})")
 
         link!!.value.processEntity(false, tmpSchema)
       }
@@ -230,10 +233,10 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
 
       RelationType.LINK -> {
         if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.ID))
-          throw Exception("Link-reference without traits must be of type Long! - ($name, ${this.name})")
+          throw Exception("Link-reference without traits must be of type Long! - (${sEntity.name}, ${this.name})")
 
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.PAIR_ID_TRAITS))
-          throw Exception("Link-reference with traits must be of type Pair<Long, Traits>! - ($name, ${this.name})")
+          throw Exception("Link-reference with traits must be of type Pair<Long, Traits>! - (${sEntity.name}, ${this.name})")
 
         link!!.value.processEntity(false, tmpSchema)
       }
@@ -243,10 +246,9 @@ private fun KProperty1<*, *>.processRelation(name: String, tmpSchema: TempSchema
   }
 
   if (rType == RelationType.CREATE && ref.type == EntityType.MASTER)
-    throw Exception("Cannot create a master through a relation! - ($name, ${this.name})")
+    throw Exception("Cannot create a master through a relation! - (${sEntity.name}, ${this.name})")
 
-  @Suppress("UNCHECKED_CAST")
-  return SRelation(this.name, rType, ref, traits, this as KProperty1<Any, *>, isCollection, isOpen, isOptional)
+  return SRelation(this.name, rType, ref, traits, this, isCollection, isOpen, isOptional)
 }
 
 private fun KType.processCreate(tmpSchema: TempSchema): SEntity {

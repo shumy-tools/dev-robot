@@ -10,6 +10,22 @@ class EmailCheck: FieldCheck<String> {
   }
 }
 
+// model-1 ----------------------------------------------------------------------------------
+// TODO: add support to include embedded traits or details? (at the moment Address is owned by User)
+
+@Master @Sealed(Customer::class, Supplier::class) // @Sealed adds type field
+class UserType(val user: String, @Checks(EmailCheck::class) val email: String, val password: String)
+
+  @Detail
+  class Customer(val address: String)
+
+  @Detail
+  class Supplier(@Create val organization: Organization)
+
+@Detail
+class Organization(val name: String, val address: String)
+
+// model-2 ----------------------------------------------------------------------------------
 @Trait
 data class Trace(val date: LocalDateTime)
 
@@ -31,8 +47,8 @@ data class User(
 
   @Create val address: Address,
 
-  @Open @Link(Market::class, traits = [UserMarket::class]) val market: Pair<Long, Traits>,
-  @Open @Link(Role::class, traits = [Trace::class]) val roles: Map<Long, Traits>
+  @Open @Link(Market::class, traits = [UserMarket::class]) val market: Pair<Long, Pack>,
+  @Open @Link(Role::class, traits = [Trace::class]) val roles: Map<Long, Pack>
 ) {
   val timestamp = LocalDateTime.now()
 }
