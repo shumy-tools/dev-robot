@@ -55,7 +55,7 @@ class TestModificationAdaptor: IModificationAdaptor {
 
 fun main(args: Array<String>) {
   DrServer.apply {
-    schema = SParser.parse(UserType::class, User::class, Role::class, Auction::class)
+    schema = SParser.parse(UserType::class, Sell::class, User::class, Role::class, Auction::class)
     qEngine = QueryEngine(TestQueryAdaptor(), TestQueryAuthorizer())
     mEngine = ModificationEngine(TestModificationAdaptor())
 
@@ -63,11 +63,6 @@ fun main(args: Array<String>) {
   }
 
   DrServer.schema.print()
-
-  val userType = UserType("shumy", "mail@google.pt", "pass-1")
-  val customer = Customer("Address of customer")
-  val userTypeId = DrServer.mEngine.create(Pack(userType, customer))
-  println("USER-TYPE-ID: $userTypeId")
 
   /*
   println("Q1")
@@ -94,6 +89,18 @@ fun main(args: Array<String>) {
   val query = DrServer.qEngine.compile("""dr.User |  email == "email" and (name == "Mica*" or roles..name == ?name) | { * }""")
   query.exec(mapOf("name" to "admin"))
   */
+
+  println("")
+  val userType = UserType("shumy", "mail@google.pt", "pass-1", setOf(1L, 2L))
+  val customer = Customer("Address of customer")
+  val jsonCustomerCreate = DrServer.serialize(Pack(userType, customer))
+  val customerId = DrServer.mEngine.create(DrServer.deserialize(jsonCustomerCreate, Pack::class))
+  println("CUSTOMER-ID: $customerId")
+
+  println("")
+  val jsonSellCreate = DrServer.serialize(Sell(10.5F, customerId))
+  val sellId = DrServer.mEngine.create(DrServer.deserialize(jsonSellCreate, Sell::class))
+  println("SELL-ID: $sellId")
 
   println("")
   val jsonUserCreate = DrServer.serialize(User(
@@ -145,6 +152,8 @@ fun main(args: Array<String>) {
   val jsonRolesUnlink = DrServer.serialize(ManyLinkDelete(roleIds))
   DrServer.mEngine.unlink(User::class.qualifiedName!!, "roles", DrServer.deserialize(jsonRolesUnlink, ManyLinkDelete::class))
 
+  println("CUSTOMER-CREATE: $jsonCustomerCreate\n")
+  println("SELL-CREATE: $jsonSellCreate\n")
   println("USER-CREATE: $jsonUserCreate\n")
   println("USER-UPDATE: $jsonUserUpdate\n")
   println("AUCTION-CREATE: $jsonAuctionCreate\n")

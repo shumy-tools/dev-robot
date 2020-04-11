@@ -14,7 +14,12 @@ class EmailCheck: FieldCheck<String> {
 // TODO: add support to include embedded traits or details? (at the moment Address is owned by User)
 
 @Master @Sealed(Customer::class, Supplier::class) // @Sealed adds type field
-class UserType(val user: String, @Checks(EmailCheck::class) val email: String, val password: String)
+class UserType(
+  val user: String,
+  @Checks(EmailCheck::class) val email: String,
+  val password: String,
+  @Link(Role::class) val roles: Set<Long>
+)
 
   @Detail
   class Customer(val address: String)
@@ -24,6 +29,12 @@ class UserType(val user: String, @Checks(EmailCheck::class) val email: String, v
 
 @Detail
 class Organization(val name: String, val address: String)
+
+@Master
+class Sell (
+  val price: Float,
+  @Link(Customer::class) val customer: Long
+)
 
 // model-2 ----------------------------------------------------------------------------------
 @Trait

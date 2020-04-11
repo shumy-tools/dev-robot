@@ -12,23 +12,11 @@ interface IModificationAdaptor {
 
 class Instructions() {
   internal val roots = mutableListOf<Instruction>()
-  private val list = mutableListOf<Instruction>()
+  internal val list = mutableListOf<Instruction>()
   private val ids = mutableMapOf<Instruction, Long>()
 
   val size: Int
     get() = list.size
-
-  constructor(first: Instruction): this() {
-    roots.add(first)
-  }
-
-  internal fun addInstruction(inst: Instruction) {
-    list.add(inst)
-  }
-
-  internal fun addInstruction(index: Int, inst: Instruction) {
-    list.add(index, inst)
-  }
 
   internal fun fireCheckedListeners() {
     for (inst in list)

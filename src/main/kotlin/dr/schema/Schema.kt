@@ -49,7 +49,7 @@ enum class RelationType {
 /* ------------------------- structures -------------------------*/
 class Pack(
   @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
-  vararg val values: Any
+  vararg val pack: Any
 )
 
 class Schema {

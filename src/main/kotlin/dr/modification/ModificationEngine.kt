@@ -94,7 +94,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
 
     // creates one/many related entities
     val instructions = InstructionBuilder(schema, tables).apply {
-      val roots = addRelations(sEntity, sRelation, new, resolvedRef = id)
+      val roots = addRelations(sEntity, sRelation, new, resolvedInv = id)
       addRoots(roots)
     }.build()
 
@@ -113,7 +113,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
 
     // creates one/many links
     val instructions = InstructionBuilder(schema, tables).apply {
-      val roots = addLinks(sEntity, sRelation, data, resolvedRef = id)
+      val roots = addLinks(sEntity, sRelation, data, resolvedInv = id)
       addRoots(roots)
     }.build()
 
