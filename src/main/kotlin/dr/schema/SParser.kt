@@ -10,11 +10,10 @@ class SParser {
       println("---Processing Schema---")
       val tmpSchema = TempSchema()
       for (kc in items) {
-        if (kc.getEntityType() != EntityType.MASTER) {
+        if (kc.getEntityType() != EntityType.MASTER)
           throw Exception("Include only master entities!")
-        }
 
-        kc.processEntity(true, tmpSchema)
+        kc.processEntity(tmpSchema)
       }
 
       return tmpSchema.schema
@@ -24,8 +23,8 @@ class SParser {
 
 /* ------------------------- helpers -------------------------*/
 private class TempSchema {
-  val tmpOwned = linkedMapOf<String, SEntity>()
   val schema = Schema()
+  val owned = mutableMapOf<String, String>()        // ownedEntity -> byEntity
 }
 
 private fun KClass<*>.checkEntityNumber(name: String) {
@@ -56,11 +55,8 @@ private fun KProperty1<*, *>.checkRelationNumber(name: String) {
 }
 
 @Suppress("UNCHECKED_CAST")
-private fun KClass<*>.processEntity(owned: Boolean, tmpSchema: TempSchema): SEntity {
+private fun KClass<*>.processEntity(tmpSchema: TempSchema, ownedBy: String? = null): SEntity {
   val name = this.qualifiedName ?: throw Exception("No Entity name!")
-  if (owned && tmpSchema.tmpOwned[name] != null)
-    throw Exception("Entity already owned! - ($name)")
-
   return tmpSchema.schema.entities.getOrElse(name) {
     this.checkEntityNumber(name)
 
@@ -76,8 +72,8 @@ private fun KClass<*>.processEntity(owned: Boolean, tmpSchema: TempSchema): SEnt
     val sEntity = SEntity(name, type, sealed != null, processListeners())
 
     tmpSchema.schema.addEntity(sEntity)
-    if (owned)
-      tmpSchema.tmpOwned[name] = sEntity
+    if (ownedBy != null)
+      tmpSchema.owned[name] = ownedBy
 
     val tmpInputProps = mutableSetOf<KProperty1<Any, *>>()
     val allProps = memberProperties.map { it.name to (it as KProperty1<Any, *>) }.toMap()
@@ -100,7 +96,13 @@ private fun KClass<*>.processEntity(owned: Boolean, tmpSchema: TempSchema): SEnt
     // process sealed inheritance
     sealed?.let {
       for (clazz in sealed.value) {
-        val xEntity = clazz.processEntity(true, tmpSchema)
+        if (tmpSchema.owned.contains(clazz.qualifiedName))
+          throw Exception("Entity already owned! - (${clazz.qualifiedName} -|> ${sEntity.name}) & (${clazz.qualifiedName} owned-by ${tmpSchema.owned[clazz.qualifiedName]})")
+
+        val xEntity = clazz.processEntity(tmpSchema, sEntity.name)
+        if (xEntity.type == EntityType.MASTER)
+          throw Exception("A master cannot inherit a sealed class! - (${xEntity.name} -|> ${sEntity.name})")
+
         sEntity.addSealed(xEntity.name, xEntity)
       }
     }
@@ -196,7 +198,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
     this.hasAnnotation<Create>() -> RelationType.CREATE
     link != null -> {
       for (trait in link.traits)
-        traits.add(trait.processEntity(false, tmpSchema))
+        traits.add(trait.processEntity(tmpSchema))
       RelationType.LINK
     }
     else -> throw Exception("Required annotation, one of (Create, Link)! - (${sEntity.name}, ${this.name})")
@@ -220,15 +222,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
           true
         } else false
 
-        val eRef = tRef.processCreate(tmpSchema)
-        if (!isPack && eRef.isSealed)
-          throw Exception("Create-collection of sealed entity must be of type, one of (Set<Pack<*>>, List<Pack<*>>)! - (${sEntity.name}, ${this.name})")
-
-        if (isPack && !eRef.isSealed)
-          throw Exception("Create-collection with Pack<*> doesn't correspond to a sealed entity! - (${sEntity.name}, ${this.name}, ${eRef.name})")
-
-        // TODO: how to check if the sealed class is a top sealed entity?
-        eRef
+        tRef.processCreateRelation(sEntity, this.name, isPack, tmpSchema)
       }
 
       RelationType.LINK -> {
@@ -238,12 +232,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.MAP_ID_TRAITS))
           throw Exception("Link-collection with traits type must be of type Map<Long, Traits>! - (${sEntity.name}, ${this.name})")
 
-        val eRef = link!!.value.processEntity(false, tmpSchema)
-        if (eRef.isSealed)
-          throw Exception("Check sealed, not implemented! - (${sEntity.name}, ${this.name})")
-
-        // TODO: how to check if the sealed class is a top sealed entity?
-        eRef
+        link!!.value.processEntity(tmpSchema)
       }
     }
 
@@ -257,15 +246,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
           true
         } else false
 
-        val eRef = tRef.processCreate(tmpSchema)
-        if (!isPack && eRef.isSealed)
-          throw Exception("Create of sealed entity must be of type Pack<*>! - (${sEntity.name}, ${this.name})")
-
-        if (isPack && !eRef.isSealed)
-          throw Exception("Create with Pack<*> doesn't correspond to a sealed entity! - (${sEntity.name}, ${this.name}, ${eRef.name})")
-
-        // TODO: how to check if the sealed class is a top sealed entity?
-        eRef
+        tRef.processCreateRelation(sEntity, this.name, isPack, tmpSchema)
       }
 
       RelationType.LINK -> {
@@ -275,12 +256,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.PAIR_ID_TRAITS))
           throw Exception("Link-reference with traits must be of type Pair<Long, Traits>! - (${sEntity.name}, ${this.name})")
 
-        val eRef = link!!.value.processEntity(false, tmpSchema)
-        if (eRef.isSealed)
-          throw Exception("Check sealed, not implemented! - (${sEntity.name}, ${this.name})")
-
-        // TODO: how to check if the sealed class is a top sealed entity?
-        eRef
+        link!!.value.processEntity(tmpSchema)
       }
     }
 
@@ -293,9 +269,20 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
   return SRelation(this.name, rType, ref, traits, this, isCollection, isOpen, isOptional)
 }
 
-private fun KType.processCreate(tmpSchema: TempSchema): SEntity {
+private fun KType.processCreateRelation(sEntity: SEntity, rel: String, isPack: Boolean, tmpSchema: TempSchema): SEntity {
   val entity = this.classifier as KClass<*>
-  return entity.processEntity(true, tmpSchema)
+  if (tmpSchema.owned.contains(entity.qualifiedName))
+    throw Exception("Entity already owned! - (${sEntity.name}, $rel) & (${entity.qualifiedName} owned-by ${tmpSchema.owned[entity.qualifiedName]})")
+
+  val eRef = entity.processEntity(tmpSchema, sEntity.name)
+
+  if (!isPack && eRef.isSealed)
+    throw Exception("Create of sealed entity must be of type, one of (Set<Pack<*>>, List<Pack<*>>, Pack<*>)! - (${sEntity.name}, $rel)")
+
+  if (isPack && !eRef.isSealed)
+    throw Exception("Create with Pack<*> doesn't correspond to a sealed entity! - (${sEntity.name}, $rel, ${eRef.name})")
+
+  return eRef
 }
 
 private fun KClass<*>.getEntityType(): EntityType? {

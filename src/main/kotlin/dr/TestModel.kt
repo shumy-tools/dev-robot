@@ -22,7 +22,6 @@ class OwnedUserType (
   @Create val users: List<Pack<UserType>>
 )
 
-
 @Detail @Sealed(Customer::class, Supplier::class)
 class UserType(
   val user: String,
