@@ -5,6 +5,7 @@ import dr.query.QTree
 import dr.query.QueryEngine
 import dr.schema.SParser
 import dr.schema.Pack
+import dr.schema.Traits
 import dr.schema.print
 import dr.spi.*
 import java.time.LocalDateTime
@@ -55,7 +56,7 @@ class TestModificationAdaptor: IModificationAdaptor {
 
 fun main(args: Array<String>) {
   DrServer.apply {
-    schema = SParser.parse(UserType::class, Sell::class, User::class, Role::class, Auction::class)
+    schema = SParser.parse(OwnedUserType::class, Sell::class, User::class, Role::class, Auction::class)
     qEngine = QueryEngine(TestQueryAdaptor(), TestQueryAuthorizer())
     mEngine = ModificationEngine(TestModificationAdaptor())
 
@@ -92,10 +93,12 @@ fun main(args: Array<String>) {
 
   println("")
   val userType = UserType("shumy", "mail@google.pt", "pass-1", setOf(1L, 2L))
-  val customer = Customer("Address of customer")
-  val jsonCustomerCreate = DrServer.serialize(Pack(userType, customer))
-  val customerId = DrServer.mEngine.create(DrServer.deserialize(jsonCustomerCreate, Pack::class))
-  println("CUSTOMER-ID: $customerId")
+  val customer = Customer(12F, EmbeddedAddress("France", "Paris"), Pair(3L, Traits(Trace2(LocalDateTime.now()))))
+
+  val ownedUserType = OwnedUserType("Top Boss", listOf(Pack(userType, customer)))
+  val jsonOwnedUserTypeCreate = DrServer.serialize(ownedUserType)
+  val customerId = DrServer.mEngine.create(DrServer.deserialize(jsonOwnedUserTypeCreate, OwnedUserType::class))
+  println("OWNED-USER-TYPE-ID: $customerId")
 
   println("")
   val jsonSellCreate = DrServer.serialize(Sell(10.5F, customerId))
@@ -106,9 +109,9 @@ fun main(args: Array<String>) {
   val jsonUserCreate = DrServer.serialize(User(
     name = "Micael",
     email = "email@gmail.com",
-    market = Pair(1L, Pack(UserMarket(Trace(LocalDateTime.now()),1L))),
+    market = Pair(1L, Traits(UserMarket(Trace(LocalDateTime.now()),1L))),
     address = Address("Portugal", "Aveiro", "Some street and number"),
-    roles = mapOf(1L to Pack(Trace(LocalDateTime.now())), 2L to Pack(Trace(LocalDateTime.now())))
+    roles = mapOf(1L to Traits(Trace(LocalDateTime.now())), 2L to Traits(Trace(LocalDateTime.now())))
   ))
   val userId = DrServer.mEngine.create(DrServer.deserialize(jsonUserCreate, User::class))
   println("USER-ID: $userId")
@@ -118,7 +121,7 @@ fun main(args: Array<String>) {
   val jsonUserUpdate = DrServer.serialize(UpdateData(
     "name" to "Micael",
     "email" to "email@gmail.com",
-    "market" to OneLinkWithTraits(5L, Pack(UserMarket(Trace(LocalDateTime.of(2000, Month.JANUARY, 1, 12, 0,0)),2L)))
+    "market" to OneLinkWithTraits(5L, Traits(UserMarket(Trace(LocalDateTime.of(2000, Month.JANUARY, 1, 12, 0,0)),2L)))
   ))
   DrServer.mEngine.update(User::class.qualifiedName!!, userId, DrServer.deserialize(jsonUserUpdate, UpdateData::class))
 
@@ -143,7 +146,7 @@ fun main(args: Array<String>) {
 
 
   println("")
-  val jsonRolesLink = DrServer.serialize(ManyLinksWithTraits(6L to Pack(Trace(LocalDateTime.now())), 7L to Pack(Trace(LocalDateTime.now()))))
+  val jsonRolesLink = DrServer.serialize(ManyLinksWithTraits(6L to Traits(Trace(LocalDateTime.now())), 7L to Traits(Trace(LocalDateTime.now()))))
   val roleIds = DrServer.mEngine.link(User::class.qualifiedName!!, userId, "roles", DrServer.deserialize(jsonRolesLink, ManyLinksWithTraits::class))
   println("ROLE-ID: $roleIds")
 
@@ -152,7 +155,7 @@ fun main(args: Array<String>) {
   val jsonRolesUnlink = DrServer.serialize(ManyLinkDelete(roleIds))
   DrServer.mEngine.unlink(User::class.qualifiedName!!, "roles", DrServer.deserialize(jsonRolesUnlink, ManyLinkDelete::class))
 
-  println("CUSTOMER-CREATE: $jsonCustomerCreate\n")
+  println("OWNED-USER-TYPE-CREATE: $jsonOwnedUserTypeCreate\n")
   println("SELL-CREATE: $jsonSellCreate\n")
   println("USER-CREATE: $jsonUserCreate\n")
   println("USER-UPDATE: $jsonUserUpdate\n")

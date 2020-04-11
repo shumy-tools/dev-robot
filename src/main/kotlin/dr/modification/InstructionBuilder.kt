@@ -15,42 +15,21 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
   private fun addInstruction(index: Int, inst: Instruction) = instructions.list.add(index, inst)
 
   fun createEntity(data: Any): Insert {
-    val (master, extended) = if (data is Pack) {
-      if (data.pack.isEmpty())
-        throw Exception("Pack must contain values!")
-      Pair(data.pack.first(), data.pack.drop(1))
-    } else {
-      Pair(data, listOf<SEntity>())
-    }
-
-    val mEntity = schema.findEntity(master)
+    val mEntity = schema.findTopEntity(data)
     if (mEntity.type != EntityType.MASTER)
       throw Exception("Creation is only valid for master entities! - (${mEntity.name})")
 
-    // create master entity
-    val mInsert = Insert(table(mEntity), CreateAction(mEntity)).apply {
+    // create master and sealed children
+    return Insert(table(mEntity), CreateAction(mEntity)).apply {
       addInstruction(this)
-      checkEntityAndInsert(mEntity, master, this)
+      checkAnyAndInsert(data,this)
     }
-
-    // create extended entities if exist
-    var tInsert = mInsert
-    for (item in extended) {
-      tInsert = createSealed(tInsert, item)
-    }
-
-    // sealed chain must be complete!
-    if (tInsert.action.sEntity.isSealed)
-      throw Exception("Creation of sealed entity must contain extended entities! - (${tInsert.action.sEntity.name})")
-
-    // return last insert
-    return tInsert
   }
 
   fun updateEntity(sEntity: SEntity, id: Long, data: Map<String, Any?>): Update {
     return Update(table(sEntity), id, UpdateAction(sEntity, id)).apply {
       addInstruction(this)
-      checkEntityAndInsert(sEntity, data, this)
+      checkEntityAndInsert(sEntity, data,this)
     }
   }
 
@@ -94,17 +73,44 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
   /* ------------------------------------------------------------ private ------------------------------------------------------------ */
   private fun table(sEntity: SEntity) = tableTranslator.getValue(sEntity.name)
 
-  private fun createSealed(topInst: Insert, value: Any): Insert {
-    val sTop = topInst.action.sEntity
+  private fun checkAnyAndInsert(data: Any, topInst: InsertOrUpdate) {
+    val (head, tail) = if (data is Pack<*>) {
+      Pair(data.head, data.tail)
+    } else {
+      Pair(data, emptyArray())
+    }
+
+    val sEntity = schema.findEntity(head)
+    checkPackAndInsert(sEntity, head, tail, topInst)
+  }
+
+  private fun checkPackAndInsert(topEntity: SEntity, head: Any, tail: Array<out Any>, topInst: InsertOrUpdate) {
+    // create top entity
+    checkEntityAndInsert(topEntity, head, topInst)
+
+    // create extended entities if exist
+    var nextEntity = topEntity
+    var nextInst = topInst
+    for (item in tail) {
+      nextInst = createSealed(topEntity, item, nextInst)
+      nextEntity = nextInst.action.sEntity
+    }
+
+    // sealed chain must be complete!
+    if (nextEntity.isSealed)
+      throw Exception("Creation of sealed entity must contain extended entities! - (${nextEntity.name})")
+  }
+
+  private fun createSealed(topEntity: SEntity, value: Any, topInst: InsertOrUpdate): Insert {
     val sEntity = schema.findEntity(value)
-    if (!sTop.isSealed)
-      throw Exception("Not a top @Sealed entity! - (${sTop.name})")
+    if (!topEntity.isSealed)
+      throw Exception("Not a top @Sealed entity! - (${topEntity.name})")
 
     topInst.putData("type", sEntity.name)
     return Insert(table(sEntity), CreateAction(sEntity)).apply {
-      putUnresolvedRef("ref_type", topInst)
-      checkEntityAndInsert(sEntity, value, this)
+      putUnresolvedRef("ref_super", topInst)
       addInstruction(this)
+      checkEntityAndInsert(sEntity, value, this)
     }
   }
 
@@ -113,7 +119,7 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
     val index = instructions.size - 1
 
     // get all fields/relations
-    val props = sEntity.getAllKeys(topInst, new)
+    val props = sEntity.getAllKeys(new, topInst is Update)
 
     // --------------------------------- check and process fields ---------------------------------
     for (prop in props) {
@@ -144,7 +150,7 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
       when (sRelation.type) {
         RelationType.CREATE -> if (!sRelation.isCollection) {
           // TODO: should the ref-entity be deleted when null?
-          if (rValue != null) setReference(sEntity, sRelation, rValue, topInst, index) else topInst.putResolvedRef("ref_$prop", null)
+          if (rValue != null) setReference(sEntity, sRelation, rValue, topInst, index) else topInst.putResolvedRef("ref__$prop", null)
         } else {
           if (topInst is Update)
             throw Exception("Cannot update collections, use 'add/link/unlink' instead! - (${sEntity.name}, ${sRelation.name})")
@@ -176,60 +182,89 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
         throw Exception("Invalid field type, expected ${sRelation.ref.name} found ${type}! - (${sEntity.name}, ${sRelation.name})")
     }
 
-    if (sEntity.type != EntityType.TRAIT) {
+    if (sEntity.type == EntityType.TRAIT || sRelation.ref.type == EntityType.TRAIT) {
+      // unwrap properties (reuse instruction)
+
+      // TODO: set properties at a lower tree level? ${sRelation.name}
+      if (sEntity.type != EntityType.TRAIT) topInst.push(sRelation.name)
+        checkAnyAndInsert(rValue, topInst)
+      if (sEntity.type != EntityType.TRAIT) topInst.pop()
+
+    } else {
       // A ref_<rel> --> B
       Insert(table(sRelation.ref), CreateAction(sRelation.ref)).apply {
-        topInst.putUnresolvedRef("ref_${sRelation.name}", this)
+        topInst.putUnresolvedRef("ref__${sRelation.name}", this)
         addInstruction(index,this)
-        checkEntityAndInsert(sRelation.ref, rValue, this)
+        checkAnyAndInsert(rValue, this)
       }
-    } else {
-      // unwrap properties (reuse instruction)
-      checkEntityAndInsert(sRelation.ref, rValue, topInst)
     }
   }
 
   private fun setLink(sEntity: SEntity, sRelation: SRelation, data: LinkCreate, topInst: InsertOrUpdate) {
     when (data) {
       is OneLinkWithoutTraits -> setLinkNoTraits(sEntity, sRelation, data, topInst)
-      is OneLinkWithTraits -> addLinkWithTraits(sEntity, sRelation, data.ref, data.traits, topInst)
+      is OneLinkWithTraits -> setLinkWithTraits(sEntity, sRelation, data, topInst)
       else -> throw Exception("Link set doesn't support many-links! - (${sEntity.name}, ${sRelation.name})")
     }
   }
 
   private fun setLinkNoTraits(sEntity: SEntity, sRelation: SRelation, data: OneLinkWithoutTraits, topInst: InsertOrUpdate) {
-    if (sEntity.type != EntityType.TRAIT) {
+    if (sEntity.type == EntityType.TRAIT || sRelation.ref.type == EntityType.TRAIT) {
+      // unwrap properties (reuse instruction)
+      topInst.putResolvedRef("ref__${sRelation.name}", data.ref)
+    } else {
       // A <-- [inv . ref] --> B
       Insert("${table(sEntity)}__${sRelation.name}", LinkAction(sEntity, sRelation)).apply {
         putResolvedRef("ref", data.ref)
         putUnresolvedRef("inv", topInst)
         addInstruction(this)
       }
-    } else {
+    }
+  }
+
+  private fun setLinkWithTraits(sEntity: SEntity, sRelation: SRelation, data: OneLinkWithTraits, topInst: InsertOrUpdate) {
+    if (sRelation.ref.type == EntityType.TRAIT) {
       // unwrap properties (reuse instruction)
-      topInst.putResolvedRef("ref_${sRelation.name}", data.ref)
+      topInst.putResolvedRef("ref__${sRelation.name}", data.ref)
+
+      // TODO: set properties at a lower tree level? ${sRelation.name}
+      if (sEntity.type != EntityType.TRAIT) topInst.push(sRelation.name)
+        unwrapTraits(sEntity, sRelation, data.traits, topInst)
+      if (sEntity.type != EntityType.TRAIT) topInst.pop()
+
+    } else {
+      val linkTable = addLinkRow(sEntity, sRelation, data.ref, topInst)
+      unwrapTraits(sEntity, sRelation, data.traits, linkTable)
     }
   }
 
 
   /* ------------------------------------------------------------ one-to-many ------------------------------------------------------------ */
   private fun addOneRelation(sEntity: SEntity, sRelation: SRelation, rValue: Any, unresolvedInv: InsertOrUpdate? = null, resolvedInv: Long? = null): Insert {
+    // TODO: to support this we need to return a topInst (but it doesn't always exist)
+    if (sRelation.ref.type == EntityType.TRAIT)
+      throw Exception("Doesn't support collections of traits yet!")
+
     // A <-- inv_<A>_<rel> B
     val invTable = table(sEntity)
     return Insert(table(sRelation.ref), AddAction(sEntity, sRelation)).apply {
-      if (resolvedInv == null) putUnresolvedRef("inv_${invTable}_${sRelation.name}", unresolvedInv!!) else putResolvedRef("inv_${invTable}_${sRelation.name}", resolvedInv)
+      if (resolvedInv == null) putUnresolvedRef("inv_${invTable}__${sRelation.name}", unresolvedInv!!) else putResolvedRef("inv_${invTable}__${sRelation.name}", resolvedInv)
       addInstruction(this)
-      checkEntityAndInsert(sRelation.ref, rValue, this)
+      checkAnyAndInsert(rValue, this)
     }
   }
 
-  private fun addLinkWithTraits(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Pack, unresolvedInv: InsertOrUpdate? = null, resolvedInv: Long? = null): Insert {
+  private fun addLinkWithTraits(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Traits, unresolvedInv: InsertOrUpdate? = null, resolvedInv: Long? = null): Insert {
     val linkTable = addLinkRow(sEntity, sRelation, link, unresolvedInv, resolvedInv)
     unwrapTraits(sEntity, sRelation, traits, linkTable)
     return linkTable
   }
 
   private fun addLinkRow(sEntity: SEntity, sRelation: SRelation, link: Long, unresolvedInv: InsertOrUpdate? = null, resolvedInv: Long? = null): Insert {
+    // TODO: to support this we need to return a topInst (but it doesn't always exist)
+    if (sRelation.ref.type == EntityType.TRAIT)
+      throw Exception("Doesn't support collections of traits yet!")
+
     // A <-- [inv . ref] --> B
     return Insert("${table(sEntity)}__${sRelation.name}", LinkAction(sEntity, sRelation)).apply {
       putResolvedRef("ref", link)
@@ -238,12 +273,12 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
     }
   }
 
-  private fun unwrapTraits(sEntity: SEntity, sRelation: SRelation, traits: Pack, linkTable: Insert) {
-    if (sRelation.traits.size != traits.pack.size)
-      throw Exception("Invalid number of traits, expected '${sRelation.traits.size}' found '${traits.pack.size}'! - (${sEntity.name}, ${sRelation.name})")
+  private fun unwrapTraits(sEntity: SEntity, sRelation: SRelation, traits: Traits, linkTable: InsertOrUpdate) {
+    if (sRelation.traits.size != traits.traits.size)
+      throw Exception("Invalid number of traits, expected '${sRelation.traits.size}' found '${traits.traits.size}'! - (${sEntity.name}, ${sRelation.name})")
 
     val processedTraits = mutableSetOf<Any>()
-    for (trait in traits.pack) {
+    for (trait in traits.traits) {
       val name = trait.javaClass.kotlin.qualifiedName
       val sTrait = schema.traits[name] ?: throw Exception("Trait type not found! - ($name)")
 
@@ -252,11 +287,11 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
         throw Exception("Trait '${sTrait.name}' not part of the model! - (${sEntity.name}, ${sRelation.name})")
 
       // Does not insert. Compact all trait fields
-      checkEntityAndInsert(sTrait, trait, linkTable)
+      checkAnyAndInsert(trait, linkTable)
     }
 
     if (sRelation.traits.size != processedTraits.size)
-      throw Exception("Invalid number of traits, expected '${sRelation.traits.size}' found '${traits.pack.size}'! - (${sEntity.name}, ${sRelation.name})")
+      throw Exception("Invalid number of traits, expected '${sRelation.traits.size}' found '${traits.traits.size}'! - (${sEntity.name}, ${sRelation.name})")
   }
 
   private fun removeOneLink(sEntity: SEntity, sRelation: SRelation, link: Long) {
@@ -278,8 +313,8 @@ fun checkFieldConstraints(sEntity: SEntity, sField: SField, value: Any) {
 }
 
 @Suppress("UNCHECKED_CAST")
-private fun SEntity.getAllKeys(insOrUpd: InsertOrUpdate, new: Any): Set<String> {
-  return if (insOrUpd is Update) {
+private fun SEntity.getAllKeys(new: Any, isUpdate: Boolean): Set<String> {
+  return if (isUpdate) {
     if (new !is Map<*, *>)
       throw Exception("Expected Map<String, Any?> of values for update! - (${this.name})")
 
@@ -334,9 +369,9 @@ private fun Any?.translate(sRelation: SRelation): Any? {
   return if (sRelation.type == RelationType.LINK) {
     when (val data = this!!) {
       is Long -> OneLinkWithoutTraits(data)
-      is Pair<*, *> -> OneLinkWithTraits(data.first as Long, data.second as Pack)
+      is Pair<*, *> -> OneLinkWithTraits(data.first as Long, data.second as Traits)
       is Collection<*> -> ManyLinksWithoutTraits(data as Collection<Long>)
-      is Map<*, *> -> ManyLinksWithTraits(data as Map<Long, Pack>)
+      is Map<*, *> -> ManyLinksWithTraits(data as Map<Long, Traits>)
       else -> throw  Exception("Unable to translate link '${data.javaClass.kotlin.qualifiedName}'! - (Code bug, please report the issue)")
     }
   } else {

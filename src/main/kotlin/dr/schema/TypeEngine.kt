@@ -26,6 +26,7 @@ private val DATETIME = typeOf<LocalDateTime?>()
 
 object TypeEngine {
   val ID = typeOf<Long>()
+  val PACK = typeOf<Pack<*>>()
 
   val LIST = typeOf<List<*>>()
   val SET = typeOf<Set<*>>()
@@ -33,8 +34,8 @@ object TypeEngine {
   val LIST_ID = typeOf<List<Long>>()
   val SET_ID = typeOf<Set<Long>>()
 
-  val PAIR_ID_TRAITS = typeOf<Pair<Long, Pack>>()
-  val MAP_ID_TRAITS = typeOf<Map<Long, Pack>>()
+  val PAIR_ID_TRAITS = typeOf<Pair<Long, Traits>>()
+  val MAP_ID_TRAITS = typeOf<Map<Long, Traits>>()
 
   private val typeToClass = mutableMapOf<FieldType, KClass<*>>().apply {
     put(FieldType.TEXT, String::class)

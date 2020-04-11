@@ -47,9 +47,17 @@ enum class RelationType {
 }
 
 /* ------------------------- structures -------------------------*/
-class Pack(
+class Pack<T: Any>(
   @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
-  vararg val pack: Any
+  val head: T,
+
+  @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
+  vararg val tail: Any
+)
+
+class Traits(
+  @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
+  vararg val traits: Any
 )
 
 class Schema {
@@ -60,6 +68,14 @@ class Schema {
   fun findEntity(value: Any): SEntity {
     val name = value.javaClass.kotlin.qualifiedName
     return this.entities[name] ?: throw Exception("Entity type not found! - ($name)")
+  }
+
+  fun findTopEntity(value: Any): SEntity {
+    return if (value is Pack<*>) {
+      findEntity(value.head)
+    } else {
+      findEntity(value)
+    }
   }
 
   internal fun addEntity(sEntity: SEntity) {

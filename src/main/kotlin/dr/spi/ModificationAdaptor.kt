@@ -5,6 +5,8 @@ import dr.schema.ActionType.*
 import dr.schema.EventType
 import dr.schema.SEntity
 import dr.schema.SRelation
+import java.util.*
+import kotlin.collections.LinkedHashMap
 
 interface IModificationAdaptor {
   fun commit(instructions: Instructions): List<Long>
@@ -92,12 +94,28 @@ sealed class Instruction {
     val resolvedRefs: Map<String, Long?> = linkedMapOf()
     val unresolvedRefs: Map<String, Instruction> = linkedMapOf()
 
+    private var dataStack = Stack<LinkedHashMap<String, Any?>>()
+
+    init {
+      dataStack.push(data as LinkedHashMap<String, Any?>)
+    }
+
     internal fun dataText() = if (data.isNotEmpty()) ", data=$data" else ""
     internal fun resolvedRefsText() = if (resolvedRefs.isNotEmpty()) ", refs=$resolvedRefs" else ""
     internal fun unresolvedRefsText() = if (unresolvedRefs.isNotEmpty()) ", urefs=${unresolvedRefs.map { (name, inst) -> "$name=${inst.table}:${inst.hashCode()}" }}" else ""
 
+    internal fun push(level: String) {
+      val map = linkedMapOf<String, Any?>()
+      dataStack.peek()[level] = map
+      dataStack.push(map)
+    }
+
+    internal fun pop() {
+      dataStack.pop()
+    }
+
     internal fun putData(name: String, value: Any?) {
-      (this.data as LinkedHashMap<String, Any?>)[name] = value
+      dataStack.peek()[name] = value
     }
 
     internal fun putResolvedRef(name: String, ref: Long?) {

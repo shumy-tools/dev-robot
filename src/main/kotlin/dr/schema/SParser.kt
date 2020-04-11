@@ -64,6 +64,9 @@ private fun KClass<*>.processEntity(owned: Boolean, tmpSchema: TempSchema): SEnt
   return tmpSchema.schema.entities.getOrElse(name) {
     this.checkEntityNumber(name)
 
+    if (name.toLowerCase() == "super")
+      throw Exception("Reserved class name: 'super'! - ($name)")
+
     println("  Entity: $name")
     if (this.isOpen || this.isSealed)
       throw Exception("Class inheritance is done via @Extend. Remove open or sealed keywords. - ($name)")
@@ -179,7 +182,7 @@ private fun KProperty1<Any, *>.processChecks(): Set<SCheck> {
   }.toSet()
 }
 
-private fun KProperty1<Any, *>.processRelation(sEntity: SEntity,  tmpSchema: TempSchema): SRelation {
+private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: TempSchema): SRelation {
   this.checkRelationNumber(sEntity.name)
 
   val type = this.returnType
@@ -211,8 +214,21 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity,  tmpSchema: Tem
         if (!type.isSubtypeOf(TypeEngine.LIST) && !type.isSubtypeOf(TypeEngine.SET))
           throw Exception("Create-collection must be of type, one of (Set<*>, List<*>)! - (${sEntity.name}, ${this.name})")
 
-        val tRef = type.arguments.last().type ?: throw Exception("Required generic type! - (${sEntity.name}, ${this.name})")
-        tRef.processCreate(tmpSchema)
+        var tRef = type.arguments.last().type ?: throw Exception("Required generic type! - (${sEntity.name}, ${this.name})")
+        val isPack = if (tRef.isSubtypeOf(TypeEngine.PACK)) {
+          tRef = tRef.arguments.last().type ?: throw Exception("Required generic type! - (${sEntity.name}, ${this.name})")
+          true
+        } else false
+
+        val eRef = tRef.processCreate(tmpSchema)
+        if (!isPack && eRef.isSealed)
+          throw Exception("Create-collection of sealed entity must be of type, one of (Set<Pack<*>>, List<Pack<*>>)! - (${sEntity.name}, ${this.name})")
+
+        if (isPack && !eRef.isSealed)
+          throw Exception("Create-collection with Pack<*> doesn't correspond to a sealed entity! - (${sEntity.name}, ${this.name}, ${eRef.name})")
+
+        // TODO: how to check if the sealed class is a top sealed entity?
+        eRef
       }
 
       RelationType.LINK -> {
@@ -222,14 +238,35 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity,  tmpSchema: Tem
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.MAP_ID_TRAITS))
           throw Exception("Link-collection with traits type must be of type Map<Long, Traits>! - (${sEntity.name}, ${this.name})")
 
-        link!!.value.processEntity(false, tmpSchema)
+        val eRef = link!!.value.processEntity(false, tmpSchema)
+        if (eRef.isSealed)
+          throw Exception("Check sealed, not implemented! - (${sEntity.name}, ${this.name})")
+
+        // TODO: how to check if the sealed class is a top sealed entity?
+        eRef
       }
     }
 
     Pair(ref, true)
   } else {
     val ref = when(rType) {
-      RelationType.CREATE -> type.processCreate(tmpSchema)
+      RelationType.CREATE -> {
+        var tRef = type
+        val isPack = if (type.isSubtypeOf(TypeEngine.PACK)) {
+          tRef = type.arguments.last().type ?: throw Exception("Required generic type! - (${sEntity.name}, ${this.name})")
+          true
+        } else false
+
+        val eRef = tRef.processCreate(tmpSchema)
+        if (!isPack && eRef.isSealed)
+          throw Exception("Create of sealed entity must be of type Pack<*>! - (${sEntity.name}, ${this.name})")
+
+        if (isPack && !eRef.isSealed)
+          throw Exception("Create with Pack<*> doesn't correspond to a sealed entity! - (${sEntity.name}, ${this.name}, ${eRef.name})")
+
+        // TODO: how to check if the sealed class is a top sealed entity?
+        eRef
+      }
 
       RelationType.LINK -> {
         if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.ID))
@@ -238,7 +275,12 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity,  tmpSchema: Tem
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.PAIR_ID_TRAITS))
           throw Exception("Link-reference with traits must be of type Pair<Long, Traits>! - (${sEntity.name}, ${this.name})")
 
-        link!!.value.processEntity(false, tmpSchema)
+        val eRef = link!!.value.processEntity(false, tmpSchema)
+        if (eRef.isSealed)
+          throw Exception("Check sealed, not implemented! - (${sEntity.name}, ${this.name})")
+
+        // TODO: how to check if the sealed class is a top sealed entity?
+        eRef
       }
     }
 

@@ -20,18 +20,18 @@ sealed class LinkData
     class OneLinkWithoutTraits(val ref: Long): LinkCreate()
 
     @JsonTypeName("many-link-traits")
-    class ManyLinksWithTraits(val refs: Map<Long, Pack>): LinkCreate() {
-      constructor(vararg values: Pair<Long, Pack>): this(values.toMap())
+    class ManyLinksWithTraits(val refs: Map<Long, Traits>): LinkCreate() {
+      constructor(vararg values: Pair<Long, Traits>): this(values.toMap())
     }
 
     // hack? jackson doesn't support Creator with @JsonUnwrapped
     @JsonTypeName("one-link-traits")
     class OneLinkWithTraits(val ref: Long): LinkCreate() {
       @JsonUnwrapped
-      lateinit var traits: Pack
+      lateinit var traits: Traits
         private set
 
-      constructor(ref: Long, traits: Pack): this(ref) {
+      constructor(ref: Long, traits: Traits): this(ref) {
         this.traits = traits
       }
     }

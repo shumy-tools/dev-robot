@@ -17,7 +17,6 @@ object DrServer {
     .registerModule(JavaTimeModule())
     .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
     .setSerializationInclusion(JsonInclude.Include.NON_NULL)
-    .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
 
   init {
     mapper.registerSubtypes(
