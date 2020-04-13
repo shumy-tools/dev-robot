@@ -69,7 +69,7 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema, ownedBy: String? = nu
 
     val type = this.getEntityType() ?: throw Exception("Required annotation, one of (Master, Detail, Trait, Extend)! - ($name)")
 
-    // find @LateInit if exists
+    // find @LateInit function if exists
     var initFun: KFunction<*>? = null
     for (mFun in declaredMemberFunctions) {
       if (mFun.hasAnnotation<LateInit>()) {
@@ -107,8 +107,11 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema, ownedBy: String? = nu
       tmpInputProps.add(prop)
     }
 
-    // process derived properties
+    // process derived properties and 'var' inputs
     for (prop in allProps.values.filter { !tmpInputProps.contains(it) }) {
+      if (prop.isLateinit && initFun == null)
+        throw Exception("For lateinit properties there must be a @LateInit function! - (${sEntity.name}, ${prop.name})")
+
       val fieldOrRelation = prop.processFieldOrRelation(sEntity, tmpSchema)
       sEntity.addProperty(prop.name, fieldOrRelation)
     }

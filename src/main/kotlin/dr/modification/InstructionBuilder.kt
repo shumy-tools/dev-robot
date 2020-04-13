@@ -150,7 +150,7 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
     // --------------------------------- check and process relations ---------------------------------
     for (prop in props) {
       val sRelation = sEntity.rels[prop] ?: continue  // ignore relations that are not part of the schema
-      val rValue = new.getRelationValueIfValid(sEntity, sRelation, topInst is Update)
+      val rValue = new.getRelationValueIfValid(sEntity, sRelation, isUpdate)
 
       // check relations constraints and create instruction (insert)
       when (sRelation.type) {
