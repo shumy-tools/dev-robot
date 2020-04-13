@@ -26,6 +26,11 @@ annotation class Detail
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Trait
 
+
+@Target(AnnotationTarget.PROPERTY)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Unique
+
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Open
@@ -132,6 +137,9 @@ class Schema {
       abstract val isOptional: Boolean
 
       var isInput: Boolean = false
+        internal set
+
+      var isUnique: Boolean = false
         internal set
 
       fun getValue(instance: Any): Any? {

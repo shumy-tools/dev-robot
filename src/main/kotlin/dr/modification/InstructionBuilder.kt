@@ -43,14 +43,14 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
     }
   }
 
-  fun addLinks(sEntity: SEntity, sRelation: SRelation, data: LinkCreate, unresolvedInv: Insert? = null, resolvedInv: Long? = null): List<Insert> {
+  fun addLinks(sEntity: SEntity, sRelation: SRelation, data: LinkCreate, unresolvedInv: Insert? = null, resolvedInv: Long? = null): List<InsertOrUpdate> {
     // this is also checked in SParser!
     if (sEntity.type == EntityType.TRAIT)
       throw Exception("Collections are not supported in traits! - (${sEntity.name}, ${sRelation.name})")
 
     return when (data) {
-      is OneLinkWithoutTraits -> listOf(addLinkRow(sEntity, sRelation, data.ref, unresolvedInv, resolvedInv))
-      is ManyLinksWithoutTraits -> data.refs.map { addLinkRow(sEntity, sRelation, it, unresolvedInv, resolvedInv) }
+      is OneLinkWithoutTraits -> listOf(addLinkNoTraits(sEntity, sRelation, data.ref, unresolvedInv, resolvedInv))
+      is ManyLinksWithoutTraits -> data.refs.map { addLinkNoTraits(sEntity, sRelation, it, unresolvedInv, resolvedInv) }
       is OneLinkWithTraits -> listOf(addLinkWithTraits(sEntity, sRelation, data.ref, data.traits, unresolvedInv, resolvedInv))
       is ManyLinksWithTraits -> data.refs.map { addLinkWithTraits(sEntity, sRelation, it.key, it.value, unresolvedInv, resolvedInv) }
     }
@@ -118,39 +118,27 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
     // index the current instruction (direct references appear before this index)
     val index = instructions.size - 1
 
-    val isUpdate = topInst is Update
+    val isUpdate = new is Map<*, *>
 
     //invoke @LateInit function if exists
     if (!isUpdate)
       sEntity.initFun?.call(new)
 
     // get all fields/relations
-    val props = sEntity.getAllKeys(new, isUpdate)
+    val props = sEntity.getAllKeys(new)
 
     // --------------------------------- check and process fields ---------------------------------
     for (prop in props) {
       val sField = sEntity.fields[prop] ?: continue // ignore fields that are not part of the schema
-      val fValue = new.getFieldValueIfValid(sEntity, sField, isUpdate)
-
-      // check field constraints if not null
-      fValue?.let {
-        if (isUpdate) {
-          val type = it.javaClass.kotlin
-          if (!TypeEngine.check(sField.type, type))
-            throw Exception("Invalid field type, expected ${sField.type} found ${type.simpleName}! - (${sEntity.name}, $prop)")
-        }
-
-        checkFieldConstraints(sEntity, sField, fValue)
-      }
-
-      // set even if null
+      val fValue = new.getFieldValueIfValid(sEntity, sField)
+      fValue?.let { checkFieldConstraints(sEntity, sField, fValue) }
       topInst.putData(prop, fValue)
     }
 
     // --------------------------------- check and process relations ---------------------------------
     for (prop in props) {
       val sRelation = sEntity.rels[prop] ?: continue  // ignore relations that are not part of the schema
-      val rValue = new.getRelationValueIfValid(sEntity, sRelation, isUpdate)
+      val rValue = new.getRelationValueIfValid(sEntity, sRelation)
 
       // check relations constraints and create instruction (insert)
       when (sRelation.type) {
@@ -190,9 +178,9 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
 
     if (sEntity.type == EntityType.TRAIT || sRelation.ref.type == EntityType.TRAIT) {
       // unwrap properties (reuse instruction)
-      if (sEntity.type != EntityType.TRAIT) topInst.push(sRelation.name)
+      topInst.with(sEntity.type != EntityType.TRAIT, sRelation.name) {
         checkAnyAndInsert(rValue, topInst)
-      if (sEntity.type != EntityType.TRAIT) topInst.pop()
+      }
     } else {
       // A ref_<rel> --> B
       Insert(table(sRelation.ref), CreateAction(sRelation.ref)).apply {
@@ -212,7 +200,9 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
   }
 
   private fun setLinkNoTraits(sEntity: SEntity, sRelation: SRelation, data: OneLinkWithoutTraits, topInst: InsertOrUpdate) {
-    if (sEntity.type == EntityType.TRAIT || sRelation.ref.type == EntityType.TRAIT) {
+    topInst.putResolvedRef("ref__${sRelation.name}", data.ref)
+
+    /*if (sEntity.type == EntityType.TRAIT || sRelation.ref.type == EntityType.TRAIT) {
       // unwrap properties (reuse instruction)
       topInst.putResolvedRef("ref__${sRelation.name}", data.ref)
     } else {
@@ -222,22 +212,28 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
         putUnresolvedRef("inv", topInst)
         addInstruction(this)
       }
-    }
+    }*/
   }
 
   private fun setLinkWithTraits(sEntity: SEntity, sRelation: SRelation, data: OneLinkWithTraits, topInst: InsertOrUpdate) {
-    if (sRelation.ref.type == EntityType.TRAIT) {
+    topInst.putResolvedRef("ref__${sRelation.name}", data.ref)
+
+    topInst.with(sEntity.type != EntityType.TRAIT, "traits__${sRelation.name}") {
+      unwrapTraits(sEntity, sRelation, data.traits, topInst)
+    }
+
+    /*if (sRelation.ref.type == EntityType.TRAIT) {
       // unwrap properties (reuse instruction)
       topInst.putResolvedRef("ref__${sRelation.name}", data.ref)
 
-      if (sEntity.type != EntityType.TRAIT) topInst.push(sRelation.name)
+      topInst.with(sEntity.type != EntityType.TRAIT, sRelation.name) {
         unwrapTraits(sEntity, sRelation, data.traits, topInst)
-      if (sEntity.type != EntityType.TRAIT) topInst.pop()
+      }
 
     } else {
       val linkTable = addLinkRow(sEntity, sRelation, data.ref, topInst)
       unwrapTraits(sEntity, sRelation, data.traits, linkTable)
-    }
+    }*/
   }
 
 
@@ -256,18 +252,36 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
     }
   }
 
-  private fun addLinkWithTraits(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Traits, unresolvedInv: InsertOrUpdate? = null, resolvedInv: Long? = null): Insert {
+  private fun addLinkNoTraits(sEntity: SEntity, sRelation: SRelation, link: Long, unresolvedInv: InsertOrUpdate? = null, resolvedInv: Long? = null): InsertOrUpdate {
+    // TODO: to support this we need to return a topInst (but it doesn't always exist)
+    if (sRelation.ref.type == EntityType.TRAIT)
+      throw Exception("Doesn't support collections of traits yet!")
+
+    return if (sRelation.isUnique) {
+      // A <-- inv_<A>_<rel> B
+      val invTable = table(sEntity)
+      Update(table(sRelation.ref), link, LinkAction(sEntity, sRelation)).apply {
+        if (resolvedInv == null) putUnresolvedRef("inv_${invTable}__${sRelation.name}", unresolvedInv!!) else putResolvedRef("inv_${invTable}__${sRelation.name}", resolvedInv)
+        addInstruction(this)
+      }
+    } else {
+      addLinkRow(sEntity, sRelation, link, unresolvedInv, resolvedInv)
+    }
+  }
+
+  private fun addLinkWithTraits(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Traits, unresolvedInv: InsertOrUpdate? = null, resolvedInv: Long? = null): InsertOrUpdate {
+    // TODO: to support this we need to return a topInst (but it doesn't always exist)
+    if (sRelation.ref.type == EntityType.TRAIT)
+      throw Exception("Doesn't support collections of traits yet!")
+
     val linkTable = addLinkRow(sEntity, sRelation, link, unresolvedInv, resolvedInv)
+
     unwrapTraits(sEntity, sRelation, traits, linkTable)
     return linkTable
   }
 
   private fun addLinkRow(sEntity: SEntity, sRelation: SRelation, link: Long, unresolvedInv: InsertOrUpdate? = null, resolvedInv: Long? = null): Insert {
-    // TODO: to support this we need to return a topInst (but it doesn't always exist)
-    if (sRelation.ref.type == EntityType.TRAIT)
-      throw Exception("Doesn't support collections of traits yet!")
-
-    // A <-- [inv . ref] --> B
+    // A <-- [inv <traits> ref] --> B
     return Insert("${table(sEntity)}__${sRelation.name}", LinkAction(sEntity, sRelation)).apply {
       putResolvedRef("ref", link)
       if (resolvedInv == null) putUnresolvedRef("inv", unresolvedInv!!) else putResolvedRef("inv", resolvedInv)
@@ -315,31 +329,56 @@ fun checkFieldConstraints(sEntity: SEntity, sField: SField, value: Any) {
 }
 
 @Suppress("UNCHECKED_CAST")
-private fun SEntity.getAllKeys(new: Any, isUpdate: Boolean): Set<String> {
-  return if (isUpdate) {
-    if (new !is Map<*, *>)
-      throw Exception("Expected Map<String, Any?> of values for update! - (${this.name})")
-
+private fun SEntity.getAllKeys(new: Any): Set<String> {
+  return if (new is Map<*, *>) {
     (new as Map<String, *>).keys
   } else {
-    // check if value is of correct type
     val vType = new.javaClass.kotlin.qualifiedName
     if (vType != this.name)
       throw Exception("Invalid input type, expected ${this.name} found ${vType}!")
 
     new.javaClass.kotlin.memberProperties.map { it.name }.toSet()
   }
+
+  /*val vType = new.javaClass.kotlin.qualifiedName
+  return if (isUpdate) {
+    if (new !is Map<*, *>)
+      throw Exception("Expected Map<String, Any?> of values for update, found ${vType}! - (${this.name})")
+
+    (new as Map<String, *>).keys
+  } else {
+    if (vType != this.name)
+      throw Exception("Invalid input type, expected ${this.name} found ${vType}!")
+
+    new.javaClass.kotlin.memberProperties.map { it.name }.toSet()
+  }*/
 }
 
-private fun Any.getFieldValueIfValid(sEntity: SEntity, sField: SField, isUpdate: Boolean): Any? {
-  val fValue = if (isUpdate) {
+private fun Any.getFieldValueIfValid(sEntity: SEntity, sField: SField): Any? {
+  val fValue = if (this is Map<*, *>) {
+    if (!sField.isInput)
+      throw Exception("Invalid input field! - (${sEntity.name}, ${sField.name})")
+
+    val value = tryCast<Map<String, Any?>, Any?>(sEntity.name, sField.name, this) { it[sField.name] }
+    value?.let {
+      val vType = value.javaClass.kotlin
+      if (!TypeEngine.check(sField.type, vType))
+        throw Exception("Invalid field type, expected ${sField.type} found ${vType.simpleName}! - (${sEntity.name}, ${sField.name})")
+    }
+
+    value
+  } else {
+    sField.getValue(this)
+  }
+
+  /*val fValue = if (isUpdate) {
     if (!sField.isInput)
       throw Exception("Invalid input field! - (${sEntity.name}, ${sField.name})")
 
     tryCast<Map<String, Any?>, Any?>(sEntity.name, sField.name, this) { it[sField.name] }
   } else {
     sField.getValue(this)
-  }
+  }*/
 
   if (!sField.isOptional && fValue == null)
     throw Exception("Invalid 'null' input! - (${sEntity.name}, ${sField.name})")
@@ -347,8 +386,8 @@ private fun Any.getFieldValueIfValid(sEntity: SEntity, sField: SField, isUpdate:
   return fValue
 }
 
-private fun Any.getRelationValueIfValid(sEntity: SEntity, sRelation: SRelation, isUpdate: Boolean): Any? {
-  val rValue = if (isUpdate) {
+private fun Any.getRelationValueIfValid(sEntity: SEntity, sRelation: SRelation): Any? {
+  val rValue = if (this is Map<*, *>) {
     if (!sRelation.isInput)
       throw Exception("Invalid input field! - (${sEntity.name}, ${sRelation.name})")
 
@@ -359,6 +398,18 @@ private fun Any.getRelationValueIfValid(sEntity: SEntity, sRelation: SRelation, 
   } else {
     sRelation.getValue(this).translate(sRelation)
   }
+
+  /*val rValue = if (isUpdate) {
+    if (!sRelation.isInput)
+      throw Exception("Invalid input field! - (${sEntity.name}, ${sRelation.name})")
+
+    if (!sRelation.isOpen)
+      throw Exception("Relation is not 'open'! - (${sEntity.name}, ${sRelation.name})")
+
+    tryCast<Map<String, Any?>, Any?>(sEntity.name, sRelation.name, this) { it[sRelation.name] }
+  } else {
+    sRelation.getValue(this).translate(sRelation)
+  }*/
 
   if (!sRelation.isOptional && rValue == null)
     throw Exception("Invalid 'null' input! - (${sEntity.name}, ${sRelation.name})")

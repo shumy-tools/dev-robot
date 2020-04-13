@@ -42,8 +42,7 @@ class UserType(
   @Detail
   class Customer(
     val discount: Float,
-    @Create val address: EmbeddedAddress,
-    @Link(EmbeddedAddress::class, traits = [Trace2::class]) val second: Pair<Long, Traits>
+    @Create val address: EmbeddedAddress
   )
 
   @Detail
@@ -55,7 +54,7 @@ class Organization(val name: String, val address: String)
 @Master
 class Sell (
   val price: Float,
-  @Link(Customer::class) val customer: Long
+  @Link(Customer::class, traits = [EmbeddedAddress::class]) val customer: Pair<Long, Traits>
 )
 
 // model-2 ----------------------------------------------------------------------------------
@@ -84,7 +83,8 @@ data class User(
   @Create val address: Address,
 
   @Open @Link(Market::class, traits = [UserMarket::class]) val market: Pair<Long, Traits>,
-  @Open @Link(Role::class, traits = [Trace::class]) val roles: Map<Long, Traits>
+  //@Open @Unique @Link(Role::class, traits = [Trace::class]) val roles: Map<Long, Traits>
+  @Open @Unique @Link(Role::class) val roles: List<Long>
 ) {
   val timestamp = LocalDateTime.now()
 }

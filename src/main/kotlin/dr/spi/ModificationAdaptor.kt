@@ -104,14 +104,18 @@ sealed class Instruction {
     internal fun resolvedRefsText() = if (resolvedRefs.isNotEmpty()) ", refs=$resolvedRefs" else ""
     internal fun unresolvedRefsText() = if (unresolvedRefs.isNotEmpty()) ", urefs=${unresolvedRefs.map { (name, inst) -> "$name=${inst.table}:${inst.hashCode()}" }}" else ""
 
-    internal fun push(level: String) {
+    internal fun with(predicate: Boolean, level: String, call: () -> Unit) {
       val map = linkedMapOf<String, Any?>()
-      dataStack.peek()[level] = map
-      dataStack.push(map)
-    }
+      with(dataStack) {
+        if (predicate) {
+          peek()[level] = map
+          push(map)
+        }
 
-    internal fun pop() {
-      dataStack.pop()
+        call()
+
+        if (predicate) pop()
+      }
     }
 
     internal fun putData(name: String, value: Any?) {

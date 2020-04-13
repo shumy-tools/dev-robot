@@ -93,7 +93,7 @@ fun main(args: Array<String>) {
 
   println("")
   val userType = UserType("shumy", "mail@google.pt", "pass-1", setOf(1L, 2L))
-  val customer = Customer(12F, EmbeddedAddress("France", "Paris"), Pair(3L, Traits(Trace2(LocalDateTime.now()))))
+  val customer = Customer(12F, EmbeddedAddress("France", "Paris"))
 
   val ownedUserType = OwnedUserType("Top Boss", listOf(Pack(userType, customer))).apply { inputOrDerived = "input-value" }
   val jsonOwnedUserTypeCreate = DrServer.serialize(ownedUserType)
@@ -101,10 +101,12 @@ fun main(args: Array<String>) {
   val customerId = DrServer.mEngine.create(DrServer.deserialize(jsonOwnedUserTypeCreate, OwnedUserType::class))
   println("OWNED-USER-TYPE-ID: $customerId")
 
+
   println("")
-  val jsonSellCreate = DrServer.serialize(Sell(10.5F, customerId))
+  val jsonSellCreate = DrServer.serialize(Sell(10.5F, Pair(100L, Traits(EmbeddedAddress("France", "Paris")))))
   val sellId = DrServer.mEngine.create(DrServer.deserialize(jsonSellCreate, Sell::class))
   println("SELL-ID: $sellId")
+
 
   println("")
   val jsonUserCreate = DrServer.serialize(User(
@@ -112,7 +114,8 @@ fun main(args: Array<String>) {
     email = "email@gmail.com",
     market = Pair(1L, Traits(UserMarket(Trace(LocalDateTime.now()),1L))),
     address = Address("Portugal", "Aveiro", "Some street and number"),
-    roles = mapOf(1L to Traits(Trace(LocalDateTime.now())), 2L to Traits(Trace(LocalDateTime.now())))
+    //roles = mapOf(1L to Traits(Trace(LocalDateTime.now())), 2L to Traits(Trace(LocalDateTime.now())))
+    roles = listOf(1L, 2L)
   ))
   val userId = DrServer.mEngine.create(DrServer.deserialize(jsonUserCreate, User::class))
   println("USER-ID: $userId")
@@ -125,7 +128,6 @@ fun main(args: Array<String>) {
     "market" to OneLinkWithTraits(5L, Traits(UserMarket(Trace(LocalDateTime.of(2000, Month.JANUARY, 1, 12, 0,0)),2L)))
   ))
   DrServer.mEngine.update(User::class.qualifiedName!!, userId, DrServer.deserialize(jsonUserUpdate, UpdateData::class))
-
 
   println("")
   val jsonAuctionCreate = DrServer.serialize(Auction(
@@ -147,8 +149,9 @@ fun main(args: Array<String>) {
 
 
   println("")
-  val jsonRolesLink = DrServer.serialize(ManyLinksWithTraits(6L to Traits(Trace(LocalDateTime.now())), 7L to Traits(Trace(LocalDateTime.now()))))
-  val roleIds = DrServer.mEngine.link(User::class.qualifiedName!!, userId, "roles", DrServer.deserialize(jsonRolesLink, ManyLinksWithTraits::class))
+  //val jsonRolesLink = DrServer.serialize(ManyLinksWithTraits(6L to Traits(Trace(LocalDateTime.now())), 7L to Traits(Trace(LocalDateTime.now()))))
+  //val roleIds = DrServer.mEngine.link(User::class.qualifiedName!!, userId, "roles", DrServer.deserialize(jsonRolesLink, ManyLinksWithTraits::class))
+  val roleIds = DrServer.mEngine.link(User::class.qualifiedName!!, userId, "roles", ManyLinksWithoutTraits(6L, 7L))
   println("ROLE-ID: $roleIds")
 
 
@@ -156,12 +159,12 @@ fun main(args: Array<String>) {
   val jsonRolesUnlink = DrServer.serialize(ManyLinkDelete(roleIds))
   DrServer.mEngine.unlink(User::class.qualifiedName!!, "roles", DrServer.deserialize(jsonRolesUnlink, ManyLinkDelete::class))
 
-  println("OWNED-USER-TYPE-CREATE: $jsonOwnedUserTypeCreate\n")
+  /*println("OWNED-USER-TYPE-CREATE: $jsonOwnedUserTypeCreate\n")
   println("SELL-CREATE: $jsonSellCreate\n")
   println("USER-CREATE: $jsonUserCreate\n")
   println("USER-UPDATE: $jsonUserUpdate\n")
   println("AUCTION-CREATE: $jsonAuctionCreate\n")
   println("BID-ADD: $jsonBidAdd\n")
   println("ROLES-LINK: $jsonRolesLink\n")
-  println("ROLES-UNLINK: $jsonRolesUnlink\n")
+  println("ROLES-UNLINK: $jsonRolesUnlink\n")*/
 }
