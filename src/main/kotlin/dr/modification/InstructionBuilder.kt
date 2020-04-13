@@ -118,20 +118,23 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
     // index the current instruction (direct references appear before this index)
     val index = instructions.size - 1
 
+    val isUpdate = topInst is Update
+
     //invoke @LateInit function if exists
-    sEntity.initFun?.call(new)
+    if (!isUpdate)
+      sEntity.initFun?.call(new)
 
     // get all fields/relations
-    val props = sEntity.getAllKeys(new, topInst is Update)
+    val props = sEntity.getAllKeys(new, isUpdate)
 
     // --------------------------------- check and process fields ---------------------------------
     for (prop in props) {
       val sField = sEntity.fields[prop] ?: continue // ignore fields that are not part of the schema
-      val fValue = new.getFieldValueIfValid(sEntity, sField, topInst is Update)
+      val fValue = new.getFieldValueIfValid(sEntity, sField, isUpdate)
 
       // check field constraints if not null
       fValue?.let {
-        if (topInst is Update) {
+        if (isUpdate) {
           val type = it.javaClass.kotlin
           if (!TypeEngine.check(sField.type, type))
             throw Exception("Invalid field type, expected ${sField.type} found ${type.simpleName}! - (${sEntity.name}, $prop)")
