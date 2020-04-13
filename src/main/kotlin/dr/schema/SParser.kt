@@ -60,16 +60,34 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema, ownedBy: String? = nu
   return tmpSchema.schema.entities.getOrElse(name) {
     this.checkEntityNumber(name)
 
+    println("  Entity: $name")
     if (name.toLowerCase() == "super")
       throw Exception("Reserved class name: 'super'! - ($name)")
 
-    println("  Entity: $name")
     if (this.isOpen || this.isSealed)
       throw Exception("Class inheritance is done via @Extend. Remove open or sealed keywords. - ($name)")
 
-    val sealed = findAnnotation<Sealed>()
     val type = this.getEntityType() ?: throw Exception("Required annotation, one of (Master, Detail, Trait, Extend)! - ($name)")
-    val sEntity = SEntity(name, type, sealed != null, processListeners())
+
+    // find @LateInit if exists
+    var initFun: KFunction<*>? = null
+    for (mFun in declaredMemberFunctions) {
+      if (mFun.hasAnnotation<LateInit>()) {
+        if (initFun != null)
+          throw Exception("Only one @LateInit function is valid! - ($name) - (in ${mFun.name} and ${initFun.name})")
+
+        if(mFun.visibility == KVisibility.PRIVATE)
+          throw Exception("@LateInit function cannot be private! - ($name, ${mFun.name})")
+
+        if(mFun.valueParameters.isNotEmpty())
+          throw Exception("@LateInit function cannot have parameters! - ($name, ${mFun.name})")
+
+        initFun = mFun
+      }
+    }
+
+    val sealed = findAnnotation<Sealed>()
+    val sEntity = SEntity(name, type, sealed != null, initFun, processListeners())
 
     tmpSchema.schema.addEntity(sEntity)
     if (ownedBy != null)
@@ -81,10 +99,12 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema, ownedBy: String? = nu
     // process ordered inputs
     for (param in this.primaryConstructor!!.parameters) {
       val prop  = allProps[param.name]!!
-      tmpInputProps.add(prop)
+      if (prop is KMutableProperty1<*, *>)
+        throw Exception("All primary-constructor properties must be immutable! - (${sEntity.name}, ${prop.name})")
 
       val fieldOrRelation = prop.processFieldOrRelation(sEntity, tmpSchema).apply { isInput = true }
       sEntity.addProperty(prop.name, fieldOrRelation)
+      tmpInputProps.add(prop)
     }
 
     // process derived properties
@@ -152,18 +172,20 @@ private fun KProperty1<Any, *>.processFieldOrRelation(sEntity: SEntity, tmpSchem
   if (this.name == "type" || this.name.startsWith("ref") || this.name.startsWith("inv"))
     throw Exception("Reserved property names: 'type' or starting with 'ref'/'inv'! - (${sEntity.name}, ${this.name})")
 
-  val rType = this.returnType
-  if (this is KMutableProperty1<*, *>)
-    throw Exception("All properties must be immutable! - (${sEntity.name}, ${this.name})")
-
-  return if (this.hasAnnotation<Create>() || this.hasAnnotation<Link>()) {
+  val fieldOrRelation = if (this.hasAnnotation<Create>() || this.hasAnnotation<Link>()) {
     this.processRelation(sEntity, tmpSchema)
   } else {
-    val type = TypeEngine.convert(rType) ?: throw Exception("Unrecognized field type! - (${sEntity.name}, ${this.name})")
+    val type = TypeEngine.convert(this.returnType) ?: throw Exception("Unrecognized field type! - (${sEntity.name}, ${this.name})")
     val checks = this.processChecks()
 
-    SField(this.name, type, checks, this, rType.isMarkedNullable)
+    SField(this.name, type, checks, this, this.returnType.isMarkedNullable)
   }
+
+  // all 'var' properties are also inputs
+  if (this is KMutableProperty1<*, *>)
+    fieldOrRelation.isInput = true
+
+  return fieldOrRelation
 }
 
 private fun KProperty1<Any, *>.processChecks(): Set<SCheck> {

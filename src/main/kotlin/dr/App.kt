@@ -95,8 +95,9 @@ fun main(args: Array<String>) {
   val userType = UserType("shumy", "mail@google.pt", "pass-1", setOf(1L, 2L))
   val customer = Customer(12F, EmbeddedAddress("France", "Paris"), Pair(3L, Traits(Trace2(LocalDateTime.now()))))
 
-  val ownedUserType = OwnedUserType("Top Boss", listOf(Pack(userType, customer)))
+  val ownedUserType = OwnedUserType("Top Boss", listOf(Pack(userType, customer))).apply { inputOrDerived = "input-value" }
   val jsonOwnedUserTypeCreate = DrServer.serialize(ownedUserType)
+
   val customerId = DrServer.mEngine.create(DrServer.deserialize(jsonOwnedUserTypeCreate, OwnedUserType::class))
   println("OWNED-USER-TYPE-ID: $customerId")
 

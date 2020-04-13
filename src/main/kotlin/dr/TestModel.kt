@@ -20,7 +20,16 @@ data class EmbeddedAddress(val country: String, val city: String)
 class OwnedUserType (
   val boss: String,
   @Create val users: List<Pack<UserType>>
-)
+) {
+  lateinit var inputOrDerived: String
+
+  @LateInit // native init is invoked by jackson to soon
+  fun late() {
+    if (!this::inputOrDerived.isInitialized) {
+      inputOrDerived = "default-value"
+    }
+  }
+}
 
 @Detail @Sealed(Customer::class, Supplier::class)
 class UserType(

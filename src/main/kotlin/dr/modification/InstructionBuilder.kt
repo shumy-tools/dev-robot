@@ -118,6 +118,9 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
     // index the current instruction (direct references appear before this index)
     val index = instructions.size - 1
 
+    //invoke @LateInit function if exists
+    sEntity.initFun?.call(new)
+
     // get all fields/relations
     val props = sEntity.getAllKeys(new, topInst is Update)
 
@@ -184,12 +187,9 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
 
     if (sEntity.type == EntityType.TRAIT || sRelation.ref.type == EntityType.TRAIT) {
       // unwrap properties (reuse instruction)
-
-      // TODO: set properties at a lower tree level? ${sRelation.name}
       if (sEntity.type != EntityType.TRAIT) topInst.push(sRelation.name)
         checkAnyAndInsert(rValue, topInst)
       if (sEntity.type != EntityType.TRAIT) topInst.pop()
-
     } else {
       // A ref_<rel> --> B
       Insert(table(sRelation.ref), CreateAction(sRelation.ref)).apply {
@@ -227,7 +227,6 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
       // unwrap properties (reuse instruction)
       topInst.putResolvedRef("ref__${sRelation.name}", data.ref)
 
-      // TODO: set properties at a lower tree level? ${sRelation.name}
       if (sEntity.type != EntityType.TRAIT) topInst.push(sRelation.name)
         unwrapTraits(sEntity, sRelation, data.traits, topInst)
       if (sEntity.type != EntityType.TRAIT) topInst.pop()

@@ -6,9 +6,14 @@ import dr.spi.Insert
 import dr.spi.Instruction
 import dr.spi.Update
 import kotlin.reflect.KClass
+import kotlin.reflect.KFunction
 import kotlin.reflect.KProperty1
 
 /* ------------------------- annotations -------------------------*/
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Sealed(vararg val value: KClass<out Any>)
+
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Master
@@ -33,9 +38,10 @@ annotation class Create
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Link(val value: KClass<out Any>, vararg val traits: KClass<out Any>)
 
-@Target(AnnotationTarget.CLASS)
+
+@Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Sealed(vararg val value: KClass<out Any>)
+annotation class LateInit
 
 /* ------------------------- enums -------------------------*/
 enum class EntityType {
@@ -89,7 +95,7 @@ class Schema {
 }
 
   /* ------------------------- entity -------------------------*/
-  class SEntity(val name: String, val type: EntityType, val isSealed: Boolean, val listeners: Set<SListener>) {
+  class SEntity(val name: String, val type: EntityType, val isSealed: Boolean, val initFun: KFunction<*>?, val listeners: Set<SListener>) {
     val sealed: Map<String, SEntity> = linkedMapOf()
     val fields: Map<String, SField> = linkedMapOf()
     val rels: Map<String, SRelation> = linkedMapOf()
@@ -195,6 +201,9 @@ fun Schema.print(filter: String = "all") {
 
 fun SEntity.print(spaces: Int) {
   val tab = " ".repeat(spaces)
+
+  if (this.initFun != null)
+    println("${tab}${initFun.name}() - INIT-FUN")
 
   this.fields.print(tab)
   this.rels.print(tab, spaces)
