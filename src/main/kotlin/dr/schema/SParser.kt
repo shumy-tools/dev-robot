@@ -4,20 +4,18 @@ import kotlin.reflect.*
 import kotlin.reflect.full.*
 
 /* ------------------------- api -------------------------*/
-class SParser {
-  companion object {
-    fun parse(vararg items: KClass<out Any>): Schema {
-      println("---Processing Schema---")
-      val tmpSchema = TempSchema()
-      for (kc in items) {
-        if (kc.getEntityType() != EntityType.MASTER)
-          throw Exception("Include only master entities!")
+object SParser {
+  fun parse(vararg items: KClass<out Any>): Schema {
+    println("---Processing Schema---")
+    val tmpSchema = TempSchema()
+    for (kc in items) {
+      if (kc.getEntityType() != EntityType.MASTER)
+        throw Exception("Include only master entities!")
 
-        kc.processEntity(tmpSchema)
-      }
-
-      return tmpSchema.schema
+      kc.processEntity(tmpSchema)
     }
+
+    return tmpSchema.schema
   }
 }
 
@@ -232,7 +230,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
     else -> throw Exception("Required annotation, one of (Create, Link)! - (${sEntity.name}, ${this.name})")
   }
 
-  val (ref, isCollection) = if (type.isSubtypeOf(TypeEngine.LIST) || type.isSubtypeOf(TypeEngine.SET) || type.isSubtypeOf(TypeEngine.MAP_ID_TRAITS)) {
+  val (ref, isCollection) = if (type.isSubtypeOf(TypeEngine.LIST) || type.isSubtypeOf(TypeEngine.SET) || type.isSubtypeOf(TypeEngine.LIST_TRAITS) || type.isSubtypeOf(TypeEngine.SET_TRAITS)) {
     if (sEntity.type == EntityType.TRAIT)
       throw Exception("Collections are not supported in traits! - (${sEntity.name}, ${this.name})")
 
@@ -257,8 +255,8 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
         if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.LIST_ID) && !type.isSubtypeOf(TypeEngine.SET_ID))
           throw Exception("Link-collection without traits must be of type, one of (List<Long>, Set<Long>)! - (${sEntity.name}, ${this.name})")
 
-        if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.MAP_ID_TRAITS))
-          throw Exception("Link-collection with traits type must be of type Map<Long, Traits>! - (${sEntity.name}, ${this.name})")
+        if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.LIST_TRAITS) && !type.isSubtypeOf(TypeEngine.SET_TRAITS))
+          throw Exception("Link-collection with traits type must be of type (List<Traits>, Set<Traits>)! - (${sEntity.name}, ${this.name})")
 
         link!!.value.processEntity(tmpSchema)
       }
@@ -281,8 +279,8 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
         if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.ID))
           throw Exception("Link-reference without traits must be of type Long! - (${sEntity.name}, ${this.name})")
 
-        if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.PAIR_ID_TRAITS))
-          throw Exception("Link-reference with traits must be of type Pair<Long, Traits>! - (${sEntity.name}, ${this.name})")
+        if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.TRAITS))
+          throw Exception("Link-reference with traits must be of type Traits! - (${sEntity.name}, ${this.name})")
 
         link!!.value.processEntity(tmpSchema)
       }

@@ -3,6 +3,8 @@ package dr
 import dr.schema.*
 import java.time.LocalDateTime
 
+/*
+
 // reusable constraint check
 class EmailCheck: FieldCheck<String> {
   override fun check(value: String): String? {
@@ -137,3 +139,5 @@ data class Bid(
 data class BidDetail(
   val some: String
 )
+
+*/

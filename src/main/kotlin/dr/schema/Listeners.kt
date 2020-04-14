@@ -35,10 +35,7 @@ enum class ActionType(val funName: String) {
 
 /* ------------------------- api -------------------------*/
 open class EListener<T> {
-  val qEngine: QueryEngine by lazy { DrServer.qEngine }
-  val mEngine: ModificationEngine by lazy { DrServer.mEngine }
-  val aEngine: ActionEngine by lazy { DrServer.aEngine }
-  val nEngine: NotificationEngine by lazy { DrServer.nEngine }
+  lateinit var server: DrServer
 
   open fun onRead(id: Long, tree: Map<String, Any?>) {}
 

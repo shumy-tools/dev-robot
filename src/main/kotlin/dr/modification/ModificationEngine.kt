@@ -2,8 +2,6 @@ package dr.modification
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.annotation.JsonTypeName
-import com.fasterxml.jackson.annotation.JsonUnwrapped
-import dr.DrServer
 import dr.schema.*
 import dr.spi.IModificationAdaptor
 
@@ -12,54 +10,31 @@ import dr.spi.IModificationAdaptor
 sealed class LinkData
   sealed class LinkCreate: LinkData()
     @JsonTypeName("many-link")
-    class ManyLinksWithoutTraits(val refs: Collection<Long>): LinkCreate() {
-      constructor(vararg values: Long): this(values.toList())
-    }
+    class ManyLinksWithoutTraits(val refs: Collection<Long>): LinkCreate()
 
     @JsonTypeName("one-link")
     class OneLinkWithoutTraits(val ref: Long): LinkCreate()
 
     @JsonTypeName("many-link-traits")
-    class ManyLinksWithTraits(val refs: Map<Long, Traits>): LinkCreate() {
-      constructor(vararg values: Pair<Long, Traits>): this(values.toMap())
-    }
+    class ManyLinksWithTraits(val refs: Collection<Traits>): LinkCreate()
 
-    // hack? jackson doesn't support Creator with @JsonUnwrapped
     @JsonTypeName("one-link-traits")
-    class OneLinkWithTraits(val ref: Long): LinkCreate() {
-      @JsonUnwrapped
-      lateinit var traits: Traits
-        private set
-
-      constructor(ref: Long, traits: Traits): this(ref) {
-        this.traits = traits
-      }
-    }
+    class OneLinkWithTraits(val ref: Traits): LinkCreate()
 
   sealed class LinkDelete: LinkData()
     @JsonTypeName("many-unlink")
-    class ManyLinkDelete(val links: Collection<Long>): LinkDelete() {
-      constructor(vararg values: Long): this(values.toList())
-    }
+    class ManyLinkDelete(val links: Collection<Long>): LinkDelete()
 
     @JsonTypeName("one-unlink")
     class OneLinkDelete(val link: Long): LinkDelete()
 
-class UpdateData(
-  @JsonTypeInfo(use = JsonTypeInfo.Id.NAME)
-  val data: Map<String, Any?>
-) {
-  constructor(vararg pairs: Pair<String, Any?>): this(pairs.toMap())
-}
-
-
 class ModificationEngine(private val adaptor: IModificationAdaptor) {
-  private val schema by lazy { DrServer.schema }
-  private val tables by lazy { DrServer.tableTranslator }
+  internal lateinit var schema: Schema
+  internal lateinit var tableTranslator: Map<String, String>
 
   fun create(new: Any): Long {
     // create master entity
-    val instructions = InstructionBuilder(schema, tables).apply {
+    val instructions = InstructionBuilder(schema, tableTranslator).apply {
       val insert = createEntity(new)
       addRoot(insert)
     }.build()
@@ -72,12 +47,12 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
     return id
   }
 
-  fun update(entity: String, id: Long, new: UpdateData) {
+  fun update(entity: String, id: Long, new: Map<String, Any?>) {
     val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
 
     // update entity
-    val instructions = InstructionBuilder(schema, tables).apply {
-      val update = updateEntity(sEntity, id, new.data)
+    val instructions = InstructionBuilder(schema, tableTranslator).apply {
+      val update = updateEntity(sEntity, id, new)
       addRoot(update)
     }.build()
 
@@ -93,7 +68,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
       throw Exception("Relation is not 'create'! - ($entity, $rel)")
 
     // creates one/many related entities
-    val instructions = InstructionBuilder(schema, tables).apply {
+    val instructions = InstructionBuilder(schema, tableTranslator).apply {
       val roots = addRelations(sEntity, sRelation, new, resolvedInv = id)
       addRoots(roots)
     }.build()
@@ -112,7 +87,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
       throw Exception("Relation is not 'link'! - ($entity, $rel)")
 
     // creates one/many links
-    val instructions = InstructionBuilder(schema, tables).apply {
+    val instructions = InstructionBuilder(schema, tableTranslator).apply {
       val roots = addLinks(sEntity, sRelation, data, resolvedInv = id)
       addRoots(roots)
     }.build()
@@ -132,7 +107,7 @@ class ModificationEngine(private val adaptor: IModificationAdaptor) {
       throw Exception("Relation is not 'link'! - ($entity, $rel)")
 
     // delete one/many links
-    val instructions = InstructionBuilder(schema, tables).apply {
+    val instructions = InstructionBuilder(schema, tableTranslator).apply {
       removeLinks(sEntity, sRelation, data)
     }.build()
 

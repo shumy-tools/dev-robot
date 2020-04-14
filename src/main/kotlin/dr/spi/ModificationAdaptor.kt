@@ -132,13 +132,13 @@ sealed class Instruction {
   }
 
     class Insert(override val table: String, override val action: Action): InsertOrUpdate() {
-      override fun toString() = "Insert$action - {code=${hashCode()}, table=$table${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
+      override fun toString() = "Insert$action - {table=$table${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
     }
 
     class Update(override val table: String, val id: Long, override val action: Action): InsertOrUpdate() {
-      override fun toString() = "Update$action - {code=${hashCode()}, table=$table, id=$id${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
+      override fun toString() = "Update$action - {table=$table, id=$id${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
     }
 
     class Delete(override val table: String, val id: Long, override val action: Action): Instruction() {
-      override fun toString() = "Delete$action - {code=${hashCode()}, table=$table, id=$id}"
+      override fun toString() = "Delete$action - {table=$table, id=$id}"
     }

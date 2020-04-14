@@ -11,7 +11,7 @@ import java.time.LocalTime
 
 /* ------------------------- api -------------------------*/
 class QueryEngine(private val adaptor: IQueryAdaptor, private val authorizer: IQueryAuthorizer) {
-  private val schema: Schema by lazy { DrServer.schema }
+  internal lateinit var schema: Schema
 
   fun compile(query: String): IQueryExecutor {
     val lexer = QueryLexer(CharStreams.fromString(query))

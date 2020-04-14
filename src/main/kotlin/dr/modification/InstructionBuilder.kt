@@ -2,6 +2,8 @@ package dr.modification
 
 import dr.schema.*
 import dr.spi.*
+import kotlin.reflect.full.createType
+import kotlin.reflect.full.isSubtypeOf
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.typeOf
 
@@ -29,7 +31,7 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
   fun updateEntity(sEntity: SEntity, id: Long, data: Map<String, Any?>): Update {
     return Update(table(sEntity), id, UpdateAction(sEntity, id)).apply {
       addInstruction(this)
-      checkEntityAndInsert(sEntity, data,this)
+      checkEntityAndInsert(sEntity, data, this)
     }
   }
 
@@ -51,8 +53,8 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
     return when (data) {
       is OneLinkWithoutTraits -> listOf(addLinkNoTraits(sEntity, sRelation, data.ref, unresolvedInv, resolvedInv))
       is ManyLinksWithoutTraits -> data.refs.map { addLinkNoTraits(sEntity, sRelation, it, unresolvedInv, resolvedInv) }
-      is OneLinkWithTraits -> listOf(addLinkWithTraits(sEntity, sRelation, data.ref, data.traits, unresolvedInv, resolvedInv))
-      is ManyLinksWithTraits -> data.refs.map { addLinkWithTraits(sEntity, sRelation, it.key, it.value, unresolvedInv, resolvedInv) }
+      is OneLinkWithTraits -> listOf(addLinkWithTraits(sEntity, sRelation, data.ref, unresolvedInv, resolvedInv))
+      is ManyLinksWithTraits -> data.refs.map { addLinkWithTraits(sEntity, sRelation, it, unresolvedInv, resolvedInv) }
     }
   }
 
@@ -216,10 +218,10 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
   }
 
   private fun setLinkWithTraits(sEntity: SEntity, sRelation: SRelation, data: OneLinkWithTraits, topInst: InsertOrUpdate) {
-    topInst.putResolvedRef("ref__${sRelation.name}", data.ref)
+    topInst.putResolvedRef("ref__${sRelation.name}", data.ref.id)
 
     topInst.with(sEntity.type != EntityType.TRAIT, "traits__${sRelation.name}") {
-      unwrapTraits(sEntity, sRelation, data.traits, topInst)
+      unwrapTraits(sEntity, sRelation, data.ref, topInst)
     }
 
     /*if (sRelation.ref.type == EntityType.TRAIT) {
@@ -269,12 +271,12 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
     }
   }
 
-  private fun addLinkWithTraits(sEntity: SEntity, sRelation: SRelation, link: Long, traits: Traits, unresolvedInv: InsertOrUpdate? = null, resolvedInv: Long? = null): InsertOrUpdate {
+  private fun addLinkWithTraits(sEntity: SEntity, sRelation: SRelation, traits: Traits, unresolvedInv: InsertOrUpdate? = null, resolvedInv: Long? = null): InsertOrUpdate {
     // TODO: to support this we need to return a topInst (but it doesn't always exist)
     if (sRelation.ref.type == EntityType.TRAIT)
       throw Exception("Doesn't support collections of traits yet!")
 
-    val linkTable = addLinkRow(sEntity, sRelation, link, unresolvedInv, resolvedInv)
+    val linkTable = addLinkRow(sEntity, sRelation, traits.id, unresolvedInv, resolvedInv)
 
     unwrapTraits(sEntity, sRelation, traits, linkTable)
     return linkTable
@@ -422,9 +424,15 @@ private fun Any?.translate(sRelation: SRelation): Any? {
   return if (sRelation.type == RelationType.LINK) {
     when (val data = this!!) {
       is Long -> OneLinkWithoutTraits(data)
-      is Pair<*, *> -> OneLinkWithTraits(data.first as Long, data.second as Traits)
-      is Collection<*> -> ManyLinksWithoutTraits(data as Collection<Long>)
-      is Map<*, *> -> ManyLinksWithTraits(data as Map<Long, Traits>)
+      is Traits -> OneLinkWithTraits(data)
+      is Collection<*> -> {
+        if (data.javaClass.kotlin.createType().arguments.last().type!!.isSubtypeOf(typeOf<Long>())) {
+          ManyLinksWithoutTraits(data as Collection<Long>)
+        } else {
+          ManyLinksWithTraits(data as Collection<Traits>)
+        }
+      }
+
       else -> throw  Exception("Unable to translate link '${data.javaClass.kotlin.qualifiedName}'! - (Code bug, please report the issue)")
     }
   } else {

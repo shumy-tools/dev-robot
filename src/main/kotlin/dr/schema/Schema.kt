@@ -67,6 +67,8 @@ class Pack<T: Any>(
 )
 
 class Traits(
+  val id: Long,
+
   @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
   vararg val traits: Any
 )
@@ -75,6 +77,11 @@ class Schema {
   val entities: Map<String, SEntity> = linkedMapOf()
   val masters: Map<String, SEntity> = linkedMapOf()
   val traits: Map<String, SEntity> = linkedMapOf()
+
+  fun find(clazz: KClass<out Any>): SEntity {
+    val name = clazz.qualifiedName
+    return this.entities[name] ?: throw Exception("Entity type not found! - ($name)")
+  }
 
   fun findEntity(value: Any): SEntity {
     val name = value.javaClass.kotlin.qualifiedName
@@ -117,7 +124,6 @@ class Schema {
     }
 
     internal fun fireListeners(event: EventType, inst: Instruction, id: Long? = null) {
-      println("($event, $id) -> $inst")
       inst.action.sEntity.listeners.forEach {
         when (inst.action.type) {
           ActionType.CREATE -> it.get(ActionType.CREATE, event)?.onCreate(inst as Insert)

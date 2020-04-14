@@ -34,8 +34,9 @@ object TypeEngine {
   val LIST_ID = typeOf<List<Long>>()
   val SET_ID = typeOf<Set<Long>>()
 
-  val PAIR_ID_TRAITS = typeOf<Pair<Long, Traits>>()
-  val MAP_ID_TRAITS = typeOf<Map<Long, Traits>>()
+  val TRAITS = typeOf<Traits>()
+  val LIST_TRAITS = typeOf<List<Traits>>()
+  val SET_TRAITS = typeOf<List<Traits>>()
 
   private val typeToClass = mutableMapOf<FieldType, KClass<*>>().apply {
     put(FieldType.TEXT, String::class)
