@@ -228,10 +228,13 @@ private fun Any?.translate(): LinkData {
   return when (val data = this!!) {
     is Long -> OneLinkWithoutTraits(data)
     is Traits -> OneLinkWithTraits(data)
-    is Collection<*> -> if (data.javaClass.kotlin.createType().arguments.last().type!!.isSubtypeOf(typeOf<Long>())) {
-      ManyLinksWithoutTraits(data as Collection<Long>)
-    } else {
-      ManyLinksWithTraits(data as Collection<Traits>)
+    is Collection<*> -> {
+      if (data.isEmpty()) ManyLinksWithoutTraits() else {
+        if (data.first() is Long)
+          ManyLinksWithoutTraits(data as Collection<Long>)
+        else
+          ManyLinksWithTraits(data as Collection<Traits>)
+      }
     }
     else -> throw  Exception("Unable to translate link '${data.javaClass.kotlin.qualifiedName}'! - (Code bug, please report the issue)")
   }

@@ -118,6 +118,24 @@ class InputProcessorTest {
     ))
   }
 
+  @Test fun testCreateWithCollections() {
+    val json = """{
+      "oneText":"oneB1",
+      "twoEntity":[1, 2, 3],
+      "threeEntity":[
+        {"id":100,"traits":[{"@type":"dr.test.Trace","value":"trace1"}]},
+        {"id":200,"traits":[{"@type":"dr.test.Trace","value":"trace2"}]}
+      ]
+    }"""
+
+    val entity = ip.create(B1::class, json)
+    assert(entity.toMap() == mapOf(
+      "oneText" to "oneB1",
+      "twoEntity" to ManyLinksWithoutTraits(1L, 2L, 3L),
+      "threeEntity" to ManyLinksWithTraits(Traits(100L, Trace("trace1")), Traits(200L, Trace("trace2")))
+    ))
+  }
+
   @Test fun testLinkRelations() {
     val json = """{
       "twoEntity":{
