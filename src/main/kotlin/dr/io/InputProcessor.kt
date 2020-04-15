@@ -17,27 +17,33 @@ import kotlin.reflect.KClass
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME)
 sealed class LinkData
 
-  sealed class ManyLinks(): LinkData()
+  sealed class ManyLinks: LinkData()
 
     @JsonTypeName("many-links")
-    class ManyLinksWithoutTraits(val refs: Collection<Long>): ManyLinks()
+    data class ManyLinksWithoutTraits(val refs: Collection<Long>): ManyLinks() {
+      constructor(vararg refs: Long): this(refs.toList())
+    }
 
     @JsonTypeName("many-links-traits")
-    class ManyLinksWithTraits(val refs: Collection<Traits>): ManyLinks()
+    data class ManyLinksWithTraits(val refs: Collection<Traits>): ManyLinks() {
+      constructor(vararg refs: Traits): this(refs.toList())
+    }
 
     @JsonTypeName("many-unlink")
-    class ManyUnlink(val refs: Collection<Long>): ManyLinks()
+    data class ManyUnlink(val refs: Collection<Long>): ManyLinks() {
+      constructor(vararg refs: Long): this(refs.toList())
+    }
 
-  sealed class OneLink(): LinkData()
+  sealed class OneLink: LinkData()
 
     @JsonTypeName("one-link")
-    class OneLinkWithoutTraits(val ref: Long): OneLink()
+    data class OneLinkWithoutTraits(val ref: Long): OneLink()
 
     @JsonTypeName("one-link-traits")
-    class OneLinkWithTraits(val ref: Traits): OneLink()
+    data class OneLinkWithTraits(val ref: Traits): OneLink()
 
     @JsonTypeName("one-unlink")
-    class OneUnlink(val ref: Long): OneLink()
+    data class OneUnlink(val ref: Long): OneLink()
 
 class InputProcessor(val schema: Schema) {
   private val mapper: ObjectMapper = jacksonObjectMapper()

@@ -58,20 +58,24 @@ enum class RelationType {
 }
 
 /* ------------------------- structures -------------------------*/
-class Pack<T: Any>(
+data class Pack<T: Any>(
   @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
   val head: T,
 
   @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
-  vararg val tail: Any
-)
+  val tail: List<Any>
+) {
+  constructor(head: T, vararg tail: Any): this(head, tail.toList())
+}
 
-class Traits(
+data class Traits(
   val id: Long,
 
   @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
-  vararg val traits: Any
-)
+  val traits: List<Any>
+) {
+  constructor(id: Long, vararg traits: Any): this(id, traits.toList())
+}
 
 class Schema {
   val entities: Map<String, SEntity> = linkedMapOf()

@@ -79,14 +79,14 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
     val (head, tail) = if (data is Pack<*>) {
       Pair(data.head, data.tail)
     } else {
-      Pair(data, emptyArray())
+      Pair(data, emptyList())
     }
 
     val sEntity = schema.findEntity(head)
     checkPackAndInsert(sEntity, head, tail, topInst)
   }
 
-  private fun checkPackAndInsert(topEntity: SEntity, head: Any, tail: Array<out Any>, topInst: InsertOrUpdate) {
+  private fun checkPackAndInsert(topEntity: SEntity, head: Any, tail: List<Any>, topInst: InsertOrUpdate) {
     // create top entity
     checkEntityAndInsert(topEntity, head, topInst)
 

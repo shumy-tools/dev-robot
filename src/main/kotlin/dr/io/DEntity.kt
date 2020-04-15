@@ -206,7 +206,7 @@ private fun SEntity.checkFieldConstraints(sField: SField, value: Any?): Any? {
   return value
 }
 
-private fun SEntity.checkInclusion(prop: String, expected: Set<String>, inputs: Array<out Any>) {
+private fun SEntity.checkInclusion(prop: String, expected: Set<String>, inputs: List<Any>) {
   if (expected.size != inputs.size)
     throw Exception("Invalid number of inputs, expected '${expected.size}' found '${inputs.size}'! - (${this.name}, $prop)")
 

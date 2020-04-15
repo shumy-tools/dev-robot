@@ -15,45 +15,12 @@ private val time = LocalTime.of(10, 30, 20)
 private val date = LocalDate.of(2020, 1, 25)
 private val datetime = LocalDateTime.of(date, time)
 
-@Trait
-class Trace(val value: String)
-
-@Master
-class A(
-  val oneText: String,
-  val twoInt: Int,
-  val threeLong: Long,
-  val fourFloat: Float,
-  val fiveDouble: Double,
-  val sixBoolean: Boolean,
-  val sevenTime: LocalTime,
-  val eightDate: LocalDate,
-  val nineDateTime: LocalDateTime
-)
-
-@Master
-class B(
-  val oneText: String,
-  @Open @Create val twoEntity: C,
-  @Open @Link(C::class) val threeEntity: Long,
-  @Open @Link(C::class, Trace::class) val fourEntity: Traits
-)
-
-@Master
-class B1(
-  val oneText: String,
-  @Open @Link(C::class) val twoEntity: List<Long>,
-  @Open @Link(C::class, Trace::class) val threeEntity: List<Traits>
-)
-
-@Detail
-class C(val oneText: String)
 
 // inst.list.forEach { println(it) }
 private val schema = SParser.parse(A::class, B::class, B1::class)
 
 class ModificationTest {
-  @Test fun testCreateFieldTypes() {
+  /*@Test fun testCreateFieldTypes() {
     val value = A("one", 2, 3L, 4.0F, 5.0, true, time, date, datetime)
 
     val mEngine = TestHelper.modification(schema) { inst ->
@@ -202,4 +169,5 @@ class ModificationTest {
     }
     mEngine2.unlink(B1::class.qualifiedName!!, "threeEntity", JsonEngine.deserialize(json2, ManyLinkDelete::class))
   }
+  */
 }
