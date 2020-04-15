@@ -301,7 +301,7 @@ class InstructionBuilder(private val schema: Schema, private val tableTranslator
       val sTrait = schema.traits[name] ?: throw Exception("Trait type not found! - ($name)")
 
       processedTraits.add(sTrait)
-      if (!sRelation.traits.contains(sTrait))
+      if (!sRelation.traits.containsKey(name))
         throw Exception("Trait '${sTrait.name}' not part of the model! - (${sEntity.name}, ${sRelation.name})")
 
       // Does not insert. Compact all trait fields

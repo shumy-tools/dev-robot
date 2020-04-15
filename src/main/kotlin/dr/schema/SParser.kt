@@ -217,14 +217,14 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
   val isOpen = this.hasAnnotation<Open>()
   val isOptional = type.isMarkedNullable
 
-  val traits = LinkedHashSet<SEntity>()
+  val traits = LinkedHashMap<String, SEntity>()
   val link = this.findAnnotation<Link>()
 
   val rType = when {
     this.hasAnnotation<Create>() -> RelationType.CREATE
     link != null -> {
       for (trait in link.traits)
-        traits.add(trait.processEntity(tmpSchema))
+        traits[trait.qualifiedName!!] = trait.processEntity(tmpSchema)
       RelationType.LINK
     }
     else -> throw Exception("Required annotation, one of (Create, Link)! - (${sEntity.name}, ${this.name})")

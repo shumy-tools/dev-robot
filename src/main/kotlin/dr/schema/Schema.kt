@@ -166,7 +166,7 @@ class Schema {
         override val name: String,
         val type: RelationType,
         val ref: SEntity,
-        val traits: Set<SEntity>,
+        val traits: Map<String, SEntity>,
         override val property: KProperty1<Any, *>,
 
         val isCollection: Boolean,
@@ -250,7 +250,7 @@ fun Map<String, SRelation>.print(tab: String, spaces: Int) {
     val isOptional = if (rel.isOptional) "OPT " else ""
     val isInput = if (rel.isInput) "IN-" else "DER-"
 
-    val traits = rel.traits.map{ it.name }
+    val traits = rel.traits.map{ it.key }
     val sTraits = if (traits.isEmpty()) "" else " TRAITS-$traits"
     println("${tab}$name: ${rel.ref.name} - ${isOpen}${isOptional}${isInput}${rel.type}${sTraits}")
     if (rel.ref.type != EntityType.MASTER) {
