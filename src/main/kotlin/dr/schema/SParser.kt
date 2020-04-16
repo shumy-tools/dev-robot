@@ -53,7 +53,7 @@ private fun KProperty1<*, *>.checkRelationNumber(name: String) {
 }
 
 @Suppress("UNCHECKED_CAST")
-private fun KClass<*>.processEntity(tmpSchema: TempSchema, ownedBy: String? = null): SEntity {
+private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String? = null): SEntity {
   val name = this.qualifiedName ?: throw Exception("No Entity name!")
   return tmpSchema.schema.entities.getOrElse(name) {
     this.checkEntityNumber(name)
@@ -85,7 +85,7 @@ private fun KClass<*>.processEntity(tmpSchema: TempSchema, ownedBy: String? = nu
     }
 
     val sealed = findAnnotation<Sealed>()
-    val sEntity = SEntity(name, type, sealed != null, initFun, processListeners())
+    val sEntity = SEntity(this, type, sealed != null, initFun, processListeners())
 
     tmpSchema.schema.addEntity(sEntity)
     if (ownedBy != null)
@@ -179,7 +179,7 @@ private fun KProperty1<Any, *>.processFieldOrRelation(sEntity: SEntity, tmpSchem
     val type = TypeEngine.convert(this.returnType) ?: throw Exception("Unrecognized field type! - (${sEntity.name}, ${this.name})")
     val checks = this.processChecks()
 
-    SField(this.name, type, checks, this, this.returnType.isMarkedNullable)
+    SField(this, type, checks, this.returnType.isMarkedNullable)
   }
 
   if (this.hasAnnotation<Unique>())
@@ -296,7 +296,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
   if (rType == RelationType.CREATE && ref.type == EntityType.MASTER)
     throw Exception("Cannot create a master through a relation! - (${sEntity.name}, ${this.name})")
 
-  return SRelation(this.name, rType, ref, traits, this, isCollection, isOpen, isOptional)
+  return SRelation(this, rType, ref, traits, isCollection, isOpen, isOptional)
 }
 
 private fun KType.processCreateRelation(sEntity: SEntity, rel: String, isPack: Boolean, tmpSchema: TempSchema): SEntity {

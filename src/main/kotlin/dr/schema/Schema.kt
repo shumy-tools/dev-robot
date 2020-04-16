@@ -87,6 +87,11 @@ class Schema {
     return this.entities[name] ?: throw Exception("Entity type not found! - ($name)")
   }
 
+  fun findClass(entity: String): KClass<out Any> {
+    val sEntity = entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
+    return sEntity.clazz
+  }
+
   fun findEntity(value: Any): SEntity {
     val name = value.javaClass.kotlin.qualifiedName
     return this.entities[name] ?: throw Exception("Entity type not found! - ($name)")
@@ -111,10 +116,17 @@ class Schema {
 }
 
   /* ------------------------- entity -------------------------*/
-  class SEntity(val name: String, val type: EntityType, val isSealed: Boolean, val initFun: KFunction<*>?, val listeners: Set<SListener>) {
+  class SEntity(val clazz: KClass<out Any>, val type: EntityType, val isSealed: Boolean, val initFun: KFunction<*>?, val listeners: Set<SListener>) {
     val sealed: Map<String, SEntity> = linkedMapOf()
     val fields: Map<String, SField> = linkedMapOf()
     val rels: Map<String, SRelation> = linkedMapOf()
+
+    val name: String
+      get() = clazz.qualifiedName!!
+
+    fun getFieldOrRelation(name: String): SFieldOrRelation? {
+      return fields[name] ?: rels[name]
+    }
 
     internal fun addSealed(name: String, sEntity: SEntity) {
       (sealed as LinkedHashMap<String, SEntity>)[name] = sEntity
@@ -141,10 +153,9 @@ class Schema {
     }
   }
 
-    sealed class SFieldOrRelation {
-      abstract val name: String
-      abstract val property: KProperty1<Any, *>
-      abstract val isOptional: Boolean
+    sealed class SFieldOrRelation(private val property: KProperty1<Any, *>, val isOptional: Boolean) {
+      val name: String
+        get() = property.name
 
       var isInput: Boolean = false
         internal set
@@ -152,44 +163,36 @@ class Schema {
       var isUnique: Boolean = false
         internal set
 
-      fun getValue(instance: Any): Any? {
-        return this.property.get(instance)
-      }
+      fun getValue(instance: Any): Any? = this.property.get(instance)
     }
 
       class SField (
-        override val name: String,
+        property: KProperty1<Any, *>,
         val type: FieldType,
         val checks: Set<SCheck>,
-        override val property: KProperty1<Any, *>,
 
-        override val isOptional: Boolean
-      ): SFieldOrRelation()
+        isOptional: Boolean
+      ): SFieldOrRelation(property, isOptional)
 
       class SRelation (
-        override val name: String,
+        property: KProperty1<Any, *>,
         val type: RelationType,
         val ref: SEntity,
         val traits: Map<String, SEntity>,
-        override val property: KProperty1<Any, *>,
 
         val isCollection: Boolean,
         val isOpen: Boolean,
-        override val isOptional: Boolean
-      ): SFieldOrRelation()
+        isOptional: Boolean
+      ): SFieldOrRelation(property, isOptional)
 
       class SCheck(val name: String, private val check: FieldCheck<Any>) {
-        fun check(value: Any): String? {
-          return this.check.check(value)
-        }
+        fun check(value: Any): String? = this.check.check(value)
       }
 
     @Suppress("UNCHECKED_CAST")
     class SListener(val name: String, internal val listener: EListener<*>, internal val enabled: Map<ActionType, Set<EventType>>) {
-      internal fun get(action: ActionType, event: EventType): EListener<Any>? {
-        return enabled[action]?.let {
-          if (it.contains(event)) listener as EListener<Any> else null
-        }
+      internal fun get(action: ActionType, event: EventType): EListener<Any>? = enabled[action]?.let {
+        if (it.contains(event)) listener as EListener<Any> else null
       }
     }
 

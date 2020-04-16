@@ -1,9 +1,6 @@
 package dr.io
 
 import dr.schema.*
-import kotlin.reflect.full.createType
-import kotlin.reflect.full.isSubtypeOf
-import kotlin.reflect.typeOf
 
 class DEntity(
   val schema: SEntity,
@@ -16,15 +13,17 @@ class DEntity(
 
     if (mEntity != null && cEntity != null)
       throw Exception("Both values non-null! - (mEntity and cEntity)")
+
+    // call @LateInit
+    if (cEntity != null)
+      schema.initFun?.call(cEntity)
   }
 
-  fun name() = schema.name
+  val name: String
+    get() = schema.name
 
-  fun unpack(): Pair<DEntity, List<DEntity>> {
-    if (cEntity == null)
-      return Pair(this, emptyList())
-
-    return if (cEntity is Pack<*>) {
+  val unpacked: Pair<DEntity, List<DEntity>> by lazy {
+    if (cEntity != null && cEntity is Pack<*>) {
       schema.checkInclusion("sealed", schema.sealed.keys, cEntity.tail)
       val dTail: List<DEntity> = cEntity.tail.map {
         val sEntity = schema.sealed.getValue(it.javaClass.canonicalName)
@@ -37,54 +36,54 @@ class DEntity(
     }
   }
 
-  fun allFields(): List<DField> {
+  val allFields: List<DField> by lazy {
     if (cEntity is Pack<*>)
       throw Exception("Cannot get field from a Pack<*>, unpack first.")
 
-    return schema.fields.mapNotNull {
+    schema.fields.mapNotNull {
       contains(it.key) { DField(it.value, this) }
     }
   }
 
-  fun allOwnedReferences(): List<DOwnedReference> {
+  val allOwnedReferences: List<DOwnedReference> by lazy {
     if (cEntity is Pack<*>)
       throw Exception("Cannot get reference from a Pack<*>, unpack first.")
 
-    return schema.rels.filter{ it.value.type == RelationType.CREATE && !it.value.isCollection }.mapNotNull {
+    schema.rels.filter{ it.value.type == RelationType.CREATE && !it.value.isCollection }.mapNotNull {
       contains(it.key) { DOwnedReference(it.value, this) }
     }
   }
 
-  fun allLinkedReferences(): List<DLinkedReference> {
+  val allLinkedReferences: List<DLinkedReference> by lazy {
     if (cEntity is Pack<*>)
       throw Exception("Cannot get reference from a Pack<*>, unpack first.")
 
-    return schema.rels.filter{ it.value.type == RelationType.LINK && !it.value.isCollection }.mapNotNull {
+    schema.rels.filter{ it.value.type == RelationType.LINK && !it.value.isCollection }.mapNotNull {
       contains(it.key) { DLinkedReference(it.value, this) }
     }
   }
 
-  fun allOwnedCollections(): List<DOwnedCollection> {
+  val allOwnedCollections: List<DOwnedCollection> by lazy {
     if (cEntity is Pack<*>)
       throw Exception("Cannot get collection from a Pack<*>, unpack first.")
 
-    return schema.rels.filter{ it.value.type == RelationType.CREATE && it.value.isCollection }.mapNotNull {
+    schema.rels.filter{ it.value.type == RelationType.CREATE && it.value.isCollection }.mapNotNull {
       contains(it.key) { DOwnedCollection(it.value, this) }
     }
   }
 
-  fun allLinkedCollections(): List<DLinkedCollection> {
+  val allLinkedCollections: List<DLinkedCollection> by lazy {
     if (cEntity is Pack<*>)
       throw Exception("Cannot get collection from a Pack<*>, unpack first.")
 
-    return schema.rels.filter{ it.value.isCollection }.mapNotNull { (name, sRelation) ->
+    schema.rels.filter{ it.value.isCollection }.mapNotNull { (name, sRelation) ->
       contains(name) { DLinkedCollection(sRelation, this) }
     }
   }
 
   fun toMap(): Map<String, Any?> {
     val map = linkedMapOf<String, Any?>()
-    val (head, tail) = unpack()
+    val (head, tail) = unpacked
 
     map.putAll(entityToMap(head))
     tail.forEach { map.putAll(entityToMap(it)) }
@@ -114,17 +113,17 @@ class DEntity(
 
   private fun entityToMap(ent: DEntity): Map<String, Any?> {
     val map = linkedMapOf<String, Any?>()
-    map.putAll(ent.allFields().map{ Pair(it.name(), it.value()) })
+    map.putAll(ent.allFields.map{ Pair(it.name, it.value) })
 
-    map.putAll(ent.allOwnedReferences().map { Pair(it.name(), it.value().toMap()) })
-    map.putAll(ent.allLinkedReferences().map { Pair(it.name(), it.value()) })
+    map.putAll(ent.allOwnedReferences.map { Pair(it.name, it.value.toMap()) })
+    map.putAll(ent.allLinkedReferences.map { Pair(it.name, it.value) })
 
-    map.putAll(ent.allOwnedCollections().map {
-      val cols = it.value().map { item -> Pair(item.name(), item.toMap()) }
-      Pair(it.name(), cols)
+    map.putAll(ent.allOwnedCollections.map {
+      val cols = it.value.map { item -> Pair(item.name, item.toMap()) }
+      Pair(it.name, cols)
     })
 
-    map.putAll(ent.allLinkedCollections().map { Pair(it.name(), it.value()) })
+    map.putAll(ent.allLinkedCollections.map { Pair(it.name, it.value) })
 
     return map
   }
@@ -132,13 +131,12 @@ class DEntity(
 
 sealed class Data
   class DField(val schema: SField, private val entity: DEntity): Data() {
-    fun name() = schema.name
+    val name: String
+      get() = schema.name
 
-    fun value(): Any? {
+    val value: Any? by lazy {
       val value = entity.getFieldValue(schema)
-
-      // check field constraints
-      return entity.schema.checkFieldConstraints(schema, value)
+      entity.schema.checkFieldConstraints(schema, value)
     }
   }
 
@@ -146,27 +144,28 @@ sealed class Data
     abstract val schema: SRelation
     abstract val entity: DEntity
 
-    fun name() = schema.name
+    val name: String
+      get() = schema.name
   }
 
     sealed class DReference: DRelation()
 
       class DOwnedReference(override val schema: SRelation, override val entity: DEntity): DReference() {
-        fun value(): DEntity {
+        val value: DEntity by lazy {
           val oneValue = entity.getOwnedRelationValue(schema)
-          return DEntity(schema.ref, cEntity = oneValue)
+          DEntity(schema.ref, cEntity = oneValue)
         }
       }
 
       class DLinkedReference(override val schema: SRelation, override val entity: DEntity): DReference() {
-        fun value(): OneLink {
+        val value: OneLink by lazy {
           val value = entity.getLinkedRelationValue(schema)
 
           // check existing traits
           if (value is OneLinkWithTraits)
             entity.schema.checkInclusion(schema.name, schema.traits.keys, value.ref.traits)
 
-          return value as OneLink
+          value as OneLink
         }
       }
 
@@ -174,14 +173,14 @@ sealed class Data
 
       class DOwnedCollection(override val schema: SRelation, override val entity: DEntity): DCollection() {
         @Suppress("UNCHECKED_CAST")
-        fun value(): List<DEntity> {
+        val value: List<DEntity> by lazy {
           val manyValues = entity.getOwnedRelationValue(schema)
-          return (manyValues as Collection<Any>).map { DEntity(schema.ref, cEntity = it) }
+          (manyValues as Collection<Any>).map { DEntity(schema.ref, cEntity = it) }
         }
       }
 
       class DLinkedCollection(override val schema: SRelation, override val entity: DEntity): DCollection() {
-        fun value(): LinkData {
+        val value: LinkData by lazy {
           val value = entity.getLinkedRelationValue(schema)
 
           // check existing traits (one-link-traits)
@@ -192,7 +191,7 @@ sealed class Data
           if (value is ManyLinksWithTraits)
             value.refs.forEach { entity.schema.checkInclusion(schema.name, schema.traits.keys, it.traits) }
 
-          return value
+          value
         }
       }
 

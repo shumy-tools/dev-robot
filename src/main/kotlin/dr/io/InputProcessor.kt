@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonTypeName
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.databind.node.ArrayNode
+import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dr.schema.*
@@ -62,10 +63,15 @@ class InputProcessor(val schema: Schema) {
     )
   }
 
+  fun create(type: SEntity, json: String): DEntity {
+    val value = mapper.readValue(json, type.clazz.java)
+    return DEntity(type, cEntity = value)
+  }
+
   fun create(type: KClass<out Any>, json: String): DEntity {
     val sEntity = schema.find(type)
-    val value = mapper.readValue(json, type.java)
 
+    val value = mapper.readValue(json, type.java)
     return DEntity(sEntity, cEntity = value)
   }
 
@@ -75,31 +81,30 @@ class InputProcessor(val schema: Schema) {
     val node = mapper.readTree(json)
     val map = linkedMapOf<String, Any?>()
 
-    // process fields
-    for ((name, field) in type.fields) {
-      val vNode = node[name] ?: continue // ignore non existent
-      map[name] = when (field.type) {
-        FieldType.TEXT -> vNode.asText()
-        FieldType.INT -> vNode.asLong()
-        FieldType.FLOAT -> vNode.asDouble()
-        FieldType.BOOL -> vNode.asBoolean()
-        FieldType.TIME -> LocalTime.parse(vNode.asText())
-        FieldType.DATE -> LocalDate.parse(vNode.asText())
-        FieldType.DATETIME -> LocalDateTime.parse(vNode.asText())
-      }
-    }
+    for (nName in node.fieldNames()) {
+      val sFieldOrRelation = type.getFieldOrRelation(nName) ?: throw Exception("Property not found! -  - (${type.name}, ${nName})")
+      if (!sFieldOrRelation.isInput)
+        throw Exception("Invalid input field! - (${type.name}, ${nName})")
 
-    // process relations
-    for ((name, rel) in type.rels) {
-      val vNode = node[name] ?: continue // ignore non existent
-      map[name] = when (rel.type) {
-
-        RelationType.CREATE -> {
-          val cType = if (rel.ref.isSealed) Pack::class.java else Class.forName(rel.ref.name)
-          if (!rel.isCollection) mapper.treeToValue(vNode, cType) else (vNode as ArrayNode).map { mapper.treeToValue(it, cType) }
+      val vNode = node[nName]
+      map[nName] = when(sFieldOrRelation) {
+        is SField -> when (sFieldOrRelation.type) {
+          FieldType.TEXT -> vNode.asText()
+          FieldType.INT -> vNode.asLong()
+          FieldType.FLOAT -> vNode.asDouble()
+          FieldType.BOOL -> vNode.asBoolean()
+          FieldType.TIME -> LocalTime.parse(vNode.asText())
+          FieldType.DATE -> LocalDate.parse(vNode.asText())
+          FieldType.DATETIME -> LocalDateTime.parse(vNode.asText())
         }
 
-        RelationType.LINK -> mapper.treeToValue(vNode, LinkData::class.java)
+        is SRelation -> when (sFieldOrRelation.type) {
+          RelationType.CREATE -> {
+            val cType = if (sFieldOrRelation.ref.isSealed) Pack::class.java else schema.findClass(sFieldOrRelation.ref.name).java
+            if (!sFieldOrRelation.isCollection) mapper.treeToValue(vNode, cType) else (vNode as ArrayNode).map { mapper.treeToValue(it, cType) }
+          }
+          RelationType.LINK -> mapper.treeToValue(vNode, LinkData::class.java)
+        }
       }
     }
 
