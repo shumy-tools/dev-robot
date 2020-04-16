@@ -1,18 +1,20 @@
 package dr
 
 import dr.action.ActionEngine
+import dr.io.DEntityTranslator
+import dr.io.InputProcessor
 import dr.modification.ModificationEngine
 import dr.notification.NotificationEngine
 import dr.query.QueryEngine
 import dr.schema.Schema
 
-class DrServer(val schema: Schema) {
-  private val tableTranslator = schema.entities.map { (name, _) ->
-    name to name.replace('.', '_').toLowerCase()
-  }.toMap()
-
+object DrServer {
   var enabled = false
     private set
+
+  lateinit var schema: Schema
+  lateinit var processor: InputProcessor
+  lateinit var translator: DEntityTranslator
 
   lateinit var qEngine: QueryEngine
   lateinit var mEngine: ModificationEngine
@@ -20,10 +22,9 @@ class DrServer(val schema: Schema) {
   lateinit var nEngine: NotificationEngine
 
   fun start(port: Int) {
-    qEngine.schema = schema
-    mEngine.schema = schema
-    mEngine.tableTranslator = tableTranslator
+    processor = InputProcessor(schema)
+    translator = DEntityTranslator(schema)
 
-    this.enabled = true
+    enabled = true
   }
 }

@@ -1,10 +1,10 @@
 package dr.schema
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo
-import dr.spi.Delete
-import dr.spi.Insert
-import dr.spi.Instruction
-import dr.spi.Update
+import dr.io.Delete
+import dr.io.Insert
+import dr.io.Instruction
+import dr.io.Update
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 import kotlin.reflect.KProperty1
@@ -139,7 +139,7 @@ class Schema {
       }
     }
 
-    internal fun fireListeners(event: EventType, inst: Instruction, id: Long? = null) {
+    internal fun fireListeners(event: EventType, inst: Instruction) {
       inst.action.sEntity.listeners.forEach {
         when (inst.action.type) {
           ActionType.CREATE -> it.get(ActionType.CREATE, event)?.onCreate(inst as Insert)

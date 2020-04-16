@@ -1,6 +1,7 @@
 package dr.io
 
 import dr.schema.ActionType
+import dr.schema.EventType
 import dr.schema.SEntity
 import dr.schema.SRelation
 import java.util.*
@@ -10,6 +11,10 @@ class Instructions(private val root: Instruction, val all: List<Instruction>) {
     get() = all.size
 
   fun exec(eFun: (Instruction) -> Long): Long {
+    // fireCheckedListeners
+    for (inst in all)
+      inst.action.sEntity.fireListeners(EventType.CHECKED, inst)
+
     val ids = mutableMapOf<Instruction, Long>()
 
     val head = all.first()
@@ -30,6 +35,10 @@ class Instructions(private val root: Instruction, val all: List<Instruction>) {
 
       ids[inst] = eFun(inst)
     }
+
+    // fireCommittedListeners
+    for (inst in all)
+      inst.action.sEntity.fireListeners(EventType.COMMITTED, inst)
 
     return ids[root]!!
   }

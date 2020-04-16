@@ -1,15 +1,11 @@
 package dr
 
-import dr.modification.*
+import dr.io.Delete
+import dr.io.Insert
+import dr.io.Instructions
+import dr.io.Update
 import dr.query.QTree
-import dr.query.QueryEngine
-import dr.schema.SParser
-import dr.schema.Pack
-import dr.schema.Traits
-import dr.schema.print
 import dr.spi.*
-import java.time.LocalDateTime
-import java.time.Month
 
 class TestResult(): IResult {
   override fun toJson(): String {
@@ -40,17 +36,16 @@ class TestQueryAuthorizer : IQueryAuthorizer {
 
 class TestModificationAdaptor: IModificationAdaptor {
   var idSeq = 9L;
-
-  override fun commit(instructions: Instructions): List<Long> {
-    val ids = instructions.exec {
+  override fun commit(instructions: Instructions): Long {
+    val id = instructions.exec {
       when (it) {
         is Insert -> ++idSeq
         is Update -> it.id
-        is Delete -> it.id
+        is Delete -> 0L
       }
     }
     println("  --COMMITTED--")
-    return ids
+    return id
   }
 }
 

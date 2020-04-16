@@ -1,13 +1,9 @@
 package dr.schema
 
 import dr.DrServer
-import dr.action.ActionEngine
-import dr.spi.Delete
-import dr.spi.Insert
-import dr.modification.ModificationEngine
-import dr.spi.Update
-import dr.notification.NotificationEngine
-import dr.query.QueryEngine
+import dr.io.Delete
+import dr.io.Insert
+import dr.io.Update
 import kotlin.reflect.KClass
 
 /* ------------------------- annotations -------------------------*/

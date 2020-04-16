@@ -66,7 +66,7 @@ private fun Instructions.process(): List<Instruction> {
   return this.all
 }
 
-class InputProcessorTest {
+class InputTest {
   private val ip = InputProcessor(schema)
   private val trans = DEntityTranslator(schema)
 
