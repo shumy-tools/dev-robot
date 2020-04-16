@@ -5,20 +5,21 @@ import dr.schema.SEntity
 import dr.schema.SRelation
 import java.util.*
 
-class Instructions(private val head: Instruction, private val tail: List<Instruction>) {
+class Instructions(private val root: Instruction, val all: List<Instruction>) {
   val size: Int
-    get() = tail.size + 1
+    get() = all.size
 
   fun exec(eFun: (Instruction) -> Long): Long {
     val ids = mutableMapOf<Instruction, Long>()
 
+    val head = all.first()
     if (head.unresolvedRefs.isNotEmpty())
       throw Exception("First instruction must have all references already resolved! - (Code bug, please report the issue)")
 
     ids[head] = eFun(head)
 
     // execute and resolve children references
-    for (inst in tail) {
+    for (inst in all.drop(1)) {
       inst.unresolvedRefs.forEach { (refName, refInst) ->
         val refId = ids[refInst] ?: throw Exception("ID not found for reference! - (${inst.table}, $refName)")
         inst.putResolvedRef(refName, refId)
@@ -30,7 +31,7 @@ class Instructions(private val head: Instruction, private val tail: List<Instruc
       ids[inst] = eFun(inst)
     }
 
-    return ids[head]!!
+    return ids[root]!!
   }
 }
 
@@ -71,6 +72,8 @@ sealed class Instruction {
   val resolvedRefs: Map<String, Long?> = linkedMapOf()
   val unresolvedRefs: Map<String, Instruction> = linkedMapOf()
 
+  fun isEmpty(): Boolean = data.isEmpty() && resolvedRefs.isEmpty() && unresolvedRefs.isEmpty()
+
   private var dataStack = Stack<LinkedHashMap<String, Any?>>()
 
   init {
@@ -81,17 +84,13 @@ sealed class Instruction {
   internal fun resolvedRefsText() = if (resolvedRefs.isNotEmpty()) ", refs=$resolvedRefs" else ""
   internal fun unresolvedRefsText() = if (unresolvedRefs.isNotEmpty()) ", urefs=${unresolvedRefs.map { (name, inst) -> "$name=${inst.table}:${inst.hashCode()}" }}" else ""
 
-  internal fun with(predicate: Boolean, level: String, call: () -> Unit) {
+  internal fun with(level: String, call: () -> Unit) {
     val map = linkedMapOf<String, Any?>()
     with(dataStack) {
-      if (predicate) {
-        peek()[level] = map
-        push(map)
-      }
-
-      call()
-
-      if (predicate) pop()
+      peek()[level] = map
+      push(map)
+        call()
+      pop()
     }
   }
 

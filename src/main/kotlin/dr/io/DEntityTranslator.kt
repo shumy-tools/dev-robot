@@ -12,36 +12,42 @@ class DEntityTranslator(private val schema: Schema) {
 
 
   fun create(data: DEntity): Instructions {
-    val (head, tail) = createEntity(data)
-    return Instructions(head, tail)
+    val (root, all) = createEntity(data)
+    return Instructions(root, all)
   }
 
   fun update(id: Long, data: DEntity): Instructions {
-    val head = Update(table(data.schema), id, UpdateAction(data.schema))
-    val tail = processUnpackedEntity(data, head)
-    return Instructions(head, tail)
+    val root = Update(table(data.schema), id, UpdateAction(data.schema))
+    val (topInclude, bottomInclude) = processUnpackedEntity(data, root)
+
+    val all = topInclude.plus(root).plus(bottomInclude)
+    return Instructions(root, all)
   }
 
   /* ------------------------------------------------------------ private ------------------------------------------------------------ */
   private fun table(sEntity: SEntity) = tableTranslator.getValue(sEntity.name)
 
-  private fun createEntity(entity: DEntity): Pair<Insert, List<Insert>> {
-    val allInst = mutableListOf<Insert>()
+  private fun createEntity(entity: DEntity): Pair<Insert, List<Instruction>> {
+    val allInst = mutableListOf<Instruction>()
     val (head, tail) = entity.unpack
 
-    val topInst = Insert(table(head.schema), CreateAction(head.schema))
-    processUnpackedEntity(head, topInst)
+    val rootInst = Insert(table(head.schema), CreateAction(head.schema))
+    val (topInclude, bottomInclude) = processUnpackedEntity(head, rootInst)
+
+    allInst.addAll(topInclude)
+    allInst.add(rootInst)
+    allInst.addAll(bottomInclude)
 
     // create extended entities if exist
     var nextEntity = head.schema
-    var nextInst = topInst
+    var nextInst = rootInst
     for (item in tail) {
       nextInst = createSubEntity(nextEntity, item, nextInst)
       nextEntity = nextInst.action.sEntity
       allInst.add(nextInst)
     }
 
-    return Pair(topInst, allInst)
+    return Pair(rootInst, allInst)
   }
 
   private fun createSubEntity(topEntity: SEntity, entity: DEntity, topInst: Instruction): Insert {
@@ -56,8 +62,9 @@ class DEntityTranslator(private val schema: Schema) {
     }
   }
 
-  private fun processUnpackedEntity(entity: DEntity, topInst: Instruction): List<Instruction> {
-    val allInst = mutableListOf<Instruction>()
+  private fun processUnpackedEntity(entity: DEntity, topInst: Instruction): Pair<List<Instruction>, List<Instruction>> {
+    val topInclude = mutableListOf<Instruction>()
+    val bottomInclude = mutableListOf<Instruction>()
 
     // --------------------------------- fields ---------------------------------------------
     // A <fields>
@@ -70,9 +77,9 @@ class DEntityTranslator(private val schema: Schema) {
         topInst.include(entity.allFields, oRef.name)
       } else {
         // A ref_<rel> --> B
-        val (head, tail) = createEntity(oRef.value)
-        allInst.include(head, tail)
-        topInst.putUnresolvedRef("ref__${oRef.name}", head)
+        val (root, all) = createEntity(oRef.value)
+        topInclude.addAll(all)
+        topInst.putUnresolvedRef("ref__${oRef.name}", root)
       }
     }
 
@@ -80,9 +87,9 @@ class DEntityTranslator(private val schema: Schema) {
     for (oCol in entity.allOwnedCollections) {
       // A <-- inv_<A>_<rel> B
       oCol.value.forEach {
-        val (head, tail) = createEntity(it)
-        allInst.include(head, tail)
-        head.putUnresolvedRef("inv_${table(entity.schema)}__${it.name}", topInst)
+        val (root, all) = createEntity(it)
+        bottomInclude.addAll(all)
+        root.putUnresolvedRef("inv_${table(entity.schema)}__${it.name}", topInst)
       }
     }
 
@@ -109,33 +116,33 @@ class DEntityTranslator(private val schema: Schema) {
     // --------------------------------- allLinkedCollections ---------------------------------
     for (lCol in entity.allLinkedCollections) {
       when (val rValue = lCol.value) {
-        is OneLinkWithoutTraits -> allInst.add(link(entity.schema, lCol.schema, rValue.ref, topInst))
+        is OneLinkWithoutTraits -> bottomInclude.add(link(entity.schema, lCol.schema, rValue.ref, topInst))
 
         is OneLinkWithTraits -> {
           val linkInst = link(entity.schema, lCol.schema, rValue.ref.id, topInst)
-          allInst.add(linkInst)
+          bottomInclude.add(linkInst)
           unwrapTraits("traits__${lCol.name}", rValue.ref.traits, linkInst)
         }
 
         is ManyLinksWithoutTraits -> rValue.refs.forEach {
-          allInst.add(link(entity.schema, lCol.schema, it, topInst))
+          bottomInclude.add(link(entity.schema, lCol.schema, it, topInst))
         }
 
         is ManyLinksWithTraits -> rValue.refs.forEach {
           val linkInst = link(entity.schema, lCol.schema, it.id, topInst)
-          allInst.add(linkInst)
+          bottomInclude.add(linkInst)
           unwrapTraits("traits__${lCol.name}", it.traits, linkInst)
         }
 
-        is OneUnlink -> allInst.add(unlink(entity.schema, lCol.schema, rValue.ref, topInst))
+        is OneUnlink -> bottomInclude.add(unlink(entity.schema, lCol.schema, rValue.ref, topInst))
 
         is ManyUnlink -> rValue.refs.forEach {
-          allInst.add(unlink(entity.schema, lCol.schema, it, topInst))
+          bottomInclude.add(unlink(entity.schema, lCol.schema, it, topInst))
         }
       }
     }
 
-    return allInst
+    return Pair(topInclude, bottomInclude)
   }
 
   private fun link(sEntity: SEntity, sRelation: SRelation, link: Long, topInst: Instruction): Instruction {
@@ -190,14 +197,13 @@ class DEntityTranslator(private val schema: Schema) {
 
 /* ------------------------- helpers -------------------------*/
 private fun Instruction.include(fields: List<DField>, at: String? = null) {
-  this.with(at != null, at!!) {
+  if (at != null) {
+    this.with(at) {
+      for (field in fields)
+        this.putData(field.name, field.value)
+    }
+  } else {
     for (field in fields)
       this.putData(field.name, field.value)
   }
-}
-
-private fun MutableList<Instruction>.include(head: Instruction, tail: List<Instruction>): MutableList<Instruction> {
-  this.add(head)
-  this.addAll(tail)
-  return this
 }

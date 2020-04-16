@@ -50,8 +50,25 @@ data class C(val oneText: String)
 
 private val schema = SParser.parse(A::class, B::class, B1::class)
 
+private fun Instructions.process(): List<Instruction> {
+  var idSeq = 9L;
+  this.exec {
+    val id = when (it) {
+      is Insert -> ++idSeq
+      is Update -> it.id
+      is Delete -> 0L
+    }
+
+    println("$id - $it")
+    id
+  }
+
+  return this.all
+}
+
 class InputProcessorTest {
   private val ip = InputProcessor(schema)
+  private val trans = DEntityTranslator(schema)
 
   private val fieldInputs = """{
     "oneText":"one",
@@ -67,7 +84,10 @@ class InputProcessorTest {
 
   @Test fun testCreateFieldTypes() {
     val entity = ip.create(A::class, fieldInputs)
-    assert(entity.toMap() == mapOf(
+    val allInst = trans.create(entity).process()
+    assert(allInst.size == 1)
+
+    allInst[0].isCreate(A::class, "dr_test_a", mapOf(
       "oneText" to "one",
       "twoInt" to 2,
       "threeLong" to 3L,
@@ -83,7 +103,10 @@ class InputProcessorTest {
 
   @Test fun testUpdateFieldTypes() {
     val entity = ip.update(A::class, fieldInputs)
-    assert(entity.toMap() == mapOf(
+    val allInst = trans.update(10L, entity).process()
+    assert(allInst.size == 1)
+
+    allInst[0].isUpdate(A::class, 10L, "dr_test_a", mapOf(
       "oneText" to "one",
       "twoInt" to 2L,
       "threeLong" to 3L,
@@ -110,18 +133,30 @@ class InputProcessorTest {
     }"""
 
     val entity = ip.create(B::class, json)
-    assert(entity.toMap() == mapOf(
-      "oneText" to "oneB",
-      "twoEntity" to mapOf("oneText" to "oneC"),
-      "threeEntity" to OneLinkWithoutTraits(1L),
-      "fourEntity" to OneLinkWithTraits(Traits(2L, Trace("traceValue")))
+    val allInst = trans.create(entity).process()
+    assert(allInst.size == 2)
+
+    allInst[0].isCreate(C::class, "dr_test_c", mapOf(
+      "oneText" to "oneC"
     ))
+
+    allInst[1].isCreate(B::class, "dr_test_b",
+      mapOf(
+        "oneText" to "oneB",
+        "traits__fourEntity" to mapOf("value" to "traceValue")
+      ),
+      mapOf(
+        "ref__threeEntity" to 1L,
+        "ref__fourEntity" to 2L,
+        "ref__twoEntity" to 10L
+      )
+    )
   }
 
   @Test fun testCreateWithCollections() {
     val json = """{
       "oneText":"oneB1",
-      "twoEntity":[1, 2, 3],
+      "twoEntity":[1, 2],
       "threeEntity":[
         {"id":100,"traits":[{"@type":"dr.test.Trace","value":"trace1"}]},
         {"id":200,"traits":[{"@type":"dr.test.Trace","value":"trace2"}]}
@@ -129,11 +164,30 @@ class InputProcessorTest {
     }"""
 
     val entity = ip.create(B1::class, json)
-    assert(entity.toMap() == mapOf(
-      "oneText" to "oneB1",
-      "twoEntity" to ManyLinksWithoutTraits(1L, 2L, 3L),
-      "threeEntity" to ManyLinksWithTraits(Traits(100L, Trace("trace1")), Traits(200L, Trace("trace2")))
+    val allInst = trans.create(entity).process()
+    assert(allInst.size == 5)
+
+    allInst[0].isCreate(B1::class, "dr_test_b1", mapOf(
+      "oneText" to "oneB1"
     ))
+
+    allInst[1].isLink(B1::class, "twoEntity", "dr_test_b1__twoEntity", emptyMap(),
+      mapOf("ref" to 1L, "inv" to 10L)
+    )
+
+    allInst[2].isLink(B1::class, "twoEntity", "dr_test_b1__twoEntity", emptyMap(),
+      mapOf("ref" to 2L, "inv" to 10L)
+    )
+
+    allInst[3].isLink(B1::class, "threeEntity", "dr_test_b1__threeEntity",
+      mapOf("traits__threeEntity" to mapOf("value" to "trace1")),
+      mapOf("ref" to 100L, "inv" to 10L)
+    )
+
+    allInst[4].isLink(B1::class, "threeEntity", "dr_test_b1__threeEntity",
+      mapOf("traits__threeEntity" to mapOf("value" to "trace2")),
+      mapOf("ref" to 200L, "inv" to 10L)
+    )
   }
 
   @Test fun testLinkRelations() {
@@ -154,11 +208,17 @@ class InputProcessorTest {
     }"""
 
     val entity = ip.update(B::class, json)
-    assert(entity.toMap() == mapOf(
-      "twoEntity" to mapOf("oneText" to "oneC"),
-      "threeEntity" to OneLinkWithoutTraits(100L),
-      "fourEntity" to OneLinkWithTraits(Traits(200L, Trace("traceUpdate")))
+    val allInst = trans.update(20L, entity).process()
+    assert(allInst.size == 2)
+
+    allInst[0].isCreate(C::class, "dr_test_c", mapOf(
+      "oneText" to "oneC"
     ))
+
+    allInst[1].isUpdate(B::class, 20L, "dr_test_b",
+      mapOf("traits__fourEntity" to mapOf("value" to "traceUpdate")),
+      mapOf("ref__twoEntity" to 10L, "ref__threeEntity" to 100L, "ref__fourEntity" to 200L)
+    )
   }
 
   @Test fun testUnlinkRelations() {
@@ -169,14 +229,26 @@ class InputProcessorTest {
       },
       "threeEntity":{
         "@type":"many-unlink",
-        "refs":[200,300]
+        "refs":[200, 300]
       }
     }"""
 
     val entity = ip.update(B1::class, json)
-    assert(entity.toMap() == mapOf(
-      "twoEntity" to OneUnlink(100L),
-      "threeEntity" to ManyUnlink(200L, 300L)
-    ))
+    val allInst = trans.update(20L, entity).process()
+    assert(allInst.size == 4)
+
+    allInst[0].isUpdate(B1::class, 20L, "dr_test_b1", emptyMap())
+
+    allInst[1].isUnlink(B1::class, "twoEntity", "dr_test_b1__twoEntity",
+      mapOf("ref" to 100L, "inv" to 20L)
+    )
+
+    allInst[2].isUnlink(B1::class, "threeEntity", "dr_test_b1__threeEntity",
+      mapOf("ref" to 200L, "inv" to 20L)
+    )
+
+    allInst[3].isUnlink(B1::class, "threeEntity", "dr_test_b1__threeEntity",
+      mapOf("ref" to 300L, "inv" to 20L)
+    )
   }
 }

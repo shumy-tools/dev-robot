@@ -1,20 +1,9 @@
 package dr.test
 
-import dr.modification.ModificationEngine
+import dr.io.*
 import dr.schema.ActionType
-import dr.schema.SParser
-import dr.schema.Schema
-import dr.spi.*
 import kotlin.reflect.KClass
 
-object TestHelper {
-  fun modification(inSchema: Schema, callback: (Instructions) -> Unit): ModificationEngine {
-    return ModificationEngine(TestModificationAdaptor(callback)).apply {
-      schema = inSchema
-      tableTranslator = schema.tables()
-    }
-  }
-}
 
 fun Instruction.isCreate(clazz: KClass<out Any>, table: String, data: Map<String, Any>, refs: Map<String, Any> = emptyMap()) {
   val insert = this as Insert
@@ -55,35 +44,12 @@ fun Instruction.isLink(clazz: KClass<out Any>, relation: String, table: String, 
   assert(insert.resolvedRefs == refs)
 }
 
-fun Instruction.isUnlink(clazz: KClass<out Any>, relation: String, table: String, link: Long) {
+fun Instruction.isUnlink(clazz: KClass<out Any>, relation: String, table: String, refs: Map<String, Any> = emptyMap()) {
   val delete = this as Delete
   val lAction = delete.action as UnlinkAction
   assert(delete.action.type == ActionType.UNLINK)
   assert(lAction.sEntity.name == clazz.qualifiedName)
   assert(lAction.sRelation.name == relation)
   assert(delete.table == table)
-  assert(delete.id == link)
-}
-
-private class TestModificationAdaptor(val callback: (Instructions) -> Unit): IModificationAdaptor {
-  private var idSeq = 9L;
-
-  override fun commit(instructions: Instructions): List<Long> {
-    val ids =  instructions.exec {
-      when (it) {
-        is Insert -> ++idSeq
-        is Update -> it.id
-        is Delete -> it.id
-      }
-    }
-
-    callback(instructions)
-    return ids
-  }
-}
-
-private fun Schema.tables(): Map<String, String> {
-  return this.entities.map { (name, _) ->
-    name to name.replace('.', '_').toLowerCase()
-  }.toMap()
+  assert(delete.resolvedRefs == refs)
 }
