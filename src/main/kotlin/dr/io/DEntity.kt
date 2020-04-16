@@ -1,5 +1,7 @@
 package dr.io
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo
+import com.fasterxml.jackson.annotation.JsonTypeName
 import dr.schema.*
 
 class DEntity(
@@ -22,7 +24,10 @@ class DEntity(
   val name: String
     get() = schema.name
 
-  val unpacked: Pair<DEntity, List<DEntity>> by lazy {
+  val isCreate: Boolean
+    get() = cEntity != null
+
+  val unpack: Pair<DEntity, List<DEntity>> by lazy {
     if (cEntity != null && cEntity is Pack<*>) {
       schema.checkInclusion("sealed", schema.sealed.keys, cEntity.tail)
       val dTail: List<DEntity> = cEntity.tail.map {
@@ -76,14 +81,14 @@ class DEntity(
     if (cEntity is Pack<*>)
       throw Exception("Cannot get collection from a Pack<*>, unpack first.")
 
-    schema.rels.filter{ it.value.isCollection }.mapNotNull { (name, sRelation) ->
-      contains(name) { DLinkedCollection(sRelation, this) }
+    schema.rels.filter{ it.value.type == RelationType.LINK && it.value.isCollection }.mapNotNull {
+      contains(it.key) { DLinkedCollection(it.value, this) }
     }
   }
 
   fun toMap(): Map<String, Any?> {
     val map = linkedMapOf<String, Any?>()
-    val (head, tail) = unpacked
+    val (head, tail) = unpack
 
     map.putAll(entityToMap(head))
     tail.forEach { map.putAll(entityToMap(it)) }
@@ -194,6 +199,37 @@ sealed class Data
           value
         }
       }
+
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME)
+sealed class LinkData
+
+  sealed class ManyLinks: LinkData()
+
+    @JsonTypeName("many-links")
+    data class ManyLinksWithoutTraits(val refs: Collection<Long>): ManyLinks() {
+      constructor(vararg refs: Long): this(refs.toList())
+    }
+
+    @JsonTypeName("many-links-traits")
+    data class ManyLinksWithTraits(val refs: Collection<Traits>): ManyLinks() {
+      constructor(vararg refs: Traits): this(refs.toList())
+    }
+
+    @JsonTypeName("many-unlink")
+    data class ManyUnlink(val refs: Collection<Long>): ManyLinks() {
+      constructor(vararg refs: Long): this(refs.toList())
+    }
+
+  sealed class OneLink: LinkData()
+
+    @JsonTypeName("one-link")
+    data class OneLinkWithoutTraits(val ref: Long): OneLink()
+
+    @JsonTypeName("one-link-traits")
+    data class OneLinkWithTraits(val ref: Traits): OneLink()
+
+    @JsonTypeName("one-unlink")
+    data class OneUnlink(val ref: Long): OneLink()
 
 
 /* ------------------------- helpers -------------------------*/
