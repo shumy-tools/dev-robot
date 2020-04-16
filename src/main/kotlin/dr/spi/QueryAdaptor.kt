@@ -14,11 +14,3 @@ interface IQueryExecutor {
     fun toJson(): String
   }
 
-interface IQueryAuthorizer {
-  fun authorize(accessed: IAccessed): Boolean
-}
-
-  interface IAccessed {
-    fun getEntityName(): String
-    fun getPaths(): Map<String, Any>
-  }

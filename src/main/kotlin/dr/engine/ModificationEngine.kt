@@ -1,14 +1,19 @@
-package dr.modification
+package dr.engine
 
 import dr.DrServer
+import dr.io.DEntityTranslator
 import dr.io.InputProcessor
 import dr.schema.*
+import dr.spi.IAuthorizer
 import dr.spi.IModificationAdaptor
 
 /* ------------------------- api -------------------------*/
-class ModificationEngine(private val adaptor: IModificationAdaptor) {
-  private val processor by lazy { DrServer.processor }
-  private val translator by lazy { DrServer.translator }
+class ModificationEngine(
+  private val processor: InputProcessor,
+  private val translator: DEntityTranslator,
+  private val adaptor: IModificationAdaptor,
+  private val authorizer: IAuthorizer
+) {
 
   fun create(sEntity: SEntity, json: String): Long {
     val entity = processor.create(sEntity, json)

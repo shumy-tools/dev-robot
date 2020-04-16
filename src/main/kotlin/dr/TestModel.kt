@@ -3,8 +3,6 @@ package dr
 import dr.schema.*
 import java.time.LocalDateTime
 
-/*
-
 // reusable constraint check
 class EmailCheck: FieldCheck<String> {
   override fun check(value: String): String? {
@@ -21,7 +19,7 @@ data class EmbeddedAddress(val country: String, val city: String)
 @Master
 class OwnedUserType (
   val boss: String,
-  @Create val users: List<Pack<UserType>>
+  @Create val users: Pack<UserType>
 ) {
   lateinit var inputOrDerived: String
 
@@ -37,6 +35,7 @@ class OwnedUserType (
 class UserType(
   val user: String,
   @Checks(EmailCheck::class) val email: String,
+
   val password: String,
   @Link(Role::class) val roles: Set<Long>
 )
@@ -56,7 +55,7 @@ class Organization(val name: String, val address: String)
 @Master
 class Sell (
   val price: Float,
-  @Link(Customer::class, traits = [EmbeddedAddress::class]) val customer: Pair<Long, Traits>
+  @Link(Customer::class, traits = [EmbeddedAddress::class]) val customer: Traits
 )
 
 // model-2 ----------------------------------------------------------------------------------
@@ -80,13 +79,16 @@ data class Market(val name: String)
 @Master
 data class User(
   val name: String,
+
   @Checks(EmailCheck::class) val email: String,
 
   @Create val address: Address,
 
-  @Open @Link(Market::class, traits = [UserMarket::class]) val market: Pair<Long, Traits>,
-  //@Open @Unique @Link(Role::class, traits = [Trace::class]) val roles: Map<Long, Traits>
-  @Open @Unique @Link(Role::class) val roles: List<Long>
+  //@Link(Market::class, traits = [UserMarket::class]) val market: Traits,
+
+  //@Unique @Link(Role::class, traits = [Trace::class]) val roles: List<Traits>,
+
+  @Unique @Link(Role::class) val roles: List<Long>
 ) {
   val timestamp = LocalDateTime.now()
 }
@@ -95,7 +97,7 @@ data class User(
 data class Address(
   val country: String,
   val city: String,
-  val address: String
+  val address: String?
 )
 
 @Master
@@ -109,7 +111,7 @@ data class Auction(
   val name: String,
 
   @Link(AuctionItem::class) val items: Set<Long>,
-  @Open @Create val bids: List<Bid>
+  @Create val bids: List<Bid>
 ) {
   val timestamp = LocalDateTime.now()
 }
@@ -139,5 +141,3 @@ data class Bid(
 data class BidDetail(
   val some: String
 )
-
-*/

@@ -107,12 +107,16 @@ sealed class Instruction {
     dataStack.peek()[name] = value
   }
 
-  internal fun putResolvedRef(name: String, ref: Long?) {
-    (this.resolvedRefs as LinkedHashMap<String, Long?>)[name] = ref
+  internal fun putRef(name: String, ref: Instruction) {
+    if (ref is Update) {
+      (this.resolvedRefs as LinkedHashMap<String, Long?>)[name] = ref.id
+    } else {
+      (this.unresolvedRefs as LinkedHashMap<String, Instruction>)[name] = ref
+    }
   }
 
-  internal fun putUnresolvedRef(name: String, ref: Instruction) {
-    (this.unresolvedRefs as LinkedHashMap<String, Instruction>)[name] = ref
+  internal fun putResolvedRef(name: String, ref: Long?) {
+    (this.resolvedRefs as LinkedHashMap<String, Long?>)[name] = ref
   }
 }
 

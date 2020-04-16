@@ -5,6 +5,7 @@ import dr.io.Insert
 import dr.io.Instructions
 import dr.io.Update
 import dr.query.QTree
+import dr.schema.SParser
 import dr.spi.*
 
 class TestResult(): IResult {
@@ -27,9 +28,9 @@ class TestQueryAdaptor: IQueryAdaptor {
   }
 }
 
-class TestQueryAuthorizer : IQueryAuthorizer {
-  override fun authorize(accessed: IAccessed): Boolean {
-    println("accessed = $accessed")
+class TestAuthorizer : IAuthorizer {
+  override fun read(access: IReadAccess): Boolean {
+    println("access = $access")
     return true
   }
 }
@@ -37,27 +38,28 @@ class TestQueryAuthorizer : IQueryAuthorizer {
 class TestModificationAdaptor: IModificationAdaptor {
   var idSeq = 9L;
   override fun commit(instructions: Instructions): Long {
+    println("TX-START")
     val id = instructions.exec {
+      println("  $it")
       when (it) {
         is Insert -> ++idSeq
         is Update -> it.id
         is Delete -> 0L
       }
     }
-    println("  --COMMITTED--")
+    println("TX-COMMIT")
     return id
   }
 }
 
 fun main(args: Array<String>) {
-  /*val schema = SParser.parse(OwnedUserType::class, Sell::class, User::class, Role::class, Auction::class)
+  val schema = SParser.parse(OwnedUserType::class, Sell::class, User::class, Role::class, Auction::class)
 
-  val server = DrServer(schema).apply {
-    qEngine = QueryEngine(TestQueryAdaptor(), TestQueryAuthorizer())
-    mEngine = ModificationEngine(TestModificationAdaptor())
-    start(8080)
+  val server = DrServer(schema, TestAuthorizer(), TestModificationAdaptor(), TestQueryAdaptor()).also {
+    it.start(8080)
   }
 
+  /*
   println("Q1")
   DrServer.qEngine.compile("""dr.User | name == "Mica*" | limit 10 {
     (asc 1) name

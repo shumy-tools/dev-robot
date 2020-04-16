@@ -1,17 +1,28 @@
-package dr.query
+package dr.engine
 
-import dr.DrServer
-import dr.schema.*
-import dr.spi.*
-import org.antlr.v4.runtime.*
-import org.antlr.v4.runtime.tree.*
+import dr.query.*
+import dr.schema.SEntity
+import dr.schema.SRelation
+import dr.schema.Schema
+import dr.spi.IReadAccess
+import dr.spi.IAuthorizer
+import dr.spi.IQueryAdaptor
+import dr.spi.IQueryExecutor
+import org.antlr.v4.runtime.CharStreams
+import org.antlr.v4.runtime.CommonTokenStream
+import org.antlr.v4.runtime.tree.ErrorNode
+import org.antlr.v4.runtime.tree.ParseTreeWalker
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
 /* ------------------------- api -------------------------*/
-class QueryEngine(private val adaptor: IQueryAdaptor, private val authorizer: IQueryAuthorizer) {
-  internal lateinit var schema: Schema
+// private val authorizer: IQueryAuthorizer
+class QueryEngine(
+  private val schema: Schema,
+  private val adaptor: IQueryAdaptor,
+  private val authorizer: IAuthorizer
+) {
 
   fun compile(query: String): IQueryExecutor {
     val lexer = QueryLexer(CharStreams.fromString(query))
@@ -34,14 +45,14 @@ class QueryEngine(private val adaptor: IQueryAdaptor, private val authorizer: IQ
 }
 
 /* ------------------------- helpers -------------------------*/
-private class AccessedPaths : IAccessed {
+private class AccessedPaths: IReadAccess {
   private val paths = mutableMapOf<String, Any>()
 
-  override fun getEntityName() = this.paths.keys.first()
+  override fun entity() = this.paths.keys.first()
 
   @Suppress("UNCHECKED_CAST")
-  override fun getPaths(): Map<String, Any> {
-    val name = getEntityName()
+  override fun paths(): Map<String, Any> {
+    val name = entity()
     return this.paths[name] as Map<String, Any>
   }
 
@@ -71,11 +82,11 @@ private class AccessedPaths : IAccessed {
   }
 
   override fun toString(): String {
-    return "Accessed(entity=${this.getEntityName()}, paths=${this.getPaths()})"
+    return "Accessed(entity=${this.entity()}, paths=${this.paths()})"
   }
 }
 
-private class DrQueryListener(private val schema: Schema, private val authorize: IQueryAuthorizer): QueryBaseListener() {
+private class DrQueryListener(private val schema: Schema, private val authorize: IAuthorizer): QueryBaseListener() {
   val errors = mutableListOf<String>()
   val parameters = mutableListOf<Parameter>()
 
@@ -93,7 +104,7 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
     this.compiled = QTree(eText, rel.filter, rel.limit, rel.page, rel.select)
 
     // check query authorization
-    this.authorize.authorize(accessed)
+    this.authorize.read(accessed)
   }
 
   override fun visitErrorNode(error: ErrorNode) {

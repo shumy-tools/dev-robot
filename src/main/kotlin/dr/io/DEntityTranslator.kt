@@ -57,7 +57,7 @@ class DEntityTranslator(private val schema: Schema) {
 
     topInst.putData("type", sEntity.name)
     return Insert(table(sEntity), CreateAction(sEntity)).apply {
-      putUnresolvedRef("ref_super", topInst)
+      putRef("ref_super", topInst)
       processUnpackedEntity(entity, this)
     }
   }
@@ -79,7 +79,7 @@ class DEntityTranslator(private val schema: Schema) {
         // A ref_<rel> --> B
         val (root, all) = createEntity(oRef.value)
         topInclude.addAll(all)
-        topInst.putUnresolvedRef("ref__${oRef.name}", root)
+        topInst.putRef("ref__${oRef.name}", root)
       }
     }
 
@@ -89,7 +89,7 @@ class DEntityTranslator(private val schema: Schema) {
       oCol.value.forEach {
         val (root, all) = createEntity(it)
         bottomInclude.addAll(all)
-        root.putUnresolvedRef("inv_${table(entity.schema)}__${it.name}", topInst)
+        root.putRef("inv_${table(entity.schema)}__${it.name}", topInst)
       }
     }
 
@@ -149,13 +149,13 @@ class DEntityTranslator(private val schema: Schema) {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
       Update(table(sRelation.ref), link, LinkAction(sEntity, sRelation)).apply {
-        putUnresolvedRef("inv_${table(sEntity)}__${sRelation.name}", topInst)
+        putRef("inv_${table(sEntity)}__${sRelation.name}", topInst)
       }
     } else {
       // A <-- [inv ref] --> B
       Insert("${table(sEntity)}__${sRelation.name}", LinkAction(sEntity, sRelation)).apply {
         putResolvedRef("ref", link)
-        putUnresolvedRef("inv", topInst)
+        putRef("inv", topInst)
       }
     }
   }
@@ -170,7 +170,7 @@ class DEntityTranslator(private val schema: Schema) {
       // A <-- [inv ref] --> B
       Delete("${table(sEntity)}__${sRelation.name}", UnlinkAction(sEntity, sRelation)).apply {
         putResolvedRef("ref", link)
-        putUnresolvedRef("inv", topInst)
+        putRef("inv", topInst)
       }
     }
   }
