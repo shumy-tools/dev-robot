@@ -60,7 +60,9 @@ class DrServer(
   private val queries = mutableMapOf<String, IQueryExecutor>()
 
   fun getSchema(ctx: Context) {
-    println("getSchema")
+    val isSimple = ctx.queryParam("simple") != null
+    val res = schema.toMap(isSimple)
+    ctx.json(res)
   }
 
   fun create(ctx: Context) {

@@ -92,19 +92,6 @@ class Schema {
     return sEntity.clazz
   }
 
-  fun findEntity(value: Any): SEntity {
-    val name = value.javaClass.kotlin.qualifiedName
-    return this.entities[name] ?: throw Exception("Entity type not found! - ($name)")
-  }
-
-  fun findTopEntity(value: Any): SEntity {
-    return if (value is Pack<*>) {
-      findEntity(value.head)
-    } else {
-      findEntity(value)
-    }
-  }
-
   internal fun addEntity(sEntity: SEntity) {
     (entities as LinkedHashMap<String, SEntity>)[sEntity.name] = sEntity
     when (sEntity.type) {
@@ -112,6 +99,14 @@ class Schema {
       EntityType.TRAIT -> (traits as LinkedHashMap<String, SEntity>)[sEntity.name] = sEntity
       else -> Unit
     }
+  }
+
+  fun toMap(simple: Boolean): Map<String, Any> {
+    val map = linkedMapOf<String, Any>()
+    map["masters"] = masters.map { it.value.toMap(simple) }
+    if (traits.isNotEmpty()) map["traits"] = traits.map { it.value.toMap(simple) }
+
+    return map
   }
 }
 
@@ -151,6 +146,17 @@ class Schema {
         }
       }
     }
+
+    fun toMap(simple: Boolean): Map<String, Any> {
+      val map = linkedMapOf<String, Any>()
+      if(!simple) map["@type"] = type
+      map["name"] = name
+      if (sealed.isNotEmpty()) map["sealed"] = sealed.map { it.value.toMap(simple) }
+      if (fields.isNotEmpty()) map["fields"] = fields.filter { if (simple) it.value.isInput && !it.value.isOptional else true }.map { it.value.toMap(simple) }
+      if (rels.isNotEmpty()) map["rels"] = rels.filter { if (simple) it.value.isInput && !it.value.isOptional else true }.map { it.value.toMap(simple) }
+
+      return map
+    }
   }
 
     sealed class SFieldOrRelation(private val property: KProperty1<Any, *>, val isOptional: Boolean) {
@@ -172,7 +178,18 @@ class Schema {
         val checks: Set<SCheck>,
 
         isOptional: Boolean
-      ): SFieldOrRelation(property, isOptional)
+      ): SFieldOrRelation(property, isOptional) {
+        fun toMap(simple: Boolean): Map<String, Any> {
+          val map = linkedMapOf<String, Any>()
+          map["@type"] = type
+          map["name"] = name
+          if(!simple) map["input"] = isInput
+          if(!simple) map["optional"] = isOptional
+          if(!simple) map["unique"] = isUnique
+
+          return map
+        }
+      }
 
       class SRelation (
         property: KProperty1<Any, *>,
@@ -183,7 +200,21 @@ class Schema {
         val isCollection: Boolean,
         val isOpen: Boolean,
         isOptional: Boolean
-      ): SFieldOrRelation(property, isOptional)
+      ): SFieldOrRelation(property, isOptional) {
+        fun toMap(simple: Boolean): Map<String, Any> {
+          val map = linkedMapOf<String, Any>()
+          map["@type"] = type
+          map["name"] = name
+          if(!simple) map["input"] = isInput
+          if(!simple) map["optional"] = isOptional
+          if(!simple) map["unique"] = isUnique
+          map["many"] = isCollection
+          if (traits.isNotEmpty()) map["traits"] = traits.map { it.key }
+          map["ref"] = if (type == RelationType.CREATE) ref.toMap(simple) else ref.name
+
+          return map
+        }
+      }
 
       class SCheck(val name: String, private val check: FieldCheck<Any>) {
         fun check(value: Any): String? = this.check.check(value)
