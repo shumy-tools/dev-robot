@@ -1,9 +1,13 @@
 package dr
 
+import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dr.engine.ModificationEngine
 import dr.engine.QueryEngine
-import dr.io.DEntityTranslator
-import dr.io.InputProcessor
+import dr.io.*
 import dr.schema.Schema
 import dr.spi.IAuthorizer
 import dr.spi.IModificationAdaptor
@@ -20,7 +24,12 @@ class DrServer(
   private val mAdaptor: IModificationAdaptor,
   private val qAdaptor: IQueryAdaptor
 ) {
-  private val processor = InputProcessor(schema)
+  private val mapper: ObjectMapper = jacksonObjectMapper()
+    .registerModule(JavaTimeModule())
+    .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
+    .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+
+  private val processor = InputProcessor(schema, mapper)
   private val translator = DEntityTranslator(schema)
 
   val qEngine = QueryEngine(schema, qAdaptor, authorizer)
@@ -30,6 +39,17 @@ class DrServer(
 
   var enabled = false
     private set
+
+  init {
+    mapper.registerSubtypes(
+      ManyLinksWithoutTraits::class.java,
+      OneLinkWithoutTraits::class.java,
+      ManyLinksWithTraits::class.java,
+      OneLinkWithTraits::class.java,
+      ManyUnlink::class.java,
+      OneUnlink::class.java
+    )
+  }
 
   fun start(port: Int) {
     val app = Javalin.create().start(port)
@@ -62,7 +82,9 @@ class DrServer(
   fun getSchema(ctx: Context) {
     val isSimple = ctx.queryParam("simple") != null
     val res = schema.toMap(isSimple)
-    ctx.json(res)
+
+    val json = mapper.writeValueAsString(mapOf<String, Any>("@type" to "ok").plus(res))
+    ctx.result(json).contentType("application/json")
   }
 
   fun create(ctx: Context) {
@@ -70,14 +92,15 @@ class DrServer(
       val entity = ctx.pathParam("entity")
 
       val sEntity = schema.masters[entity] ?: throw Exception("Master entity not found! - ($entity)")
-      val id = mEngine.create(sEntity, ctx.body())
+      val output = mEngine.create(sEntity, ctx.body())
 
-      mapOf("@type" to "ok", "id" to id)
+      mapOf("@type" to "ok").plus(output)
     } catch (ex: Exception) {
       mapOf("@type" to "error", "msg" to ex.message)
     }
 
-    ctx.json(res)
+    val json = mapper.writeValueAsString(res)
+    ctx.result(json).contentType("application/json")
   }
 
   fun update(ctx: Context) {
@@ -86,14 +109,15 @@ class DrServer(
       val id = ctx.pathParam("id").toLong()
 
       val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
-      mEngine.update(sEntity, id, ctx.body())
+      val output = mEngine.update(sEntity, id, ctx.body())
 
-      mapOf("@type" to "ok")
+      mapOf("@type" to "ok").plus(output)
     } catch (ex: Exception) {
       mapOf("@type" to "error", "msg" to ex.message)
     }
 
-    ctx.json(res)
+    val json = mapper.writeValueAsString(res)
+    ctx.result(json).contentType("application/json")
   }
 
   fun compile(ctx: Context) {
@@ -107,6 +131,7 @@ class DrServer(
       mapOf("@type" to "error", "msg" to ex.message)
     }
 
-    ctx.json(res)
+    val json = mapper.writeValueAsString(res)
+    ctx.result(json).contentType("application/json")
   }
 }

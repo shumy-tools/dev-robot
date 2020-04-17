@@ -12,26 +12,32 @@ class DEntityTranslator(private val schema: Schema) {
 
 
   fun create(data: DEntity): Instructions {
-    val (root, all) = createEntity(data)
+    val (head, tail) = data.unpack
+    val root = Insert(table(head.schema), CreateAction(head.schema))
+    val all = processEntity(head, tail, root)
+
     return Instructions(root, all)
   }
 
   fun update(id: Long, data: DEntity): Instructions {
     val root = Update(table(data.schema), id, UpdateAction(data.schema))
     val (topInclude, bottomInclude) = processUnpackedEntity(data, root)
-
     val all = topInclude.plus(root).plus(bottomInclude)
+
     return Instructions(root, all)
   }
 
   /* ------------------------------------------------------------ private ------------------------------------------------------------ */
   private fun table(sEntity: SEntity) = tableTranslator.getValue(sEntity.name)
 
-  private fun createEntity(entity: DEntity): Pair<Insert, List<Instruction>> {
-    val allInst = mutableListOf<Instruction>()
+  private fun addEntity(entity: DEntity, sRelation: SRelation): Pair<Insert, List<Instruction>> {
     val (head, tail) = entity.unpack
+    val rootInst = Insert(table(head.schema), AddAction(head.schema, sRelation))
+    return Pair(rootInst, processEntity(head, tail, rootInst))
+  }
 
-    val rootInst = Insert(table(head.schema), CreateAction(head.schema))
+  private fun processEntity(head: DEntity, tail: List<DEntity>, rootInst: Instruction): List<Instruction> {
+    val allInst = mutableListOf<Instruction>()
     val (topInclude, bottomInclude) = processUnpackedEntity(head, rootInst)
 
     allInst.addAll(topInclude)
@@ -45,9 +51,11 @@ class DEntityTranslator(private val schema: Schema) {
       nextInst = createSubEntity(nextEntity, item, nextInst)
       nextEntity = nextInst.action.sEntity
       allInst.add(nextInst)
+
+      // TODO: add output values?
     }
 
-    return Pair(rootInst, allInst)
+    return allInst
   }
 
   private fun createSubEntity(topEntity: SEntity, entity: DEntity, topInst: Instruction): Insert {
@@ -68,29 +76,36 @@ class DEntityTranslator(private val schema: Schema) {
 
     // --------------------------------- fields ---------------------------------------------
     // A <fields>
-    topInst.include(entity.allFields)
+    val fOutput = topInst.include(entity.allFields)
+    topInst.putAllOutput(fOutput)
 
     // --------------------------------- allOwnedReferences ----------------------------------
     for (oRef in entity.allOwnedReferences) {
       if (oRef.schema.isUnique || oRef.schema.ref.type == EntityType.TRAIT) {
         // A {<rel>: <fields>}
-        topInst.include(entity.allFields, oRef.name)
+        val rOutput = topInst.include(entity.allFields, oRef.name)
+        topInst.putAllOutput(rOutput)
       } else {
         // A ref_<rel> --> B
-        val (root, all) = createEntity(oRef.value)
+        val (root, all) = addEntity(oRef.value, oRef.schema)
         topInclude.addAll(all)
         topInst.putRef("ref__${oRef.name}", root)
+        topInst.putOutput(oRef.name, root.output)
       }
     }
 
     // --------------------------------- allOwnedCollections ----------------------------------
     for (oCol in entity.allOwnedCollections) {
       // A <-- inv_<A>_<rel> B
+      val cOutput = mutableListOf<Map<String, Any?>>()
       oCol.value.forEach {
-        val (root, all) = createEntity(it)
+        val (root, all) = addEntity(it, oCol.schema)
         bottomInclude.addAll(all)
         root.putRef("inv_${table(entity.schema)}__${it.name}", topInst)
+        cOutput.add(root.output)
       }
+
+      topInst.putOutput(oCol.name, cOutput)
     }
 
     // --------------------------------- allLinkedReferences ----------------------------------
@@ -196,14 +211,21 @@ class DEntityTranslator(private val schema: Schema) {
 }
 
 /* ------------------------- helpers -------------------------*/
-private fun Instruction.include(fields: List<DField>, at: String? = null) {
-  if (at != null) {
-    this.with(at) {
-      for (field in fields)
-        this.putData(field.name, field.value)
-    }
+private fun Instruction.include(fields: List<DField>, at: String? = null): Map<String, Any?> {
+  return if (at != null) {
+    this.with(at) { this.addFields(fields) }
   } else {
-    for (field in fields)
-      this.putData(field.name, field.value)
+    this.addFields(fields)
   }
+}
+
+private fun Instruction.addFields(fields: List<DField>): Map<String, Any?> {
+  val output = linkedMapOf<String, Any?>()
+  for (field in fields) {
+    this.putData(field.name, field.value)
+    if (!field.schema.isInput)
+      output[field.name] = field.value
+  }
+
+  return output
 }

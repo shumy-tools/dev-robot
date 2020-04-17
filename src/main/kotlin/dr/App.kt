@@ -37,9 +37,9 @@ class TestAuthorizer : IAuthorizer {
 
 class TestModificationAdaptor: IModificationAdaptor {
   var idSeq = 9L;
-  override fun commit(instructions: Instructions): Long {
+  override fun commit(instructions: Instructions) {
     println("TX-START")
-    val id = instructions.exec {
+    instructions.exec {
       println("  $it")
       when (it) {
         is Insert -> ++idSeq
@@ -48,7 +48,6 @@ class TestModificationAdaptor: IModificationAdaptor {
       }
     }
     println("TX-COMMIT")
-    return id
   }
 }
 

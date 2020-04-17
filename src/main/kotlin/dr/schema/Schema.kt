@@ -103,8 +103,8 @@ class Schema {
 
   fun toMap(simple: Boolean): Map<String, Any> {
     val map = linkedMapOf<String, Any>()
-    map["masters"] = masters.map { it.value.toMap(simple) }
-    if (traits.isNotEmpty()) map["traits"] = traits.map { it.value.toMap(simple) }
+    map["masters"] = masters.map { it.key to it.value.toMap(simple) }.toMap()
+    if (traits.isNotEmpty()) map["traits"] = traits.map { it.key to it.value.toMap(simple) }.toMap()
 
     return map
   }
@@ -149,11 +149,10 @@ class Schema {
 
     fun toMap(simple: Boolean): Map<String, Any> {
       val map = linkedMapOf<String, Any>()
-      if(!simple) map["@type"] = type
-      map["name"] = name
-      if (sealed.isNotEmpty()) map["sealed"] = sealed.map { it.value.toMap(simple) }
-      if (fields.isNotEmpty()) map["fields"] = fields.filter { if (simple) it.value.isInput && !it.value.isOptional else true }.map { it.value.toMap(simple) }
-      if (rels.isNotEmpty()) map["rels"] = rels.filter { if (simple) it.value.isInput && !it.value.isOptional else true }.map { it.value.toMap(simple) }
+      if(!simple) map["@type"] = type.name.toLowerCase()
+      if (sealed.isNotEmpty()) map["sealed"] = sealed.map { it.key to it.value.toMap(simple) }.toMap()
+      if (fields.isNotEmpty()) map["fields"] = fields.filter { if (simple) it.value.isInput && !it.value.isOptional else true }.map { it.key to it.value.toMap(simple) }.toMap()
+      if (rels.isNotEmpty()) map["rels"] = rels.filter { if (simple) it.value.isInput && !it.value.isOptional else true }.map { it.key to it.value.toMap(simple) }.toMap()
 
       return map
     }
@@ -181,8 +180,7 @@ class Schema {
       ): SFieldOrRelation(property, isOptional) {
         fun toMap(simple: Boolean): Map<String, Any> {
           val map = linkedMapOf<String, Any>()
-          map["@type"] = type
-          map["name"] = name
+          map["@type"] = type.name.toLowerCase()
           if(!simple) map["input"] = isInput
           if(!simple) map["optional"] = isOptional
           if(!simple) map["unique"] = isUnique
@@ -203,13 +201,12 @@ class Schema {
       ): SFieldOrRelation(property, isOptional) {
         fun toMap(simple: Boolean): Map<String, Any> {
           val map = linkedMapOf<String, Any>()
-          map["@type"] = type
-          map["name"] = name
+          map["@type"] = type.name.toLowerCase()
           if(!simple) map["input"] = isInput
           if(!simple) map["optional"] = isOptional
           if(!simple) map["unique"] = isUnique
           map["many"] = isCollection
-          if (traits.isNotEmpty()) map["traits"] = traits.map { it.key }
+          if (traits.isNotEmpty()) map["traits"] = traits.map { it.key to it.key }.toMap()
           map["ref"] = if (type == RelationType.CREATE) ref.toMap(simple) else ref.name
 
           return map

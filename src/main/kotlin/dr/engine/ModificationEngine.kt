@@ -15,29 +15,23 @@ class ModificationEngine(
   private val authorizer: IAuthorizer
 ) {
 
-  fun create(sEntity: SEntity, json: String): Long {
+  fun create(sEntity: SEntity, json: String): Map<String, Any?> {
     val entity = processor.create(sEntity, json)
     val instructions = translator.create(entity)
 
-    return adaptor.commit(instructions)
+    adaptor.commit(instructions)
+    return instructions.output
   }
 
-  fun update(sEntity: SEntity, id: Long, json: String) {
+  fun update(sEntity: SEntity, id: Long, json: String): Map<String, Any?> {
     val entity = processor.update(sEntity, json)
     val instructions = translator.update(id, entity)
 
     adaptor.commit(instructions)
+    return instructions.output
   }
 
-  /*fun add(entity: String, id: Long, rel: String, new: Any): List<Long> {
-
-    // commit instructions
-    instructions.fireCheckedListeners()
-    val ids = adaptor.commit(instructions)
-    instructions.fireCommittedListeners()
-
-    return ids
-  }
+  /*
 
   fun check(entity: String, field: String, value: Any?) {
     val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")

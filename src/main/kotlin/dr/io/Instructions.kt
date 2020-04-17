@@ -10,7 +10,10 @@ class Instructions(private val root: Instruction, val all: List<Instruction>) {
   val size: Int
     get() = all.size
 
-  fun exec(eFun: (Instruction) -> Long): Long {
+  val output: Map<String, Any?>
+    get() = root.output
+
+  fun exec(eFun: (Instruction) -> Long) {
     // fireCheckedListeners
     for (inst in all)
       inst.action.sEntity.fireListeners(EventType.CHECKED, inst)
@@ -21,7 +24,10 @@ class Instructions(private val root: Instruction, val all: List<Instruction>) {
     if (head.unresolvedRefs.isNotEmpty())
       throw Exception("First instruction must have all references already resolved! - (Code bug, please report the issue)")
 
-    ids[head] = eFun(head)
+    val firstId = eFun(head)
+    ids[head] = firstId
+    if (head is Insert)
+      head.setId(firstId)
 
     // execute and resolve children references
     for (inst in all.drop(1)) {
@@ -33,14 +39,15 @@ class Instructions(private val root: Instruction, val all: List<Instruction>) {
       // remove all resolved references
       (inst.unresolvedRefs as LinkedHashMap<String, Instruction>).clear()
 
-      ids[inst] = eFun(inst)
+      val id = eFun(inst)
+      ids[inst] = id
+      if (inst is Insert)
+        inst.setId(id)
     }
 
     // fireCommittedListeners
     for (inst in all)
       inst.action.sEntity.fireListeners(EventType.COMMITTED, inst)
-
-    return ids[root]!!
   }
 }
 
@@ -80,6 +87,7 @@ sealed class Instruction {
   val data: Map<String, Any?> = linkedMapOf()
   val resolvedRefs: Map<String, Long?> = linkedMapOf()
   val unresolvedRefs: Map<String, Instruction> = linkedMapOf()
+  val output: Map<String, Any?> = linkedMapOf()
 
   fun isEmpty(): Boolean = data.isEmpty() && resolvedRefs.isEmpty() && unresolvedRefs.isEmpty()
 
@@ -93,34 +101,48 @@ sealed class Instruction {
   internal fun resolvedRefsText() = if (resolvedRefs.isNotEmpty()) ", refs=$resolvedRefs" else ""
   internal fun unresolvedRefsText() = if (unresolvedRefs.isNotEmpty()) ", urefs=${unresolvedRefs.map { (name, inst) -> "$name=${inst.table}:${inst.hashCode()}" }}" else ""
 
-  internal fun with(level: String, call: () -> Unit) {
+  internal fun <T: Any> with(level: String, call: () -> T): T {
     val map = linkedMapOf<String, Any?>()
-    with(dataStack) {
-      peek()[level] = map
-      push(map)
-        call()
-      pop()
-    }
+
+    dataStack.peek()[level] = map
+    dataStack.push(map)
+      val res = call()
+    dataStack.pop()
+
+    return res
   }
 
-  internal fun putData(name: String, value: Any?) {
-    dataStack.peek()[name] = value
+  internal fun putData(key: String, value: Any?) {
+    dataStack.peek()[key] = value
   }
 
-  internal fun putRef(name: String, ref: Instruction) {
+  internal fun putRef(key: String, ref: Instruction) {
     if (ref is Update) {
-      (this.resolvedRefs as LinkedHashMap<String, Long?>)[name] = ref.id
+      (this.resolvedRefs as LinkedHashMap<String, Long?>)[key] = ref.id
     } else {
-      (this.unresolvedRefs as LinkedHashMap<String, Instruction>)[name] = ref
+      (this.unresolvedRefs as LinkedHashMap<String, Instruction>)[key] = ref
     }
   }
 
-  internal fun putResolvedRef(name: String, ref: Long?) {
-    (this.resolvedRefs as LinkedHashMap<String, Long?>)[name] = ref
+  internal fun putResolvedRef(key: String, ref: Long?) {
+    (this.resolvedRefs as LinkedHashMap<String, Long?>)[key] = ref
+  }
+
+  internal fun setId(id: Long?) {
+    putOutput("@id", id)
+  }
+
+  internal fun putOutput(key: String, value: Any?) {
+    (this.output as LinkedHashMap<String, Any?>)[key] = value
+  }
+
+  internal fun putAllOutput(values: Map<String, Any?>) {
+    (this.output as LinkedHashMap<String, Any?>).putAll(values)
   }
 }
 
   class Insert(override val table: String, override val action: Action): Instruction() {
+    init { setId(null) } // reserve the first position
     override fun toString() = "Insert$action - {table=$table${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
   }
 

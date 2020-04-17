@@ -98,7 +98,9 @@ data class Address(
   val country: String,
   val city: String,
   val address: String?
-)
+) {
+  val derived = "derived-value"
+}
 
 @Master
 data class Role(

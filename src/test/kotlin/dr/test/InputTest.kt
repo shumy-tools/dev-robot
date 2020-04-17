@@ -136,7 +136,7 @@ class InputTest {
     val allInst = trans.create(entity).process()
     assert(allInst.size == 2)
 
-    allInst[0].isCreate(C::class, "dr_test_c", mapOf(
+    allInst[0].isAdd(C::class, "dr_test_c", mapOf(
       "oneText" to "oneC"
     ))
 
@@ -211,7 +211,7 @@ class InputTest {
     val allInst = trans.update(20L, entity).process()
     assert(allInst.size == 2)
 
-    allInst[0].isCreate(C::class, "dr_test_c", mapOf(
+    allInst[0].isAdd(C::class, "dr_test_c", mapOf(
       "oneText" to "oneC"
     ))
 

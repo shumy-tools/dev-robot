@@ -1,33 +1,14 @@
 package dr.io
 
-import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.databind.node.ArrayNode
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dr.schema.*
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import kotlin.reflect.KClass
 
-class InputProcessor(private val schema: Schema) {
-  private val mapper: ObjectMapper = jacksonObjectMapper()
-    .registerModule(JavaTimeModule())
-    .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
-    .setSerializationInclusion(JsonInclude.Include.NON_NULL)
-
-  init {
-    mapper.registerSubtypes(
-      ManyLinksWithoutTraits::class.java,
-      OneLinkWithoutTraits::class.java,
-      ManyLinksWithTraits::class.java,
-      OneLinkWithTraits::class.java,
-      ManyUnlink::class.java,
-      OneUnlink::class.java
-    )
-  }
+class InputProcessor(private val schema: Schema, private val mapper: ObjectMapper) {
 
   fun create(type: SEntity, json: String) = create(type.clazz, json)
 
