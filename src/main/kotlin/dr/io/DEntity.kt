@@ -41,6 +41,16 @@ class DEntity(
     }
   }
 
+  fun checkFields(): Map<String, List<String>> {
+    val all = linkedMapOf<String, List<String>>()
+
+    val (head, tail) = this.unpack
+    head.allFields.forEach { val res = it.check(); if (res.isNotEmpty()) all[it.name] = res }
+    tail.forEach { ent -> ent.allFields.forEach { val res = it.check(); if (res.isNotEmpty()) all[it.name] = res } }
+
+    return all
+  }
+
   val allFields: List<DField> by lazy {
     if (cEntity is Pack<*>)
       throw Exception("Cannot get field from a Pack<*>, unpack first.")
@@ -141,7 +151,16 @@ sealed class Data
 
     val value: Any? by lazy {
       val value = entity.getFieldValue(schema)
-      entity.schema.checkFieldConstraints(schema, value)
+      val checks = entity.schema.checkFieldConstraints(schema, value)
+      if (checks.isNotEmpty())
+        throw Exception("Constraint check failed '${checks.first()}'! - (${entity.schema.name}, ${schema.name})")
+
+      value
+    }
+
+    fun check(): List<String> {
+      val value = entity.getFieldValue(schema)
+      return entity.schema.checkFieldConstraints(schema, value)
     }
   }
 
@@ -233,14 +252,6 @@ sealed class LinkData
 
 
 /* ------------------------- helpers -------------------------*/
-private fun SEntity.checkFieldConstraints(sField: SField, value: Any?): Any? {
-  if (value != null)
-    for (constraint in sField.checks)
-      constraint.check(value)?.let { throw Exception("Constraint check failed '$it'! - (${this.name}, ${sField.name})") }
-
-  return value
-}
-
 private fun SEntity.checkInclusion(prop: String, expected: Set<String>, inputs: List<Any>) {
   if (expected.size != inputs.size)
     throw Exception("Invalid number of inputs, expected '${expected.size}' found '${inputs.size}'! - (${this.name}, $prop)")

@@ -1,10 +1,7 @@
 package dr.schema
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo
-import dr.io.Delete
-import dr.io.Insert
-import dr.io.Instruction
-import dr.io.Update
+import dr.io.*
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 import kotlin.reflect.KProperty1
@@ -121,6 +118,13 @@ class Schema {
 
     fun getFieldOrRelation(name: String): SFieldOrRelation? {
       return fields[name] ?: rels[name]
+    }
+
+    fun checkFieldConstraints(sField: SField, value: Any?): List<String> {
+      return if (value != null)
+        sField.checks.mapNotNull { it.check(value) }
+      else
+        emptyList()
     }
 
     internal fun addSealed(name: String, sEntity: SEntity) {

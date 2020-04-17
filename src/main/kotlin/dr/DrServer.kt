@@ -18,27 +18,11 @@ import io.javalin.apibuilder.ApiBuilder.*
 import io.javalin.http.Context
 import java.util.*
 
-class DrServer(
-  val schema: Schema,
-  private val authorizer: IAuthorizer,
-  private val mAdaptor: IModificationAdaptor,
-  private val qAdaptor: IQueryAdaptor
-) {
-  private val mapper: ObjectMapper = jacksonObjectMapper()
+object JsonParser {
+  val mapper: ObjectMapper = jacksonObjectMapper()
     .registerModule(JavaTimeModule())
     .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
     .setSerializationInclusion(JsonInclude.Include.NON_NULL)
-
-  private val processor = InputProcessor(schema, mapper)
-  private val translator = DEntityTranslator(schema)
-
-  val qEngine = QueryEngine(schema, qAdaptor, authorizer)
-  val mEngine = ModificationEngine(processor, translator, mAdaptor, authorizer)
-  //val aEngine: ActionEngine
-  //val nEngine: NotificationEngine
-
-  var enabled = false
-    private set
 
   init {
     mapper.registerSubtypes(
@@ -50,6 +34,28 @@ class DrServer(
       OneUnlink::class.java
     )
   }
+
+  fun write(value: Any): String {
+    return mapper.writeValueAsString(value)
+  }
+}
+
+class DrServer(
+  val schema: Schema,
+  private val authorizer: IAuthorizer,
+  private val mAdaptor: IModificationAdaptor,
+  private val qAdaptor: IQueryAdaptor
+) {
+  private val processor = InputProcessor(schema)
+  private val translator = DEntityTranslator(schema)
+
+  val qEngine = QueryEngine(schema, qAdaptor, authorizer)
+  val mEngine = ModificationEngine(processor, translator, mAdaptor, authorizer)
+  //val aEngine: ActionEngine
+  //val nEngine: NotificationEngine
+
+  var enabled = false
+    private set
 
   fun start(port: Int) {
     val app = Javalin.create().start(port)
@@ -67,6 +73,7 @@ class DrServer(
 
         post("create/:entity", this::create)
         post("update/:entity/:id", this::update)
+        post("check/:entity", this::check)
 
         path("query") {
           post("compile", this::compile)
@@ -83,7 +90,7 @@ class DrServer(
     val isSimple = ctx.queryParam("simple") != null
     val res = schema.toMap(isSimple)
 
-    val json = mapper.writeValueAsString(mapOf<String, Any>("@type" to "ok").plus(res))
+    val json = JsonParser.write(mapOf<String, Any>("@type" to "ok").plus(res))
     ctx.result(json).contentType("application/json")
   }
 
@@ -99,7 +106,7 @@ class DrServer(
       mapOf("@type" to "error", "msg" to ex.message)
     }
 
-    val json = mapper.writeValueAsString(res)
+    val json = JsonParser.write(res)
     ctx.result(json).contentType("application/json")
   }
 
@@ -116,7 +123,23 @@ class DrServer(
       mapOf("@type" to "error", "msg" to ex.message)
     }
 
-    val json = mapper.writeValueAsString(res)
+    val json = JsonParser.write(res)
+    ctx.result(json).contentType("application/json")
+  }
+
+  fun check(ctx: Context) {
+    val res = try {
+      val entity = ctx.pathParam("entity")
+
+      val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
+      val output = mEngine.check(sEntity, ctx.body())
+
+      mapOf("@type" to "ok").plus(output)
+    } catch (ex: Exception) {
+      mapOf("@type" to "error", "msg" to ex.message)
+    }
+
+    val json = JsonParser.write(res)
     ctx.result(json).contentType("application/json")
   }
 
@@ -131,7 +154,7 @@ class DrServer(
       mapOf("@type" to "error", "msg" to ex.message)
     }
 
-    val json = mapper.writeValueAsString(res)
+    val json = JsonParser.write(res)
     ctx.result(json).contentType("application/json")
   }
 }

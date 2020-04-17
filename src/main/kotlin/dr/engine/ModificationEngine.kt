@@ -31,41 +31,8 @@ class ModificationEngine(
     return instructions.output
   }
 
-  /*
-
-  fun check(entity: String, field: String, value: Any?) {
-    val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
-    val sField = sEntity.fields[field] ?: throw Exception("Entity field not found! - ($entity, $field)")
-
-    if (!sField.isInput)
-      throw Exception("Invalid input field! - (${sEntity.name}, $field)")
-
-    if (!sField.isOptional && value == null)
-      throw Exception("Invalid 'null' input! - (${sEntity.name}, $field)")
-
-    value?.let {
-      val type =  it.javaClass.kotlin
-      if (!TypeEngine.check(sField.type, type))
-        throw Exception("Invalid field type, expected ${sField.type} found ${type.simpleName}! - (${sEntity.name}, $field)")
-
-      checkFieldConstraints(sEntity, sField, value)
-    }
+  fun check(sEntity: SEntity, json: String): Map<String, List<String>> {
+    val entity = processor.update(sEntity, json)
+    return entity.checkFields()
   }
-
-  private fun checkRelationChange(entity: String, rel: String): Pair<SEntity, SRelation> {
-    val sEntity = schema.entities[entity] ?: throw Exception("Entity type not found! - ($entity)")
-    val sRelation = sEntity.rels[rel] ?: throw Exception("Entity relation not found! - ($entity, $rel)")
-
-    // check model constraints
-    if (!sRelation.isInput)
-      throw Exception("Invalid input relation! - ($entity, $rel)")
-
-    if (!sRelation.isCollection)
-      throw Exception("Relation is not a collection, use 'update' instead! - ($entity, $rel)")
-
-    if (!sRelation.isOpen)
-      throw Exception("Relation is not open, cannot change links! - ($entity, $rel)")
-
-    return sEntity to sRelation
-  }*/
 }

@@ -1,14 +1,15 @@
 package dr.io
 
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ArrayNode
+import dr.JsonParser
 import dr.schema.*
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import kotlin.reflect.KClass
 
-class InputProcessor(private val schema: Schema, private val mapper: ObjectMapper) {
+class InputProcessor(private val schema: Schema) {
+  private val mapper = JsonParser.mapper
 
   fun create(type: SEntity, json: String) = create(type.clazz, json)
 
@@ -28,7 +29,7 @@ class InputProcessor(private val schema: Schema, private val mapper: ObjectMappe
     val map = linkedMapOf<String, Any?>()
 
     for (nName in node.fieldNames()) {
-      val sFieldOrRelation = type.getFieldOrRelation(nName) ?: throw Exception("Property not found! -  - (${type.name}, ${nName})")
+      val sFieldOrRelation = type.getFieldOrRelation(nName) ?: throw Exception("Property not found! - (${type.name}, ${nName})")
       if (!sFieldOrRelation.isInput)
         throw Exception("Invalid input field! - (${type.name}, ${nName})")
 
