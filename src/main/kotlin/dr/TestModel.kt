@@ -1,6 +1,8 @@
 package dr
 
 import dr.schema.*
+import dr.state.Machine
+import dr.state.StateMachine
 import java.time.LocalDateTime
 
 // reusable constraint check
@@ -76,7 +78,7 @@ data class UserMarket(
 @Master
 data class Market(val name: String)
 
-@Master
+@Master @StateMachine(UserMachine::class)
 data class User(
   val name: String,
 
@@ -91,6 +93,37 @@ data class User(
   @Unique @Link(Role::class) val roles: List<Long>
 ) {
   val timestamp = LocalDateTime.now()
+}
+
+
+object UserMachine: Machine<UserMachine.State, UserMachine.Event>() {
+  enum class State { START, VALIDATE, STOP }
+  enum class Event { SUBMIT, OK, INCORRECT }
+
+  init {
+    state(State.START) {
+      println("START")
+      open(User::address) forRole "employee"
+    }
+
+    on(Event.SUBMIT) fromRole "employee" transit (State.START to State.VALIDATE) then {
+      println("(SUBMIT from 'employee') START -> VALIDATE")
+      check { true }
+      history.set("owner", user)
+    }
+
+    on(Event.OK) fromRole "manager" transit (State.VALIDATE to State.STOP) then {
+      println("(OK from 'manager') VALIDATE -> STOP")
+    }
+
+    on(Event.INCORRECT) fromRole "manager" transit (State.VALIDATE to State.START) then {
+      println("(INCORRECT from 'manager') VALIDATE -> START")
+
+      val owner: String = history.last(Event.SUBMIT).get("owner")
+      open(User::address) forUser owner
+    }
+
+  }
 }
 
 @Detail

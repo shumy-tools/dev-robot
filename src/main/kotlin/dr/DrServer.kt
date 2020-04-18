@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import dr.ctx.Session
 import dr.engine.ModificationEngine
 import dr.engine.QueryEngine
 import dr.io.*
@@ -46,16 +47,13 @@ class DrServer(
   private val mAdaptor: IModificationAdaptor,
   private val qAdaptor: IQueryAdaptor
 ) {
-  private val processor = InputProcessor(schema)
-  private val translator = DEntityTranslator(schema)
+  internal val processor = InputProcessor(schema)
+  internal val translator = DEntityTranslator(schema)
 
-  val qEngine = QueryEngine(schema, qAdaptor, authorizer)
-  val mEngine = ModificationEngine(processor, translator, mAdaptor, authorizer)
+  val qEngine = QueryEngine(schema, qAdaptor)
+  val mEngine = ModificationEngine(processor, translator, mAdaptor)
   //val aEngine: ActionEngine
   //val nEngine: NotificationEngine
-
-  var enabled = false
-    private set
 
   fun start(port: Int) {
     val app = Javalin.create().start(port)
@@ -63,13 +61,19 @@ class DrServer(
     app.get("/") { ctx -> ctx.result("Hello World") }
 
     app.before("/api/*") { ctx ->
-      // TODO: authenticate
+      // TODO: authenticate and set the correct user
+      val user = dr.base.User("admin", "admin@mail.com", listOf(1L))
+
       println("before - /api/*")
+      val session = Session(user, this)
+      dr.ctx.Context.set(session)
     }
+
+    app.before("/api/*") { dr.ctx.Context.clear() }
 
     app.routes {
       path("api") {
-        get(this::getSchema)
+        get(this::schema)
 
         post("create/:entity", this::create)
         post("update/:entity/:id", this::update)
@@ -80,13 +84,11 @@ class DrServer(
         }
       }
     }
-
-    enabled = true
   }
 
   private val queries = mutableMapOf<String, IQueryExecutor>()
 
-  fun getSchema(ctx: Context) {
+  fun schema(ctx: Context) {
     val isSimple = ctx.queryParam("simple") != null
     val res = schema.toMap(isSimple)
 
@@ -97,6 +99,8 @@ class DrServer(
   fun create(ctx: Context) {
     val res = try {
       val entity = ctx.pathParam("entity")
+
+      // TODO: check access control
 
       val sEntity = schema.masters[entity] ?: throw Exception("Master entity not found! - ($entity)")
       val output = mEngine.create(sEntity, ctx.body())
@@ -114,6 +118,8 @@ class DrServer(
     val res = try {
       val entity = ctx.pathParam("entity")
       val id = ctx.pathParam("id").toLong()
+
+      // TODO: check access control
 
       val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
       val output = mEngine.update(sEntity, id, ctx.body())
@@ -146,6 +152,9 @@ class DrServer(
   fun compile(ctx: Context) {
     val res = try {
       val qExec = qEngine.compile(ctx.body())
+
+      // TODO: check access control from qExec.accessed
+
       val uuid = UUID.randomUUID().toString()
       queries[uuid] = qExec
 

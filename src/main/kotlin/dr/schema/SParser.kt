@@ -144,7 +144,7 @@ private fun KClass<*>.processListeners(): Set<SListener> {
       throw throw Exception("Listener '${it.qualifiedName}' must inherit from '${EListener::class.qualifiedName}<${this.qualifiedName}>'")
 
     // instantiate listener
-    val instance = it.createInstance() as EListener<*>
+    val instance = it.createInstance()
     val enabled = it.declaredFunctions.mapNotNull { member ->
       val action = when(member.name) {
         ActionType.CREATE.funName -> ActionType.CREATE
@@ -230,7 +230,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
     else -> throw Exception("Required annotation, one of (Create, Link)! - (${sEntity.name}, ${this.name})")
   }
 
-  val (ref, isCollection) = if (type.isSubtypeOf(TypeEngine.LIST) || type.isSubtypeOf(TypeEngine.SET) || type.isSubtypeOf(TypeEngine.LIST_TRAITS) || type.isSubtypeOf(TypeEngine.SET_TRAITS)) {
+  val (ref, isCollection) = if (type.isSubtypeOf(TypeEngine.LIST) || type.isSubtypeOf(TypeEngine.LIST_TRAITS)) {
     if (sEntity.type == EntityType.TRAIT)
       throw Exception("Collections are not supported in traits! - (${sEntity.name}, ${this.name})")
 
@@ -239,7 +239,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
 
     val ref = when(rType) {
       RelationType.CREATE -> {
-        if (!type.isSubtypeOf(TypeEngine.LIST) && !type.isSubtypeOf(TypeEngine.SET))
+        if (!type.isSubtypeOf(TypeEngine.LIST))
           throw Exception("Create-collection must be of type, one of (Set<*>, List<*>)! - (${sEntity.name}, ${this.name})")
 
         var tRef = type.arguments.last().type ?: throw Exception("Required generic type! - (${sEntity.name}, ${this.name})")
@@ -252,10 +252,10 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
       }
 
       RelationType.LINK -> {
-        if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.LIST_ID) && !type.isSubtypeOf(TypeEngine.SET_ID))
+        if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.LIST_ID))
           throw Exception("Link-collection without traits must be of type, one of (List<Long>, Set<Long>)! - (${sEntity.name}, ${this.name})")
 
-        if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.LIST_TRAITS) && !type.isSubtypeOf(TypeEngine.SET_TRAITS))
+        if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.LIST_TRAITS))
           throw Exception("Link-collection with traits type must be of type (List<Traits>, Set<Traits>)! - (${sEntity.name}, ${this.name})")
 
         link!!.value.processEntity(tmpSchema)

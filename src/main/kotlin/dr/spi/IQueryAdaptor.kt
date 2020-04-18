@@ -7,6 +7,7 @@ interface IQueryAdaptor {
 }
 
 interface IQueryExecutor {
+  fun accessed(): IReadAccess
   fun exec(params: Map<String, Any>): IResult
 }
 

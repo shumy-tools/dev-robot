@@ -20,8 +20,7 @@ import java.time.LocalTime
 // private val authorizer: IQueryAuthorizer
 class QueryEngine(
   private val schema: Schema,
-  private val adaptor: IQueryAdaptor,
-  private val authorizer: IAuthorizer
+  private val adaptor: IQueryAdaptor
 ) {
 
   fun compile(query: String): IQueryExecutor {
@@ -31,7 +30,7 @@ class QueryEngine(
     val tree = parser.query()
 
     val walker = ParseTreeWalker()
-    val listener = DrQueryListener(this.schema, this.authorizer)
+    val listener = DrQueryListener(this.schema)
 
     walker.walk(listener, tree)
     //println("tokens: ${tokens.tokens.map { it.text }}")
@@ -40,7 +39,7 @@ class QueryEngine(
       throw Exception("Failed to compile query! ${listener.errors}")
 
     val native = this.adaptor.compile(listener.compiled!!)
-    return QueryExecutorWithValidator(native, listener.parameters)
+    return QueryExecutorWithValidator(native, listener.accessed, listener.parameters)
   }
 }
 
@@ -86,13 +85,13 @@ private class AccessedPaths: IReadAccess {
   }
 }
 
-private class DrQueryListener(private val schema: Schema, private val authorize: IAuthorizer): QueryBaseListener() {
+private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
   val errors = mutableListOf<String>()
   val parameters = mutableListOf<Parameter>()
 
   var compiled: QTree? = null
 
-  private var accessed: AccessedPaths = AccessedPaths()
+  val accessed: AccessedPaths = AccessedPaths()
 
   override fun enterQuery(ctx: QueryParser.QueryContext) {
     // check entity name
@@ -102,9 +101,6 @@ private class DrQueryListener(private val schema: Schema, private val authorize:
     // process query
     val rel = processQLine(listOf(eText), ctx.qline(), entity, entity)
     this.compiled = QTree(eText, rel.filter, rel.limit, rel.page, rel.select)
-
-    // check query authorization
-    this.authorize.read(accessed)
   }
 
   override fun visitErrorNode(error: ErrorNode) {

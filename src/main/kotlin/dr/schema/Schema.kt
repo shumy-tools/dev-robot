@@ -26,6 +26,10 @@ annotation class Trait
 
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.RUNTIME)
+annotation class Checks(vararg val value: KClass<out FieldCheck<*>>)
+
+@Target(AnnotationTarget.PROPERTY)
+@Retention(AnnotationRetention.RUNTIME)
 annotation class Unique
 
 @Target(AnnotationTarget.PROPERTY)
@@ -139,7 +143,7 @@ class Schema {
     }
 
     internal fun fireListeners(event: EventType, inst: Instruction) {
-      inst.action.sEntity.listeners.forEach {
+      inst.action.entity.schema.listeners.forEach {
         when (inst.action.type) {
           ActionType.CREATE -> it.get(ActionType.CREATE, event)?.onCreate(inst as Insert)
           ActionType.UPDATE -> it.get(ActionType.UPDATE, event)?.onUpdate(inst as Update)
@@ -222,9 +226,9 @@ class Schema {
       }
 
     @Suppress("UNCHECKED_CAST")
-    class SListener(val name: String, internal val listener: EListener<*>, internal val enabled: Map<ActionType, Set<EventType>>) {
-      internal fun get(action: ActionType, event: EventType): EListener<Any>? = enabled[action]?.let {
-        if (it.contains(event)) listener as EListener<Any> else null
+    class SListener(val name: String, internal val listener: EListener, internal val enabled: Map<ActionType, Set<EventType>>) {
+      internal fun get(action: ActionType, event: EventType): EListener? = enabled[action]?.let {
+        if (it.contains(event)) listener else null
       }
     }
 

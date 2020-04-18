@@ -2,7 +2,6 @@ package dr.io
 
 import dr.schema.ActionType
 import dr.schema.EventType
-import dr.schema.SEntity
 import dr.schema.SRelation
 import java.util.*
 
@@ -16,7 +15,7 @@ class Instructions(private val root: Instruction, val all: List<Instruction>) {
   fun exec(eFun: (Instruction) -> Long) {
     // fireCheckedListeners
     for (inst in all)
-      inst.action.sEntity.fireListeners(EventType.CHECKED, inst)
+      inst.action.entity.schema.fireListeners(EventType.CHECKED, inst)
 
     val ids = mutableMapOf<Instruction, Long>()
 
@@ -47,36 +46,36 @@ class Instructions(private val root: Instruction, val all: List<Instruction>) {
 
     // fireCommittedListeners
     for (inst in all)
-      inst.action.sEntity.fireListeners(EventType.COMMITTED, inst)
+      inst.action.entity.schema.fireListeners(EventType.COMMITTED, inst)
   }
 }
 
 sealed class Action(val type: ActionType) {
-  abstract val sEntity: SEntity
+  abstract val entity: DEntity
 }
 
-  class CreateAction(override val sEntity: SEntity): Action(ActionType.CREATE) {
-    override fun toString() = "(CREATE, ${sEntity.name})"
+  class CreateAction(override val entity: DEntity): Action(ActionType.CREATE) {
+    override fun toString() = "(CREATE, ${entity.name})"
   }
 
-  class UpdateAction(override val sEntity: SEntity): Action(ActionType.UPDATE) {
-    override fun toString() = "(UPDATE - ${sEntity.name})"
+  class UpdateAction(override val entity: DEntity, val id: Long): Action(ActionType.UPDATE) {
+    override fun toString() = "(UPDATE - ${entity.name})"
   }
 
-  class DeleteAction(override val sEntity: SEntity, val id: Long): Action(ActionType.DELETE) {
-    override fun toString() = "(DELETE - ${sEntity.name})"
+  class DeleteAction(override val entity: DEntity, val id: Long): Action(ActionType.DELETE) {
+    override fun toString() = "(DELETE - ${entity.name})"
   }
 
-  class AddAction(override val sEntity: SEntity, val sRelation: SRelation): Action(ActionType.ADD) {
-    override fun toString() = "(ADD - ${sEntity.name}.${sRelation.name})"
+  class AddAction(override val entity: DEntity, val sRelation: SRelation): Action(ActionType.ADD) {
+    override fun toString() = "(ADD - ${entity.name}.${sRelation.name})"
   }
 
-  class LinkAction(override val sEntity: SEntity, val sRelation: SRelation): Action(ActionType.LINK) {
-    override fun toString() = "(LINK - ${sEntity.name}.${sRelation.name})"
+  class LinkAction(override val entity: DEntity, val sRelation: SRelation): Action(ActionType.LINK) {
+    override fun toString() = "(LINK - ${entity.name}.${sRelation.name})"
   }
 
-  class UnlinkAction(override val sEntity: SEntity, val sRelation: SRelation): Action(ActionType.UNLINK) {
-    override fun toString() = "(UNLINK - ${sEntity.name}.${sRelation.name})"
+  class UnlinkAction(override val entity: DEntity, val sRelation: SRelation): Action(ActionType.UNLINK) {
+    override fun toString() = "(UNLINK - ${entity.name}.${sRelation.name})"
   }
 
 

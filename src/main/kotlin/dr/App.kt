@@ -15,6 +15,10 @@ class TestResult(): IResult {
 }
 
 class TestQueryExecutor(): IQueryExecutor {
+  override fun accessed(): IReadAccess {
+    TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+  }
+
   override fun exec(params: Map<String, Any>): IResult {
     return TestResult()
   }

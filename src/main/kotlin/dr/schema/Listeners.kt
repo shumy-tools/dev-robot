@@ -1,23 +1,19 @@
 package dr.schema
 
-import dr.DrServer
 import dr.io.Delete
 import dr.io.Insert
 import dr.io.Update
+import dr.query.QTree
 import kotlin.reflect.KClass
 
 /* ------------------------- annotations -------------------------*/
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Listeners(vararg val value: KClass<out Any>)
+annotation class Listeners(vararg val value: KClass<out EListener>)
 
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Events(vararg val value: EventType)
-
-@Target(AnnotationTarget.PROPERTY)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Checks(vararg val value: KClass<out Any>)
 
 /* ------------------------- enums -------------------------*/
 enum class EventType {
@@ -30,10 +26,8 @@ enum class ActionType(val funName: String) {
 }
 
 /* ------------------------- api -------------------------*/
-open class EListener<T> {
-  lateinit var server: DrServer
-
-  open fun onRead(id: Long, tree: Map<String, Any?>) {}
+open class EListener {
+  open fun onQuery(id: Long, tree: QTree) {}
 
   open fun onCreate(instruction: Insert) {}
   open fun onUpdate(instruction: Update) {}

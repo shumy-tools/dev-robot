@@ -4,13 +4,14 @@ import dr.schema.FieldType
 import dr.schema.SEntity
 import dr.schema.SField
 import dr.spi.IQueryExecutor
+import dr.spi.IReadAccess
 import dr.spi.IResult
 import kotlin.reflect.KClass
 
 /* ------------------------- internal api -------------------------*/
 class Parameter(val entity: SEntity, val field: String, val comp: CompType, val param: QParam)
 
-class QueryExecutorWithValidator(private val native: IQueryExecutor, parameters: List<Parameter>): IQueryExecutor {
+class QueryExecutorWithValidator(private val native: IQueryExecutor, private val accessed: IReadAccess, parameters: List<Parameter>): IQueryExecutor {
   private val args: List<Parameter> = parameters.filter { it.param.type == ParamType.PARAM }
 
   init {
@@ -20,6 +21,8 @@ class QueryExecutorWithValidator(private val native: IQueryExecutor, parameters:
         throw Exception("Invalid predicate '${it.entity.name}.${it.field} ${it.comp} ${it.param.value.javaClass.kotlin.qualifiedName}'")
     }
   }
+
+  override fun accessed(): IReadAccess = accessed
 
   override fun exec(params: Map<String, Any>): IResult {
     args.forEach {
