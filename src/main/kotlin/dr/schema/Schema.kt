@@ -2,6 +2,7 @@ package dr.schema
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import dr.io.*
+import dr.state.Machine
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 import kotlin.reflect.KProperty1
@@ -116,6 +117,9 @@ class Schema {
     val sealed: Map<String, SEntity> = linkedMapOf()
     val fields: Map<String, SField> = linkedMapOf()
     val rels: Map<String, SRelation> = linkedMapOf()
+
+    var machine: KClass<out Machine<*, *>>? = null
+      internal set
 
     val name: String
       get() = clazz.qualifiedName!!

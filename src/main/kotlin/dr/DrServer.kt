@@ -9,15 +9,18 @@ import dr.ctx.Session
 import dr.engine.ModificationEngine
 import dr.engine.QueryEngine
 import dr.io.*
+import dr.schema.SEntity
 import dr.schema.Schema
 import dr.spi.IAuthorizer
 import dr.spi.IModificationAdaptor
 import dr.spi.IQueryAdaptor
 import dr.spi.IQueryExecutor
+import dr.state.Machine
 import io.javalin.Javalin
 import io.javalin.apibuilder.ApiBuilder.*
 import io.javalin.http.Context
 import java.util.*
+import kotlin.reflect.full.createInstance
 
 object JsonParser {
   val mapper: ObjectMapper = jacksonObjectMapper()
@@ -50,10 +53,24 @@ class DrServer(
   internal val processor = InputProcessor(schema)
   internal val translator = DEntityTranslator(schema)
 
-  val qEngine = QueryEngine(schema, qAdaptor)
-  val mEngine = ModificationEngine(processor, translator, mAdaptor)
-  //val aEngine: ActionEngine
-  //val nEngine: NotificationEngine
+  internal val qEngine = QueryEngine(schema, qAdaptor)
+  internal val mEngine = ModificationEngine(processor, translator, mAdaptor)
+  //internal val aEngine: ActionEngine
+  //internal val nEngine: NotificationEngine
+
+  internal val machines: Map<SEntity, Machine<*, *>>
+
+  init {
+    println("----Checking State Machines----")
+    dr.ctx.Context.set(Session(this))
+      machines = schema.masters.filter { it.value.machine != null }.map {
+        val machine = it.value.machine!!
+        val instance = it.value to machine.createInstance()
+        println("    ${machine.qualifiedName} - OK")
+        instance
+      }.toMap()
+    dr.ctx.Context.clear()
+  }
 
   fun start(port: Int) {
     val app = Javalin.create().start(port)
@@ -65,7 +82,7 @@ class DrServer(
       val user = dr.base.User("admin", "admin@mail.com", listOf(1L))
 
       println("before - /api/*")
-      val session = Session(user, this)
+      val session = Session(this, user)
       dr.ctx.Context.set(session)
     }
 

@@ -7,7 +7,7 @@ import kotlin.reflect.KProperty1
 
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class StateMachine(vararg val value: KClass<out Machine<*, *>>)
+annotation class StateMachine(val value: KClass<out Machine<*, *>>)
 
 open class Machine<S, E> {
   lateinit var user: String

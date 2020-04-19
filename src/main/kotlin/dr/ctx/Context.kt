@@ -37,4 +37,4 @@ object Context {
   }
 }
 
-class Session(val user: User, val server: DrServer)
+class Session(val server: DrServer, val user: User? = null)

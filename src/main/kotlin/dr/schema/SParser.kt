@@ -1,18 +1,21 @@
 package dr.schema
 
+import dr.state.Machine
+import dr.state.StateMachine
 import kotlin.reflect.*
 import kotlin.reflect.full.*
 
 /* ------------------------- api -------------------------*/
 object SParser {
   fun parse(vararg items: KClass<out Any>): Schema {
-    println("---Processing Schema---")
+    println("----Checking Master Entities----")
     val tmpSchema = TempSchema()
     for (kc in items) {
       if (kc.getEntityType() != EntityType.MASTER)
         throw Exception("Include only master entities!")
 
       kc.processEntity(tmpSchema)
+      println("    ${kc.qualifiedName} - OK")
     }
 
     return tmpSchema.schema
@@ -58,14 +61,13 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
   return tmpSchema.schema.entities.getOrElse(name) {
     this.checkEntityNumber(name)
 
-    println("  Entity: $name")
     if (name.toLowerCase() == "super")
       throw Exception("Reserved class name: 'super'! - ($name)")
 
     if (this.isOpen || this.isSealed)
       throw Exception("Class inheritance is done via @Extend. Remove open or sealed keywords. - ($name)")
 
-    val type = this.getEntityType() ?: throw Exception("Required annotation, one of (Master, Detail, Trait, Extend)! - ($name)")
+    val type = this.getEntityType() ?: throw Exception("Required annotation, one of (Master, Detail, Trait)! - ($name)")
 
     // find @LateInit function if exists
     var initFun: KFunction<*>? = null
@@ -86,6 +88,23 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
 
     val sealed = findAnnotation<Sealed>()
     val sEntity = SEntity(this, type, sealed != null, initFun, processListeners())
+
+    // include state machine
+    val machine = findAnnotation<StateMachine>()
+    if (machine != null) {
+      if (type != EntityType.MASTER)
+        throw Exception("Only a @Master can have a state machine! - ($name)")
+
+      machine.value.supertypes.firstOrNull {
+        sType -> Machine::class.qualifiedName == (sType.classifier as KClass<*>).qualifiedName
+      } ?: throw Exception("StateMachine '${machine.value.qualifiedName}' must implement '${Machine::class.qualifiedName}'")
+
+      machine.value.constructors.firstOrNull {
+        it.parameters.isEmpty()
+      } ?: throw Exception("StateMachine '${machine.value.qualifiedName}' requires an empty default constructor!")
+
+      sEntity.machine = machine.value
+    }
 
     tmpSchema.schema.addEntity(sEntity)
     if (ownedBy != null)
@@ -142,6 +161,10 @@ private fun KClass<*>.processListeners(): Set<SListener> {
     val tRef = sType.arguments.first().type ?: throw Exception("Listener '${it.qualifiedName}' requires generic type!")
     if (tRef != this.createType())
       throw throw Exception("Listener '${it.qualifiedName}' must inherit from '${EListener::class.qualifiedName}<${this.qualifiedName}>'")
+
+    it.constructors.firstOrNull {cst ->
+      cst.parameters.isEmpty()
+    } ?: throw Exception("Listener '${it.qualifiedName}' requires an empty default constructor!")
 
     // instantiate listener
     val instance = it.createInstance()
@@ -203,6 +226,10 @@ private fun KProperty1<Any, *>.processChecks(): Set<SCheck> {
     if (tRef != this.returnType)
       throw throw Exception("Check '${it.qualifiedName}: ${FieldCheck::class.qualifiedName}<${(tRef.classifier as KClass<*>).simpleName}>' is not compatible with the field type '${(this.returnType.classifier as KClass<*>).simpleName}'!")
 
+    it.constructors.firstOrNull {cst ->
+      cst.parameters.isEmpty()
+    } ?: throw Exception("Check '${it.qualifiedName}' requires an empty default constructor!")
+
     // instantiate check
     @Suppress("UNCHECKED_CAST")
     val instance = it.createInstance() as FieldCheck<Any>
@@ -240,7 +267,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
     val ref = when(rType) {
       RelationType.CREATE -> {
         if (!type.isSubtypeOf(TypeEngine.LIST))
-          throw Exception("Create-collection must be of type, one of (Set<*>, List<*>)! - (${sEntity.name}, ${this.name})")
+          throw Exception("Create-collection must be of type List<*>! - (${sEntity.name}, ${this.name})")
 
         var tRef = type.arguments.last().type ?: throw Exception("Required generic type! - (${sEntity.name}, ${this.name})")
         val isPack = if (tRef.isSubtypeOf(TypeEngine.PACK)) {
@@ -253,10 +280,10 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
 
       RelationType.LINK -> {
         if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.LIST_ID))
-          throw Exception("Link-collection without traits must be of type, one of (List<Long>, Set<Long>)! - (${sEntity.name}, ${this.name})")
+          throw Exception("Link-collection without traits must be of type List<Long>! - (${sEntity.name}, ${this.name})")
 
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.LIST_TRAITS))
-          throw Exception("Link-collection with traits type must be of type (List<Traits>, Set<Traits>)! - (${sEntity.name}, ${this.name})")
+          throw Exception("Link-collection with traits type must be of type List<Traits>! - (${sEntity.name}, ${this.name})")
 
         link!!.value.processEntity(tmpSchema)
       }
@@ -277,10 +304,10 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
 
       RelationType.LINK -> {
         if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.ID))
-          throw Exception("Link-reference without traits must be of type Long! - (${sEntity.name}, ${this.name})")
+          throw Exception("Link without traits must be of type, one of (Long, List<Long>)! - (${sEntity.name}, ${this.name})")
 
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.TRAITS))
-          throw Exception("Link-reference with traits must be of type Traits! - (${sEntity.name}, ${this.name})")
+          throw Exception("Link with traits must be of type, one of (Traits, List<Traits>)! - (${sEntity.name}, ${this.name})")
 
         link!!.value.processEntity(tmpSchema)
       }

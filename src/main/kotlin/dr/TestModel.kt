@@ -39,7 +39,7 @@ class UserType(
   @Checks(EmailCheck::class) val email: String,
 
   val password: String,
-  @Link(Role::class) val roles: Set<Long>
+  @Link(Role::class) val roles: List<Long>
 )
 
   @Detail
@@ -96,9 +96,11 @@ data class User(
 }
 
 
-object UserMachine: Machine<UserMachine.State, UserMachine.Event>() {
+class UserMachine: Machine<UserMachine.State, UserMachine.Event>() {
   enum class State { START, VALIDATE, STOP }
   enum class Event { SUBMIT, OK, INCORRECT }
+
+  val q1 = query("""dr.User | name == "Mica*" | {*}""")
 
   init {
     state(State.START) {
@@ -145,7 +147,7 @@ data class Role(
 data class Auction(
   val name: String,
 
-  @Link(AuctionItem::class) val items: Set<Long>,
+  @Link(AuctionItem::class) val items: List<Long>,
   @Create val bids: List<Bid>
 ) {
   val timestamp = LocalDateTime.now()

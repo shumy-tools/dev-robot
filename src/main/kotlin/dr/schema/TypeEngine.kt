@@ -29,7 +29,6 @@ object TypeEngine {
   val PACK = typeOf<Pack<*>>()
 
   val LIST = typeOf<List<*>>()
-
   val LIST_ID = typeOf<List<Long>>()
 
   val TRAITS = typeOf<Traits>()
