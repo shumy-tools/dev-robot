@@ -8,19 +8,13 @@ import dr.query.QTree
 import dr.schema.SParser
 import dr.spi.*
 
-class TestResult(): IResult {
-  override fun toJson(): String {
-    TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-  }
-}
-
 class TestQueryExecutor(): IQueryExecutor {
   override fun accessed(): IReadAccess {
     TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
   }
 
-  override fun exec(params: Map<String, Any>): IResult {
-    return TestResult()
+  override fun exec(params: Map<String, Any>): Map<String, Any> {
+    return emptyMap()
   }
 }
 

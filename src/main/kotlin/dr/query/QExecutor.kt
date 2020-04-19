@@ -5,7 +5,6 @@ import dr.schema.SEntity
 import dr.schema.SField
 import dr.spi.IQueryExecutor
 import dr.spi.IReadAccess
-import dr.spi.IResult
 import kotlin.reflect.KClass
 
 /* ------------------------- internal api -------------------------*/
@@ -24,7 +23,7 @@ class QueryExecutorWithValidator(private val native: IQueryExecutor, private val
 
   override fun accessed(): IReadAccess = accessed
 
-  override fun exec(params: Map<String, Any>): IResult {
+  override fun exec(params: Map<String, Any>): Map<String, Any> {
     args.forEach {
       val name = it.param.value as String
       val value = params[name] ?: throw Exception("Expected input value for: '$name'")

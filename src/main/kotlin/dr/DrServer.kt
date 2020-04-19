@@ -58,7 +58,9 @@ class DrServer(
   //internal val aEngine: ActionEngine
   //internal val nEngine: NotificationEngine
 
-  internal val machines: Map<SEntity, Machine<*, *>>
+
+  private val machines: Map<SEntity, Machine<*, *>>
+  private val queries = mutableMapOf<String, IQueryExecutor>()
 
   init {
     println("----Checking State Machines----")
@@ -102,8 +104,6 @@ class DrServer(
       }
     }
   }
-
-  private val queries = mutableMapOf<String, IQueryExecutor>()
 
   fun schema(ctx: Context) {
     val isSimple = ctx.queryParam("simple") != null

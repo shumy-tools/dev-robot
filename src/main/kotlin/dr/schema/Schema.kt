@@ -14,6 +14,11 @@ annotation class Sealed(vararg val value: KClass<out Any>)
 
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
+annotation class StateMachine(val value: KClass<out Machine<*, *>>)
+
+
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
 annotation class Master
 
 @Target(AnnotationTarget.CLASS)
@@ -49,6 +54,15 @@ annotation class Link(val value: KClass<out Any>, vararg val traits: KClass<out 
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class LateInit
+
+
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Listeners(vararg val value: KClass<out EListener>)
+
+@Target(AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Events(vararg val value: EventType)
 
 /* ------------------------- enums -------------------------*/
 enum class EntityType {

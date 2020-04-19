@@ -8,10 +8,6 @@ interface IQueryAdaptor {
 
 interface IQueryExecutor {
   fun accessed(): IReadAccess
-  fun exec(params: Map<String, Any>): IResult
+  fun exec(params: Map<String, Any>): Map<String, Any>
 }
-
-  interface IResult {
-    fun toJson(): String
-  }
 

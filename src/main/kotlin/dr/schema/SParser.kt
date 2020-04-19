@@ -1,7 +1,6 @@
 package dr.schema
 
 import dr.state.Machine
-import dr.state.StateMachine
 import kotlin.reflect.*
 import kotlin.reflect.full.*
 

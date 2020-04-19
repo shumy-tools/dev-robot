@@ -4,7 +4,7 @@ import dr.DrServer
 import dr.base.User
 import dr.schema.SEntity
 import dr.spi.IQueryExecutor
-import java.security.MessageDigest
+import dr.state.History
 import java.util.concurrent.ConcurrentHashMap
 
 object Context {
@@ -28,13 +28,9 @@ object Context {
   }
 
   fun query(query: String): IQueryExecutor {
-    val digest = MessageDigest.getInstance("SHA-256")
-    val hash = digest.digest(query.toByteArray()).toString()
-
-    return queryCache.getOrPut(hash) {
-      get().server.qEngine.compile(query)
-    }
+    return get().server.qEngine.compile(query)
   }
 }
 
-class Session(val server: DrServer, val user: User? = null)
+val DEFAULT_USER = User("default", "no-email", emptyList())
+class Session(val server: DrServer, val user: User = DEFAULT_USER)

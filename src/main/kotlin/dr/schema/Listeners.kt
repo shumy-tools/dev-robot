@@ -4,16 +4,6 @@ import dr.io.Delete
 import dr.io.Insert
 import dr.io.Update
 import dr.query.QTree
-import kotlin.reflect.KClass
-
-/* ------------------------- annotations -------------------------*/
-@Target(AnnotationTarget.CLASS)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Listeners(vararg val value: KClass<out EListener>)
-
-@Target(AnnotationTarget.FUNCTION)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Events(vararg val value: EventType)
 
 /* ------------------------- enums -------------------------*/
 enum class EventType {

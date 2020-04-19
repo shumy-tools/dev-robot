@@ -2,7 +2,6 @@ package dr
 
 import dr.schema.*
 import dr.state.Machine
-import dr.state.StateMachine
 import java.time.LocalDateTime
 
 // reusable constraint check
@@ -121,8 +120,8 @@ class UserMachine: Machine<UserMachine.State, UserMachine.Event>() {
     on(Event.INCORRECT) fromRole "manager" transit (State.VALIDATE to State.START) then {
       println("(INCORRECT from 'manager') VALIDATE -> START")
 
-      val owner: String = history.last(Event.SUBMIT).get("owner")
-      open(User::address) forUser owner
+      val owner: User = history.last(Event.SUBMIT).get("owner")
+      open(User::address) forUser owner.name
     }
 
   }
