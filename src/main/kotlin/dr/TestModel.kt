@@ -109,7 +109,7 @@ class UserMachine: Machine<UserMachine.State, UserMachine.Event>() {
   init {
     enter(State.START) {
       println("START")
-      open(User::address) forRole "employee"
+      open(User::address).forRole("employee")
     }
 
     on(State.START, Event.Submit::class) fromRole "employee" goto State.VALIDATE after {
@@ -117,11 +117,13 @@ class UserMachine: Machine<UserMachine.State, UserMachine.Event>() {
 
       println("(SUBMIT(${event.value}) from 'employee') START -> VALIDATE")
       history.set("owner", user)
+      close(User::address).forAll()
     }
 
     on(State.VALIDATE, Event.Ok::class) fromRole "manager" goto State.STOP after {
       val record = history.last(Event.Submit::class)
       println("OK -> check(${record.event.value})")
+
       println("(OK from 'manager') VALIDATE -> STOP")
     }
 
@@ -131,7 +133,11 @@ class UserMachine: Machine<UserMachine.State, UserMachine.Event>() {
 
       println("(INCORRECT from 'manager') VALIDATE -> START")
       val owner: User = history.last(Event.Submit::class).get("owner")
-      open(User::address) forUser owner.name
+      open(User::address).forUser(owner.name)
+    }
+
+    enter(State.STOP) {
+      println("STOP")
     }
   }
 }

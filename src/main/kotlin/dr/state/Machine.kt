@@ -2,38 +2,59 @@ package dr.state
 
 import dr.base.User
 import dr.ctx.Context
+import dr.io.DEntity
+import dr.schema.SEntity
 import dr.spi.IQueryExecutor
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty1
+import kotlin.reflect.full.createInstance
+
+fun buildMachine(sEntity: SEntity): Machine<*, *> {
+  val machine = sEntity.machine!!
+  val instance = machine.createInstance()
+
+  instance.stateQuery = Context.query("${sEntity.name} | @id == ?id | { @state }")
+
+  return instance
+}
 
 open class Machine<S: Enum<*>, E: Any> {
   val user: User
     get() = Context.get().user
 
-  private val enter = hashMapOf<S, EnterActions.() -> Unit>()
-  private val events = hashMapOf<KClass<out E>, MutableMap<S, After<out E>>>()
+  internal lateinit var stateQuery: IQueryExecutor
+
+  private val enter = hashMapOf<String, EnterActions.() -> Unit>()
+  private val events = hashMapOf<KClass<out E>, MutableMap<String, After<out E>>>()
 
   internal fun include(evtType: KClass<out E>, from: S, after: After<out E>) {
+    val state = from.toString()
     val eMap = events.getOrPut(evtType) { hashMapOf() }
-    if (eMap.containsKey(from))
+    if (eMap.containsKey(state))
       throw Exception("Transition already exists! - ($evtType, $from)")
 
-    eMap[from] = after
+    eMap[state] = after
   }
 
-  internal fun onEvent(event: E, state: S) {
+  fun onEvent(id: Long, event: E) {
+    val state = stateQuery.exec("id" to id).getValue("@state") as String
+
     val evtType = event.javaClass.kotlin
     val states = events[evtType] ?: throw Exception("StateMachine event '$event' not found! - (${this.javaClass.kotlin.qualifiedName})")
     val then = states[state] ?: throw Exception("StateMachine transit '$event':'$state' not found! - (${this.javaClass.kotlin.qualifiedName})")
     then.onEvent?.invoke(EventActions(state, event))
   }
 
-  internal fun onEnter(state: S) {
-    val onEnter = enter[state] ?: throw Exception("StateMachine enter '$state' not found! - (${this.javaClass.kotlin.qualifiedName})")
-    onEnter(EnterActions(state))
+  fun onCreate(entity: DEntity) {
+    //TODO: how to fire onEnter for the first state?
   }
 
-  inner class History internal constructor(private val state: S, private val evtType: KClass<out E>? = null) {
+  fun onUpdate(id: Long, entity: DEntity) {
+    val state = stateQuery.exec("id" to id).getValue("@state") as String
+    //TODO: what events to fire?
+  }
+
+  inner class History internal constructor(private val state: String, private val evtType: KClass<out E>? = null) {
     inner class Record<EX: E>(val event: EX, private val data: Map<String, Any>) {
       @Suppress("UNCHECKED_CAST")
       fun <T> get(key: String): T {
@@ -54,16 +75,20 @@ open class Machine<S: Enum<*>, E: Any> {
   class For internal constructor(private val state: PropertyState, private val prop: KProperty1<*, *>) {
     enum class PropertyState { OPEN, CLOSE }
 
-    infix fun forRole(role: String) {
+    fun forAll() {
+      // TODO: the property state for all
+    }
+
+    fun forRole(role: String) {
       // TODO: the property state for role
     }
 
-    infix fun forUser(user: String) {
+    fun forUser(user: String) {
       // TODO: the property state for user
     }
   }
 
-  open inner class EnterActions internal constructor(private val state: S, private val evtType: KClass<out E>? = null) {
+  open inner class EnterActions internal constructor(private val state: String, private val evtType: KClass<out E>? = null) {
     val history = History(state, evtType)
 
     fun <T, R> open(prop: KProperty1<T, R>): For {
@@ -82,7 +107,7 @@ open class Machine<S: Enum<*>, E: Any> {
     }
   }
 
-  inner class EventActions<EX: E> internal constructor(private val state: S, val event: EX): EnterActions(state) {
+  inner class EventActions<EX: E> internal constructor(private val state: String, val event: EX): EnterActions(state) {
     override infix fun check(predicate: () -> Boolean) {
       checkOrder++
       if (!predicate())
@@ -131,10 +156,10 @@ open class Machine<S: Enum<*>, E: Any> {
   }
 
   fun enter(state: S, enter: EnterActions.() -> Unit) {
-    if (this.enter.containsKey(state))
+    if (this.enter.containsKey(state.toString()))
       throw Exception("State enter already exists! - ($state)")
 
-    this.enter[state] = enter
+    this.enter[state.toString()] = enter
   }
 
   fun <EX: E> on(state: S, evtType: KClass<EX>): From<EX> {

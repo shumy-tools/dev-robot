@@ -46,7 +46,7 @@ qline: filter? (limit page?)? select ;
 
 ALL: '*' ;
 NAME: [A-Z] ID ;
-ID: [_]*[a-z][A-Za-z0-9_]* ;
+ID: [_@]*[a-z][A-Za-z0-9_]* ;
 
 // value types
   INT: '-'? [0-9]+ ;

@@ -86,24 +86,7 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
     }
 
     val sealed = findAnnotation<Sealed>()
-    val sEntity = SEntity(this, type, sealed != null, initFun, processListeners())
-
-    // include state machine
-    val machine = findAnnotation<StateMachine>()
-    if (machine != null) {
-      if (type != EntityType.MASTER)
-        throw Exception("Only a @Master can have a state machine! - ($name)")
-
-      machine.value.supertypes.firstOrNull {
-        sType -> Machine::class.qualifiedName == (sType.classifier as KClass<*>).qualifiedName
-      } ?: throw Exception("StateMachine '${machine.value.qualifiedName}' must implement '${Machine::class.qualifiedName}'")
-
-      machine.value.constructors.firstOrNull {
-        it.parameters.isEmpty()
-      } ?: throw Exception("StateMachine '${machine.value.qualifiedName}' requires an empty default constructor!")
-
-      sEntity.machine = machine.value
-    }
+    val sEntity = SEntity(this, type, sealed != null, initFun, processListeners(), processStateMachine(type))
 
     tmpSchema.schema.addEntity(sEntity)
     if (ownedBy != null)
@@ -147,6 +130,29 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
     }
 
     sEntity
+  }
+}
+
+private fun KClass<*>.processStateMachine(type: EntityType): KClass<out Machine<*, *>>? {
+  val machine = findAnnotation<StateMachine>()
+  return machine?.let {
+    if (type != EntityType.MASTER)
+      throw Exception("Only a @Master can have a state machine! - ($qualifiedName)")
+
+    val machineType = machine.value.supertypes.firstOrNull {
+      sType -> Machine::class.qualifiedName == (sType.classifier as KClass<*>).qualifiedName
+    } ?: throw Exception("StateMachine '${machine.value.qualifiedName}' must implement '${Machine::class.qualifiedName}'")
+
+    val evtType = machineType.arguments.last().type ?: throw Exception("Machine '${machine.value.qualifiedName}' requires generic types!")
+    val evtClass = evtType.classifier as KClass<*>
+    if (!evtClass.isSealed)
+      throw Exception("Machine '${machine.value.qualifiedName}' requires second generic type as a sealed class!")
+
+    machine.value.constructors.firstOrNull {
+      it.parameters.isEmpty()
+    } ?: throw Exception("StateMachine '${machine.value.qualifiedName}' requires an empty default constructor!")
+
+    machine.value
   }
 }
 

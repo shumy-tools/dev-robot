@@ -8,7 +8,7 @@ import dr.query.QTree
 import dr.schema.SParser
 import dr.spi.*
 
-class TestQueryExecutor(): IQueryExecutor {
+class TestQueryExecutor: IQueryExecutor {
   override fun accessed(): IReadAccess {
     TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
   }
@@ -26,7 +26,7 @@ class TestQueryAdaptor: IQueryAdaptor {
   }
 }
 
-class TestAuthorizer : IAuthorizer {
+class TestAuthorizer: IAuthorizer {
   override fun read(access: IReadAccess): Boolean {
     println("access = $access")
     return true

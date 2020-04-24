@@ -4,10 +4,9 @@ import dr.query.*
 import dr.schema.SEntity
 import dr.schema.SRelation
 import dr.schema.Schema
-import dr.spi.IReadAccess
-import dr.spi.IAuthorizer
 import dr.spi.IQueryAdaptor
 import dr.spi.IQueryExecutor
+import dr.spi.IReadAccess
 import org.antlr.v4.runtime.CharStreams
 import org.antlr.v4.runtime.CommonTokenStream
 import org.antlr.v4.runtime.tree.ErrorNode
@@ -17,7 +16,6 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 
 /* ------------------------- api -------------------------*/
-// private val authorizer: IQueryAuthorizer
 class QueryEngine(
   private val schema: Schema,
   private val adaptor: IQueryAdaptor
@@ -161,7 +159,7 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
         val full = accessed.addField(prefix, path)
         exists(present, full)
 
-        if (sEntity.fields[path] == null)
+        if (sEntity.fields[path] == null && !isSpecialField(sEntity, path))
           throw Exception("Invalid field path '${sEntity.name}.$path'")
 
         val sortType = sortType(it.order()?.text)
@@ -261,6 +259,13 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
 
 
 /* ------------------------- helpers -------------------------*/
+private fun isSpecialField(sEntity: SEntity, name: String) = when(name) {
+  "@id" -> true
+  "@type" -> sEntity.isSealed
+  "@state" -> sEntity.machine != null
+  else -> false
+}
+
 private fun sortType(sort: String?) = when(sort) {
   "asc" -> SortType.ASC
   "dsc" -> SortType.DSC

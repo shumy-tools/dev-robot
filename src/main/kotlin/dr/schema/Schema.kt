@@ -127,13 +127,10 @@ class Schema {
 }
 
   /* ------------------------- entity -------------------------*/
-  class SEntity(val clazz: KClass<out Any>, val type: EntityType, val isSealed: Boolean, val initFun: KFunction<*>?, val listeners: Set<SListener>) {
+  class SEntity(val clazz: KClass<out Any>, val type: EntityType, val isSealed: Boolean, val initFun: KFunction<*>?, val listeners: Set<SListener>, val machine: KClass<out Machine<*, *>>?) {
     val sealed: Map<String, SEntity> = linkedMapOf()
     val fields: Map<String, SField> = linkedMapOf()
     val rels: Map<String, SRelation> = linkedMapOf()
-
-    var machine: KClass<out Machine<*, *>>? = null
-      internal set
 
     val name: String
       get() = clazz.qualifiedName!!

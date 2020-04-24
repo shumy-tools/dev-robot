@@ -16,6 +16,7 @@ import dr.spi.IModificationAdaptor
 import dr.spi.IQueryAdaptor
 import dr.spi.IQueryExecutor
 import dr.state.Machine
+import dr.state.buildMachine
 import io.javalin.Javalin
 import io.javalin.apibuilder.ApiBuilder.*
 import io.javalin.http.Context
@@ -66,9 +67,8 @@ class DrServer(
     println("----Checking State Machines----")
     dr.ctx.Context.set(Session(this))
       machines = schema.masters.filter { it.value.machine != null }.map {
-        val machine = it.value.machine!!
-        val instance = it.value to machine.createInstance()
-        println("    ${machine.qualifiedName} - OK")
+        val instance = it.value to buildMachine(it.value)
+        println("    ${it.value.machine!!.qualifiedName} - OK")
         instance
       }.toMap()
     dr.ctx.Context.clear()
