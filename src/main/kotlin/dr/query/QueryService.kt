@@ -1,6 +1,5 @@
-package dr.engine
+package dr.query
 
-import dr.query.*
 import dr.schema.SEntity
 import dr.schema.SRelation
 import dr.schema.Schema
@@ -16,7 +15,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 
 /* ------------------------- api -------------------------*/
-class QueryEngine(
+class QueryService(
   private val schema: Schema,
   private val adaptor: IQueryAdaptor
 ) {

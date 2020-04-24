@@ -6,8 +6,7 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dr.ctx.Session
-import dr.engine.ModificationEngine
-import dr.engine.QueryEngine
+import dr.query.QueryService
 import dr.io.*
 import dr.schema.SEntity
 import dr.schema.Schema
@@ -21,7 +20,7 @@ import io.javalin.Javalin
 import io.javalin.apibuilder.ApiBuilder.*
 import io.javalin.http.Context
 import java.util.*
-import kotlin.reflect.full.createInstance
+import kotlin.reflect.KClass
 
 object JsonParser {
   val mapper: ObjectMapper = jacksonObjectMapper()
@@ -43,22 +42,21 @@ object JsonParser {
   fun write(value: Any): String {
     return mapper.writeValueAsString(value)
   }
+
+  fun <T: Any> read(json: String, type: KClass<out T>): T {
+    return mapper.readValue(json, type.java)
+  }
 }
 
 class DrServer(
   val schema: Schema,
-  private val authorizer: IAuthorizer,
-  private val mAdaptor: IModificationAdaptor,
-  private val qAdaptor: IQueryAdaptor
+  val authorizer: IAuthorizer,
+  val mAdaptor: IModificationAdaptor,
+  val qAdaptor: IQueryAdaptor
 ) {
   internal val processor = InputProcessor(schema)
   internal val translator = DEntityTranslator(schema)
-
-  internal val qEngine = QueryEngine(schema, qAdaptor)
-  internal val mEngine = ModificationEngine(processor, translator, mAdaptor)
-  //internal val aEngine: ActionEngine
-  //internal val nEngine: NotificationEngine
-
+  internal val qService = QueryService(schema, qAdaptor)
 
   private val machines: Map<SEntity, Machine<*, *>>
   private val queries = mutableMapOf<String, IQueryExecutor>()
@@ -68,7 +66,7 @@ class DrServer(
     dr.ctx.Context.set(Session(this))
       machines = schema.masters.filter { it.value.machine != null }.map {
         val instance = it.value to buildMachine(it.value)
-        println("    ${it.value.machine!!.qualifiedName} - OK")
+        println("    ${it.value.machine!!.name} - OK")
         instance
       }.toMap()
     dr.ctx.Context.clear()
@@ -94,9 +92,12 @@ class DrServer(
       path("api") {
         get(this::schema)
 
+        post("check/:entity", this::check)
+
         post("create/:entity", this::create)
         post("update/:entity/:id", this::update)
-        post("check/:entity", this::check)
+        post("action/:entity/:id", this::action)
+
 
         path("query") {
           post("compile", this::compile)
@@ -113,6 +114,22 @@ class DrServer(
     ctx.result(json).contentType("application/json")
   }
 
+  fun check(ctx: Context) {
+    val res = try {
+      val entity = ctx.pathParam("entity")
+
+      val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
+      val dEntity = processor.update(sEntity, ctx.body())
+
+      mapOf("@type" to "ok").plus(dEntity.checkFields())
+    } catch (ex: Exception) {
+      mapOf("@type" to "error", "msg" to ex.message)
+    }
+
+    val json = JsonParser.write(res)
+    ctx.result(json).contentType("application/json")
+  }
+
   fun create(ctx: Context) {
     val res = try {
       val entity = ctx.pathParam("entity")
@@ -120,9 +137,15 @@ class DrServer(
       // TODO: check access control
 
       val sEntity = schema.masters[entity] ?: throw Exception("Master entity not found! - ($entity)")
-      val output = mEngine.create(sEntity, ctx.body())
+      val dEntity = processor.create(sEntity, ctx.body())
 
-      mapOf("@type" to "ok").plus(output)
+      // execute machine if exists
+      machines[sEntity]?.let { it.onCreate(dEntity) }
+
+      val instructions = translator.create(dEntity)
+      mAdaptor.commit(instructions)
+
+      mapOf("@type" to "ok").plus(instructions.output)
     } catch (ex: Exception) {
       mapOf("@type" to "error", "msg" to ex.message)
     }
@@ -139,9 +162,15 @@ class DrServer(
       // TODO: check access control
 
       val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
-      val output = mEngine.update(sEntity, id, ctx.body())
+      val dEntity = processor.update(sEntity, ctx.body())
 
-      mapOf("@type" to "ok").plus(output)
+      // execute machine if exists
+      machines[sEntity]?.let { it.onUpdate(id, dEntity) }
+
+      val instructions = translator.update(id, dEntity)
+      mAdaptor.commit(instructions)
+
+      mapOf("@type" to "ok").plus(instructions.output)
     } catch (ex: Exception) {
       mapOf("@type" to "error", "msg" to ex.message)
     }
@@ -150,14 +179,22 @@ class DrServer(
     ctx.result(json).contentType("application/json")
   }
 
-  fun check(ctx: Context) {
+  fun action(ctx: Context) {
     val res = try {
       val entity = ctx.pathParam("entity")
+      val id = ctx.pathParam("id").toLong()
+      val evtType = ctx.queryParam("evt") ?: throw Exception("Event type is not specified for state machine! - ($entity)")
+
+      // TODO: check access control
 
       val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
-      val output = mEngine.check(sEntity, ctx.body())
+      val machine = machines[sEntity] ?: throw Exception("Entity doesn't have a state machine! - ($entity)")
+      val evtClass = machine.sMachine.events[evtType] ?: throw Exception("Event ype not found! - ($entity, $evtType)")
 
-      mapOf("@type" to "ok").plus(output)
+      val event = JsonParser.read(ctx.body(), evtClass)
+      machine.onEvent(id, event)
+
+      mapOf("@type" to "ok")
     } catch (ex: Exception) {
       mapOf("@type" to "error", "msg" to ex.message)
     }
@@ -168,7 +205,7 @@ class DrServer(
 
   fun compile(ctx: Context) {
     val res = try {
-      val qExec = qEngine.compile(ctx.body())
+      val qExec = qService.compile(ctx.body())
 
       // TODO: check access control from qExec.accessed
 

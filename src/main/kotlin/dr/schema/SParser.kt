@@ -133,7 +133,7 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
   }
 }
 
-private fun KClass<*>.processStateMachine(type: EntityType): KClass<out Machine<*, *>>? {
+private fun KClass<*>.processStateMachine(type: EntityType): SMachine? {
   val machine = findAnnotation<StateMachine>()
   return machine?.let {
     if (type != EntityType.MASTER)
@@ -142,6 +142,9 @@ private fun KClass<*>.processStateMachine(type: EntityType): KClass<out Machine<
     val machineType = machine.value.supertypes.firstOrNull {
       sType -> Machine::class.qualifiedName == (sType.classifier as KClass<*>).qualifiedName
     } ?: throw Exception("StateMachine '${machine.value.qualifiedName}' must implement '${Machine::class.qualifiedName}'")
+
+    val stateType = machineType.arguments.first().type ?: throw Exception("Machine '${machine.value.qualifiedName}' requires generic types!")
+    val stateClass = stateType.classifier as KClass<*>
 
     val evtType = machineType.arguments.last().type ?: throw Exception("Machine '${machine.value.qualifiedName}' requires generic types!")
     val evtClass = evtType.classifier as KClass<*>
@@ -152,7 +155,10 @@ private fun KClass<*>.processStateMachine(type: EntityType): KClass<out Machine<
       it.parameters.isEmpty()
     } ?: throw Exception("StateMachine '${machine.value.qualifiedName}' requires an empty default constructor!")
 
-    machine.value
+    val states = stateClass.java.enumConstants.map { it.toString() }
+    val events = evtClass.sealedSubclasses.map { it.qualifiedName!! to it }.toMap()
+
+    SMachine(machine.value, states, events)
   }
 }
 

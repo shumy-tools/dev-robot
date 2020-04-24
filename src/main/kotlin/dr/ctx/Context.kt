@@ -15,17 +15,25 @@ object Context {
   fun create(data: Any): Map<String, Any?> {
     val server = get().server
     val entity = server.processor.create(data)
-    return server.mEngine.create(entity)
+
+    val instructions = server.translator.create(entity)
+    server.mAdaptor.commit(instructions)
+
+    return instructions.output
   }
 
   fun update(id: Long, type: SEntity, data: Map<String, Any?>): Map<String, Any?> {
     val server = get().server
     val entity = server.processor.update(type, data)
-    return server.mEngine.update(entity, id)
+
+    val instructions = server.translator.update(id, entity)
+    server.mAdaptor.commit(instructions)
+
+    return instructions.output
   }
 
   fun query(query: String): IQueryExecutor {
-    return get().server.qEngine.compile(query)
+    return get().server.qService.compile(query)
   }
 }
 

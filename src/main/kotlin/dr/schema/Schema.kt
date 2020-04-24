@@ -127,7 +127,7 @@ class Schema {
 }
 
   /* ------------------------- entity -------------------------*/
-  class SEntity(val clazz: KClass<out Any>, val type: EntityType, val isSealed: Boolean, val initFun: KFunction<*>?, val listeners: Set<SListener>, val machine: KClass<out Machine<*, *>>?) {
+  class SEntity(val clazz: KClass<out Any>, val type: EntityType, val isSealed: Boolean, val initFun: KFunction<*>?, val listeners: Set<SListener>, val machine: SMachine?) {
     val sealed: Map<String, SEntity> = linkedMapOf()
     val fields: Map<String, SField> = linkedMapOf()
     val rels: Map<String, SRelation> = linkedMapOf()
@@ -180,6 +180,12 @@ class Schema {
       return map
     }
   }
+
+    class SMachine(val clazz: KClass<out Machine<*, *>>, val states: List<String>, val events: Map<String, KClass<out Any>>) {
+      val name: String
+        get() = clazz.qualifiedName!!
+    }
+
 
     sealed class SFieldOrRelation(private val property: KProperty1<Any, *>, val isOptional: Boolean) {
       val name: String

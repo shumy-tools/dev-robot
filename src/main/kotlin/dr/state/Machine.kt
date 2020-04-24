@@ -4,15 +4,17 @@ import dr.base.User
 import dr.ctx.Context
 import dr.io.DEntity
 import dr.schema.SEntity
+import dr.schema.SMachine
 import dr.spi.IQueryExecutor
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.createInstance
 
 fun buildMachine(sEntity: SEntity): Machine<*, *> {
-  val machine = sEntity.machine!!
-  val instance = machine.createInstance()
+  val sMachine = sEntity.machine!!
+  val instance = sMachine.clazz.createInstance()
 
+  instance.sMachine = sMachine
   instance.stateQuery = Context.query("${sEntity.name} | @id == ?id | { @state }")
 
   return instance
@@ -22,7 +24,11 @@ open class Machine<S: Enum<*>, E: Any> {
   val user: User
     get() = Context.get().user
 
-  internal lateinit var stateQuery: IQueryExecutor
+  lateinit var sMachine: SMachine
+    internal  set
+
+  lateinit var stateQuery: IQueryExecutor
+    internal  set
 
   private val enter = hashMapOf<String, EnterActions.() -> Unit>()
   private val events = hashMapOf<KClass<out E>, MutableMap<String, After<out E>>>()
@@ -36,7 +42,9 @@ open class Machine<S: Enum<*>, E: Any> {
     eMap[state] = after
   }
 
-  fun onEvent(id: Long, event: E) {
+  @Suppress("UNCHECKED_CAST")
+  fun onEvent(id: Long, inEvt: Any) {
+    val event = inEvt as E
     val state = stateQuery.exec("id" to id).getValue("@state") as String
 
     val evtType = event.javaClass.kotlin
