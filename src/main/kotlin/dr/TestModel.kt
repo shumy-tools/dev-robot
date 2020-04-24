@@ -97,33 +97,42 @@ data class User(
 
 class UserMachine: Machine<UserMachine.State, UserMachine.Event>() {
   enum class State { START, VALIDATE, STOP }
-  enum class Event { SUBMIT, OK, INCORRECT }
+
+  sealed class Event {
+    data class Submit(val value: String): Event()
+    object Ok: Event()
+    object Incorrect: Event()
+  }
 
   val q1 = query("""dr.User | name == "Mica*" | {*}""")
 
   init {
-    state(State.START) {
+    enter(State.START) {
       println("START")
       open(User::address) forRole "employee"
     }
 
-    on(Event.SUBMIT) fromRole "employee" transit (State.START to State.VALIDATE) then {
-      println("(SUBMIT from 'employee') START -> VALIDATE")
-      check { true }
+    on(State.START, Event.Submit::class) fromRole "employee" goto State.VALIDATE after {
+      check { event.value.startsWith("#") }
+
+      println("(SUBMIT(${event.value}) from 'employee') START -> VALIDATE")
       history.set("owner", user)
     }
 
-    on(Event.OK) fromRole "manager" transit (State.VALIDATE to State.STOP) then {
+    on(State.VALIDATE, Event.Ok::class) fromRole "manager" goto State.STOP after {
+      val record = history.last(Event.Submit::class)
+      println("OK -> check(${record.event.value})")
       println("(OK from 'manager') VALIDATE -> STOP")
     }
 
-    on(Event.INCORRECT) fromRole "manager" transit (State.VALIDATE to State.START) then {
-      println("(INCORRECT from 'manager') VALIDATE -> START")
+    on(State.VALIDATE, Event.Incorrect::class) fromRole "manager" goto State.START after {
+      val record = history.last(Event.Submit::class)
+      println("INCORRECT -> check(${record.event.value})")
 
-      val owner: User = history.last(Event.SUBMIT).get("owner")
+      println("(INCORRECT from 'manager') VALIDATE -> START")
+      val owner: User = history.last(Event.Submit::class).get("owner")
       open(User::address) forUser owner.name
     }
-
   }
 }
 

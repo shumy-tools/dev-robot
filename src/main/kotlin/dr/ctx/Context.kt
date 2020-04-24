@@ -4,14 +4,11 @@ import dr.DrServer
 import dr.base.User
 import dr.schema.SEntity
 import dr.spi.IQueryExecutor
-import dr.state.History
-import java.util.concurrent.ConcurrentHashMap
 
 object Context {
-  private val queryCache = ConcurrentHashMap<String, IQueryExecutor>()
   private val local = ThreadLocal<Session>()
 
-  fun get(): Session = local.get()
+  fun get(): Session = local.get()!!
   fun set(session: Session) = local.set(session)
   fun clear() = local.set(null)
 
@@ -32,5 +29,5 @@ object Context {
   }
 }
 
-val DEFAULT_USER = User("default", "no-email", emptyList())
-class Session(val server: DrServer, val user: User = DEFAULT_USER)
+val ANONYMOUS = User("anonymous", "no-email", emptyList())
+class Session(val server: DrServer, val user: User = ANONYMOUS)

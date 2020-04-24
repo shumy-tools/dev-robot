@@ -53,7 +53,7 @@ fun main(args: Array<String>) {
   val schema = SParser.parse(OwnedUserType::class, Sell::class, User::class, Role::class, Auction::class)
 
   val server = DrServer(schema, TestAuthorizer(), TestModificationAdaptor(), TestQueryAdaptor()).also {
-    it.start(8080)
+    //it.start(8080)
   }
 
   /*
