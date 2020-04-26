@@ -135,6 +135,22 @@ class Schema {
     val name: String
       get() = clazz.qualifiedName!!
 
+    val allOwnedReferences: Map<String, SRelation> by lazy {
+      rels.filter { it.value.type == RelationType.CREATE && !it.value.isCollection }
+    }
+
+    val allLinkedReferences: Map<String, SRelation> by lazy {
+      rels.filter { it.value.type == RelationType.LINK && !it.value.isCollection }
+    }
+
+    val allOwnedCollections: Map<String, SRelation> by lazy {
+      rels.filter { it.value.type == RelationType.CREATE && it.value.isCollection }
+    }
+
+    val allLinkedCollections: Map<String, SRelation> by lazy {
+      rels.filter { it.value.type == RelationType.LINK && it.value.isCollection }
+    }
+
     fun getFieldOrRelation(name: String): SFieldOrRelation? {
       return fields[name] ?: rels[name]
     }

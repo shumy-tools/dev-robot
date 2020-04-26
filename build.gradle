@@ -40,6 +40,9 @@ dependencies {
   implementation 'io.javalin:javalin:3.8.0'
   implementation 'org.slf4j:slf4j-simple:1.8.0-beta4'
 
+  implementation 'com.zaxxer:HikariCP:3.4.3'
+  implementation 'com.h2database:h2:1.4.200'
+
   testImplementation 'org.jetbrains.kotlin:kotlin-test'
   testImplementation 'org.jetbrains.kotlin:kotlin-test-junit'
 }

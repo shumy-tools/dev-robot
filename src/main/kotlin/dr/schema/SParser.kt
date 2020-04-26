@@ -204,9 +204,6 @@ private fun KClass<*>.processListeners(): Set<SListener> {
 }
 
 private fun KProperty1<Any, *>.processFieldOrRelation(sEntity: SEntity, tmpSchema: TempSchema): SFieldOrRelation {
-  if (this.name == "type" || this.name.startsWith("ref") || this.name.startsWith("inv") || this.name.startsWith("traits"))
-    throw Exception("Reserved property names: 'type' or starting with 'ref'/'inv'/'traits'! - (${sEntity.name}, ${this.name})")
-
   val fieldOrRelation = if (this.hasAnnotation<Create>() || this.hasAnnotation<Link>()) {
     this.processRelation(sEntity, tmpSchema)
   } else {

@@ -64,7 +64,7 @@ class DEntity(
     if (cEntity is Pack<*>)
       throw Exception("Cannot get reference from a Pack<*>, unpack first.")
 
-    schema.rels.filter{ it.value.type == RelationType.CREATE && !it.value.isCollection }.mapNotNull {
+    schema.allOwnedReferences.mapNotNull {
       contains(it.key) { DOwnedReference(it.value, this) }
     }
   }
@@ -73,7 +73,7 @@ class DEntity(
     if (cEntity is Pack<*>)
       throw Exception("Cannot get reference from a Pack<*>, unpack first.")
 
-    schema.rels.filter{ it.value.type == RelationType.LINK && !it.value.isCollection }.mapNotNull {
+    schema.allLinkedReferences.mapNotNull {
       contains(it.key) { DLinkedReference(it.value, this) }
     }
   }
@@ -82,7 +82,7 @@ class DEntity(
     if (cEntity is Pack<*>)
       throw Exception("Cannot get collection from a Pack<*>, unpack first.")
 
-    schema.rels.filter{ it.value.type == RelationType.CREATE && it.value.isCollection }.mapNotNull {
+    schema.allOwnedCollections.mapNotNull {
       contains(it.key) { DOwnedCollection(it.value, this) }
     }
   }
@@ -91,7 +91,7 @@ class DEntity(
     if (cEntity is Pack<*>)
       throw Exception("Cannot get collection from a Pack<*>, unpack first.")
 
-    schema.rels.filter{ it.value.type == RelationType.LINK && it.value.isCollection }.mapNotNull {
+    schema.allLinkedCollections.mapNotNull {
       contains(it.key) { DLinkedCollection(it.value, this) }
     }
   }

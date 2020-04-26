@@ -45,29 +45,27 @@ class DEntityTranslator(private val schema: Schema) {
     allInst.addAll(bottomInclude)
 
     // create extended entities if exist
-    var nextEntity = head.schema
-    var nextInst = rootInst
+    var topEntity = head.schema
+    var topInst = rootInst
     for (item in tail) {
-      nextInst = createSubEntity(nextEntity, item, nextInst)
-      nextEntity = nextInst.action.entity.schema
-      allInst.add(nextInst)
+      if (!topEntity.isSealed)
+        throw Exception("Not a top @Sealed entity! - (${topEntity.name})")
+
+      topInst.putData("@type", topEntity.name)
+      topInst = Insert(table(item.schema), CreateAction(item)).apply {
+        putRef("@super", topInst)
+        val (subTopInclude, subBottomInclude) = processUnpackedEntity(item, this)
+        allInst.addAll(subTopInclude)
+        allInst.add(this)
+        allInst.addAll(subBottomInclude)
+      }
+
+      topEntity = item.schema
 
       // TODO: add output values?
     }
 
     return allInst
-  }
-
-  private fun createSubEntity(topEntity: SEntity, entity: DEntity, topInst: Instruction): Insert {
-    val sEntity = entity.schema
-    if (!topEntity.isSealed)
-      throw Exception("Not a top @Sealed entity! - (${topEntity.name})")
-
-    topInst.putData("type", sEntity.name)
-    return Insert(table(sEntity), CreateAction(entity)).apply {
-      putRef("ref_super", topInst)
-      processUnpackedEntity(entity, this)
-    }
   }
 
   private fun processUnpackedEntity(entity: DEntity, topInst: Instruction): Pair<List<Instruction>, List<Instruction>> {
@@ -89,7 +87,7 @@ class DEntityTranslator(private val schema: Schema) {
         // A ref_<rel> --> B
         val (root, all) = addEntity(oRef.value, oRef.schema)
         topInclude.addAll(all)
-        topInst.putRef("ref__${oRef.name}", root)
+        topInst.putRef("@ref__${oRef.name}", root)
         topInst.putOutput(oRef.name, root.output)
       }
     }
@@ -101,7 +99,7 @@ class DEntityTranslator(private val schema: Schema) {
       oCol.value.forEach {
         val (root, all) = addEntity(it, oCol.schema)
         bottomInclude.addAll(all)
-        root.putRef("inv_${table(entity.schema)}__${it.name}", topInst)
+        root.putRef("@inv_${table(entity.schema)}__${it.name}", topInst)
         cOutput.add(root.output)
       }
 
@@ -112,17 +110,17 @@ class DEntityTranslator(private val schema: Schema) {
     for (lRef in entity.allLinkedReferences) {
       // A ref_<rel> --> B
       when (val rValue = lRef.value) {
-        is OneLinkWithoutTraits -> topInst.putResolvedRef("ref__${lRef.name}", rValue.ref)
+        is OneLinkWithoutTraits -> topInst.putResolvedRef("@ref__${lRef.name}", rValue.ref)
 
         is OneLinkWithTraits -> {
-          topInst.putResolvedRef("ref__${lRef.name}", rValue.ref.id)
-          unwrapTraits("traits__${lRef.name}", rValue.ref.traits, topInst)
+          topInst.putResolvedRef("@ref__${lRef.name}", rValue.ref.id)
+          unwrapTraits("@traits__${lRef.name}", rValue.ref.traits, topInst)
         }
 
         is OneUnlink -> {
-          topInst.putResolvedRef("ref__${lRef.name}", null)
+          topInst.putResolvedRef("@ref__${lRef.name}", null)
           if (lRef.schema.traits.isNotEmpty()) {
-            topInst.putData("traits__${lRef.name}", null)
+            topInst.putData("@traits__${lRef.name}", null)
           }
         }
       }
@@ -136,7 +134,7 @@ class DEntityTranslator(private val schema: Schema) {
         is OneLinkWithTraits -> {
           val linkInst = link(entity, lCol.schema, rValue.ref.id, topInst)
           bottomInclude.add(linkInst)
-          unwrapTraits("traits__${lCol.name}", rValue.ref.traits, linkInst)
+          unwrapTraits("@traits__${lCol.name}", rValue.ref.traits, linkInst)
         }
 
         is ManyLinksWithoutTraits -> rValue.refs.forEach {
@@ -146,7 +144,7 @@ class DEntityTranslator(private val schema: Schema) {
         is ManyLinksWithTraits -> rValue.refs.forEach {
           val linkInst = link(entity, lCol.schema, it.id, topInst)
           bottomInclude.add(linkInst)
-          unwrapTraits("traits__${lCol.name}", it.traits, linkInst)
+          unwrapTraits("@traits__${lCol.name}", it.traits, linkInst)
         }
 
         is OneUnlink -> bottomInclude.add(unlink(entity, lCol.schema, rValue.ref, topInst))
@@ -164,13 +162,13 @@ class DEntityTranslator(private val schema: Schema) {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
       Update(table(sRelation.ref), link, LinkAction(entity, sRelation)).apply {
-        putRef("inv_${table(entity.schema)}__${sRelation.name}", topInst)
+        putRef("@inv_${table(entity.schema)}__${sRelation.name}", topInst)
       }
     } else {
       // A <-- [inv ref] --> B
       Insert("${table(entity.schema)}__${sRelation.name}", LinkAction(entity, sRelation)).apply {
-        putResolvedRef("ref", link)
-        putRef("inv", topInst)
+        putResolvedRef("@ref", link)
+        putRef("@inv", topInst)
       }
     }
   }
@@ -179,13 +177,13 @@ class DEntityTranslator(private val schema: Schema) {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
       Update(table(sRelation.ref), link, UnlinkAction(entity, sRelation)).apply {
-        putResolvedRef("inv_${table(entity.schema)}__${sRelation.name}", null)
+        putResolvedRef("@inv_${table(entity.schema)}__${sRelation.name}", null)
       }
     } else {
       // A <-- [inv ref] --> B
       Delete("${table(entity.schema)}__${sRelation.name}", UnlinkAction(entity, sRelation)).apply {
-        putResolvedRef("ref", link)
-        putRef("inv", topInst)
+        putResolvedRef("@ref", link)
+        putRef("@inv", topInst)
       }
     }
   }

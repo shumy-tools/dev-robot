@@ -143,12 +143,12 @@ class InputTest {
     allInst[1].isCreate(B::class, "dr_test_b",
       mapOf(
         "oneText" to "oneB",
-        "traits__fourEntity" to mapOf("value" to "traceValue")
+        "@traits__fourEntity" to mapOf("value" to "traceValue")
       ),
       mapOf(
-        "ref__threeEntity" to 1L,
-        "ref__fourEntity" to 2L,
-        "ref__twoEntity" to 10L
+        "@ref__threeEntity" to 1L,
+        "@ref__fourEntity" to 2L,
+        "@ref__twoEntity" to 10L
       )
     )
   }
@@ -172,21 +172,21 @@ class InputTest {
     ))
 
     allInst[1].isLink(B1::class, "twoEntity", "dr_test_b1__twoEntity", emptyMap(),
-      mapOf("ref" to 1L, "inv" to 10L)
+      mapOf("@ref" to 1L, "@inv" to 10L)
     )
 
     allInst[2].isLink(B1::class, "twoEntity", "dr_test_b1__twoEntity", emptyMap(),
-      mapOf("ref" to 2L, "inv" to 10L)
+      mapOf("@ref" to 2L, "@inv" to 10L)
     )
 
     allInst[3].isLink(B1::class, "threeEntity", "dr_test_b1__threeEntity",
-      mapOf("traits__threeEntity" to mapOf("value" to "trace1")),
-      mapOf("ref" to 100L, "inv" to 10L)
+      mapOf("@traits__threeEntity" to mapOf("value" to "trace1")),
+      mapOf("@ref" to 100L, "@inv" to 10L)
     )
 
     allInst[4].isLink(B1::class, "threeEntity", "dr_test_b1__threeEntity",
-      mapOf("traits__threeEntity" to mapOf("value" to "trace2")),
-      mapOf("ref" to 200L, "inv" to 10L)
+      mapOf("@traits__threeEntity" to mapOf("value" to "trace2")),
+      mapOf("@ref" to 200L, "@inv" to 10L)
     )
   }
 
@@ -216,8 +216,8 @@ class InputTest {
     ))
 
     allInst[1].isUpdate(B::class, 20L, "dr_test_b",
-      mapOf("traits__fourEntity" to mapOf("value" to "traceUpdate")),
-      mapOf("ref__twoEntity" to 10L, "ref__threeEntity" to 100L, "ref__fourEntity" to 200L)
+      mapOf("@traits__fourEntity" to mapOf("value" to "traceUpdate")),
+      mapOf("@ref__twoEntity" to 10L, "@ref__threeEntity" to 100L, "@ref__fourEntity" to 200L)
     )
   }
 
@@ -240,15 +240,15 @@ class InputTest {
     allInst[0].isUpdate(B1::class, 20L, "dr_test_b1", emptyMap())
 
     allInst[1].isUnlink(B1::class, "twoEntity", "dr_test_b1__twoEntity",
-      mapOf("ref" to 100L, "inv" to 20L)
+      mapOf("@ref" to 100L, "@inv" to 20L)
     )
 
     allInst[2].isUnlink(B1::class, "threeEntity", "dr_test_b1__threeEntity",
-      mapOf("ref" to 200L, "inv" to 20L)
+      mapOf("@ref" to 200L, "@inv" to 20L)
     )
 
     allInst[3].isUnlink(B1::class, "threeEntity", "dr_test_b1__threeEntity",
-      mapOf("ref" to 300L, "inv" to 20L)
+      mapOf("@ref" to 300L, "@inv" to 20L)
     )
   }
 }
