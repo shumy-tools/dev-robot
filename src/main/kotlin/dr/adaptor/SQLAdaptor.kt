@@ -48,32 +48,7 @@ class SQLAdaptor(val url: String): IModificationAdaptor {
       println("TX-START")
 
       instructions.exec { inst ->
-        //println("  INST - $inst")
-
-        val table = inst.table.sqlName()
-        val separator = if (inst.data.isNotEmpty() && inst.resolvedRefs.isNotEmpty()) "," else ""
-
-        val sql = when (inst) {
-          is Insert -> {
-            val number = inst.data.size + inst.resolvedRefs.size
-            val nInputs = (1..number).joinToString { "?" }
-
-            val fields = inst.data.keys.joinToString { """"${it.name()}"""" }
-            val refs = inst.resolvedRefs.keys.joinToString { """"${inst.table.refSqlName(it)}"""" }
-            "INSERT INTO $table($fields$separator $refs) VALUES ($nInputs);"
-          }
-
-          is Update -> {
-            val fields = inst.data.keys.joinToString { """"${it.name()}" = ?""" }
-            val refs = inst.resolvedRefs.keys.joinToString { """"${inst.table.refSqlName(it)}" = ?""" }
-            """UPDATE $table SET $fields$separator $refs WHERE "@id" = ${inst.id};"""
-          }
-
-          is Delete -> {
-            ""
-          }
-        }
-
+        val sql = inst.sql()
         val stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)
 
         val values = mutableListOf<Any?>()
@@ -91,7 +66,7 @@ class SQLAdaptor(val url: String): IModificationAdaptor {
 
         val genKeys = stmt.generatedKeys
         val id = if (genKeys.next()) genKeys.getLong(1) else 0L
-        if (id != 0L) println(" - @id=$id") else println()
+        if (id != 0L) println(" - $ID=$id") else println()
 
         id
       }

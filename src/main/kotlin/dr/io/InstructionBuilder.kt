@@ -161,8 +161,8 @@ class InstructionBuilder(private val schema: Schema) {
     } else {
       // A <-- [inv ref] --> B
       Insert(Table(entity.schema, sRelation), LINK).apply {
-        putResolvedRef(TDirectRef(sRelation.ref), link)
-        putRef(TInverseRef(entity.schema), topInst)
+        putResolvedRef(TDirectRef(sRelation.ref, sRelation, false), link)
+        putRef(TInverseRef(entity.schema, sRelation, false), topInst)
       }
     }
   }
@@ -176,8 +176,8 @@ class InstructionBuilder(private val schema: Schema) {
     } else {
       // A <-- [inv ref] --> B
       Delete(Table(entity.schema, sRelation), UNLINK).apply {
-        putResolvedRef(TDirectRef(sRelation.ref), link)
-        putRef(TInverseRef(entity.schema), topInst)
+        putResolvedRef(TDirectRef(sRelation.ref, sRelation, false), link)
+        putRef(TInverseRef(entity.schema, sRelation, false), topInst)
       }
     }
   }

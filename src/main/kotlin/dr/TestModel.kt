@@ -79,7 +79,7 @@ data class Market(val name: String)
 
 @Master @StateMachine(UserMachine::class)
 data class User(
-  val name: String,
+  @Unique val name: String,
 
   @Checks(EmailCheck::class) val email: String,
 
@@ -89,7 +89,7 @@ data class User(
 
   //@Unique @Link(Role::class, traits = [Trace::class]) val roles: List<Traits>,
 
-  @Unique @Link(Role::class) val roles: List<Long>
+  @Link(Role::class) val roles: List<Long>
 ) {
   val timestamp = LocalDateTime.now()
 }

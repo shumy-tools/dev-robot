@@ -95,8 +95,9 @@ class SchemaInstructionBuilder(private val schema: Schema) {
       // A <-- [inv ref] --> B
       sRelation.ref.getOrCreateTable()
       SchemaInstruction(Table(this, sRelation)).also {
-        it.addRef(TDirectRef(sRelation.ref))
-        it.addRef(TInverseRef(this))
+        tables[it.table] = it
+        it.addRef(TDirectRef(sRelation.ref, sRelation, false))
+        it.addRef(TInverseRef(this, sRelation, false))
       }
     }
   }

@@ -1,12 +1,13 @@
 package dr
 
-import com.zaxxer.hikari.HikariConfig
-import com.zaxxer.hikari.HikariDataSource
 import dr.adaptor.SQLAdaptor
-import dr.io.*
+import dr.io.SchemaInstructionBuilder
 import dr.query.QTree
 import dr.schema.SParser
-import dr.spi.*
+import dr.spi.IAuthorizer
+import dr.spi.IQueryAdaptor
+import dr.spi.IQueryExecutor
+import dr.spi.IReadAccess
 
 
 class TestQueryExecutor: IQueryExecutor {
@@ -31,22 +32,6 @@ class TestAuthorizer: IAuthorizer {
   override fun read(access: IReadAccess): Boolean {
     println("access = $access")
     return true
-  }
-}
-
-class TestModificationAdaptor: IModificationAdaptor {
-  var idSeq = 9L;
-  override fun commit(instructions: Instructions) {
-    println("TX-START")
-    instructions.exec {
-      println("  $it")
-      when (it) {
-        is Insert -> ++idSeq
-        is Update -> it.id
-        is Delete -> 0L
-      }
-    }
-    println("TX-COMMIT")
   }
 }
 
