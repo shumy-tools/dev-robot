@@ -68,7 +68,7 @@ private fun Instructions.process(): List<Instruction> {
 
 class InputTest {
   private val ip = InputProcessor(schema)
-  private val trans = DEntityTranslator(schema)
+  private val trans = InstructionBuilder(schema)
 
   private val fieldInputs = """{
     "oneText":"one",
@@ -85,38 +85,17 @@ class InputTest {
   @Test fun testCreateFieldTypes() {
     val entity = ip.create(A::class, fieldInputs)
     val allInst = trans.create(entity).process()
-    assert(allInst.size == 1)
 
-    allInst[0].isCreate(A::class, "dr_test_a", mapOf(
-      "oneText" to "one",
-      "twoInt" to 2,
-      "threeLong" to 3L,
-      "fourFloat" to 4.0F,
-      "fiveDouble" to 5.0,
-      "sixBoolean" to true,
-      "sevenTime" to time,
-      "eightDate" to date,
-      "nineDateTime" to datetime,
-      "timestamp" to fixedTimestamp
-    ))
+    assert(allInst.size == 1)
+    assert(allInst[0].toString() == "Insert(CREATE) - {table=dr.test.A, data={oneText=one, twoInt=2, threeLong=3, fourFloat=4.0, fiveDouble=5.0, sixBoolean=true, sevenTime=10:30:20, eightDate=2020-01-25, nineDateTime=2020-01-25T10:30:20, timestamp=1918-01-10T12:35:18}}")
   }
 
   @Test fun testUpdateFieldTypes() {
     val entity = ip.update(A::class, fieldInputs)
     val allInst = trans.update(10L, entity).process()
-    assert(allInst.size == 1)
 
-    allInst[0].isUpdate(A::class, 10L, "dr_test_a", mapOf(
-      "oneText" to "one",
-      "twoInt" to 2L,
-      "threeLong" to 3L,
-      "fourFloat" to 4.0,
-      "fiveDouble" to 5.0,
-      "sixBoolean" to true,
-      "sevenTime" to time,
-      "eightDate" to date,
-      "nineDateTime" to datetime
-    ))
+    assert(allInst.size == 1)
+    assert(allInst[0].toString() == "Update(UPDATE) - {table=dr.test.A, id=10, data={oneText=one, twoInt=2, threeLong=3, fourFloat=4.0, fiveDouble=5.0, sixBoolean=true, sevenTime=10:30:20, eightDate=2020-01-25, nineDateTime=2020-01-25T10:30:20}}")
   }
 
   @Test fun testCreateWithReferences() {
@@ -134,23 +113,10 @@ class InputTest {
 
     val entity = ip.create(B::class, json)
     val allInst = trans.create(entity).process()
+
     assert(allInst.size == 2)
-
-    allInst[0].isAdd(C::class, "dr_test_c", mapOf(
-      "oneText" to "oneC"
-    ))
-
-    allInst[1].isCreate(B::class, "dr_test_b",
-      mapOf(
-        "oneText" to "oneB",
-        "@traits__fourEntity" to mapOf("value" to "traceValue")
-      ),
-      mapOf(
-        "@ref__threeEntity" to 1L,
-        "@ref__fourEntity" to 2L,
-        "@ref__twoEntity" to 10L
-      )
-    )
+    assert(allInst[0].toString() == "Insert(ADD) - {table=dr.test.C, data={oneText=oneC}}")
+    assert(allInst[1].toString() == "Insert(CREATE) - {table=dr.test.B, data={oneText=oneB, @fourEntity={value=traceValue}}, refs={@ref-to-dr.test.B-threeEntity=1, @ref-to-dr.test.B-fourEntity=2, @ref-to-dr.test.B-twoEntity=10}}")
   }
 
   @Test fun testCreateWithCollections() {
@@ -165,29 +131,13 @@ class InputTest {
 
     val entity = ip.create(B1::class, json)
     val allInst = trans.create(entity).process()
+
     assert(allInst.size == 5)
-
-    allInst[0].isCreate(B1::class, "dr_test_b1", mapOf(
-      "oneText" to "oneB1"
-    ))
-
-    allInst[1].isLink(B1::class, "twoEntity", "dr_test_b1__twoEntity", emptyMap(),
-      mapOf("@ref" to 1L, "@inv" to 10L)
-    )
-
-    allInst[2].isLink(B1::class, "twoEntity", "dr_test_b1__twoEntity", emptyMap(),
-      mapOf("@ref" to 2L, "@inv" to 10L)
-    )
-
-    allInst[3].isLink(B1::class, "threeEntity", "dr_test_b1__threeEntity",
-      mapOf("@traits__threeEntity" to mapOf("value" to "trace1")),
-      mapOf("@ref" to 100L, "@inv" to 10L)
-    )
-
-    allInst[4].isLink(B1::class, "threeEntity", "dr_test_b1__threeEntity",
-      mapOf("@traits__threeEntity" to mapOf("value" to "trace2")),
-      mapOf("@ref" to 200L, "@inv" to 10L)
-    )
+    assert(allInst[0].toString() == "Insert(CREATE) - {table=dr.test.B1, data={oneText=oneB1}}")
+    assert(allInst[1].toString() == "Insert(LINK) - {table=dr.test.B1-twoEntity, refs={@ref-to-dr.test.C=1, @inv-to-dr.test.B1=10}}")
+    assert(allInst[2].toString() == "Insert(LINK) - {table=dr.test.B1-twoEntity, refs={@ref-to-dr.test.C=2, @inv-to-dr.test.B1=10}}")
+    assert(allInst[3].toString() == "Insert(LINK) - {table=dr.test.B1-threeEntity, data={@threeEntity={value=trace1}}, refs={@ref-to-dr.test.C=100, @inv-to-dr.test.B1=10}}")
+    assert(allInst[4].toString() == "Insert(LINK) - {table=dr.test.B1-threeEntity, data={@threeEntity={value=trace2}}, refs={@ref-to-dr.test.C=200, @inv-to-dr.test.B1=10}}")
   }
 
   @Test fun testLinkRelations() {
@@ -209,16 +159,10 @@ class InputTest {
 
     val entity = ip.update(B::class, json)
     val allInst = trans.update(20L, entity).process()
+
     assert(allInst.size == 2)
-
-    allInst[0].isAdd(C::class, "dr_test_c", mapOf(
-      "oneText" to "oneC"
-    ))
-
-    allInst[1].isUpdate(B::class, 20L, "dr_test_b",
-      mapOf("@traits__fourEntity" to mapOf("value" to "traceUpdate")),
-      mapOf("@ref__twoEntity" to 10L, "@ref__threeEntity" to 100L, "@ref__fourEntity" to 200L)
-    )
+    assert(allInst[0].toString() == "Insert(ADD) - {table=dr.test.C, data={oneText=oneC}}")
+    assert(allInst[1].toString() == "Update(UPDATE) - {table=dr.test.B, id=20, data={@fourEntity={value=traceUpdate}}, refs={@ref-to-dr.test.B-threeEntity=100, @ref-to-dr.test.B-fourEntity=200, @ref-to-dr.test.B-twoEntity=10}}")
   }
 
   @Test fun testUnlinkRelations() {
@@ -235,20 +179,11 @@ class InputTest {
 
     val entity = ip.update(B1::class, json)
     val allInst = trans.update(20L, entity).process()
+
     assert(allInst.size == 4)
-
-    allInst[0].isUpdate(B1::class, 20L, "dr_test_b1", emptyMap())
-
-    allInst[1].isUnlink(B1::class, "twoEntity", "dr_test_b1__twoEntity",
-      mapOf("@ref" to 100L, "@inv" to 20L)
-    )
-
-    allInst[2].isUnlink(B1::class, "threeEntity", "dr_test_b1__threeEntity",
-      mapOf("@ref" to 200L, "@inv" to 20L)
-    )
-
-    allInst[3].isUnlink(B1::class, "threeEntity", "dr_test_b1__threeEntity",
-      mapOf("@ref" to 300L, "@inv" to 20L)
-    )
+    assert(allInst[0].toString() == "Update(UPDATE) - {table=dr.test.B1, id=20}")
+    assert(allInst[1].toString() == "Delete(UNLINK) - {table=dr.test.B1-twoEntity, refs={@ref-to-dr.test.C=100, @inv-to-dr.test.B1=20}}")
+    assert(allInst[2].toString() == "Delete(UNLINK) - {table=dr.test.B1-threeEntity, refs={@ref-to-dr.test.C=200, @inv-to-dr.test.B1=20}}")
+    assert(allInst[3].toString() == "Delete(UNLINK) - {table=dr.test.B1-threeEntity, refs={@ref-to-dr.test.C=300, @inv-to-dr.test.B1=20}}")
   }
 }

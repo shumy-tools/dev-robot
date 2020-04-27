@@ -45,8 +45,10 @@ class InputProcessor(private val schema: Schema) {
       val isOk = when(sFieldOrRelation) {
         is SField -> when (sFieldOrRelation.type) {
           FieldType.TEXT -> value is String
-          FieldType.INT -> value is Long
-          FieldType.FLOAT -> value is Double
+          FieldType.INT -> value is Int
+          FieldType.LONG -> value is Long
+          FieldType.FLOAT -> value is Float
+          FieldType.DOUBLE -> value is Double
           FieldType.BOOL -> value is Boolean
           FieldType.TIME -> value is LocalTime
           FieldType.DATE -> value is LocalDate
@@ -85,8 +87,10 @@ class InputProcessor(private val schema: Schema) {
       map[nName] = when(sFieldOrRelation) {
         is SField -> when (sFieldOrRelation.type) {
           FieldType.TEXT -> vNode.asText()
-          FieldType.INT -> vNode.asLong()
-          FieldType.FLOAT -> vNode.asDouble()
+          FieldType.INT -> vNode.asInt()
+          FieldType.LONG -> vNode.asLong()
+          FieldType.FLOAT -> vNode.asDouble().toFloat()
+          FieldType.DOUBLE -> vNode.asDouble()
           FieldType.BOOL -> vNode.asBoolean()
           FieldType.TIME -> LocalTime.parse(vNode.asText())
           FieldType.DATE -> LocalDate.parse(vNode.asText())

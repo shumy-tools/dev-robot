@@ -55,7 +55,7 @@ class DrServer(
   val qAdaptor: IQueryAdaptor
 ) {
   internal val processor = InputProcessor(schema)
-  internal val translator = DEntityTranslator(schema)
+  internal val translator = InstructionBuilder(schema)
   internal val qService = QueryService(schema, qAdaptor)
 
   private val machines: Map<SEntity, Machine<*, *>>

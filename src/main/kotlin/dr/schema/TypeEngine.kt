@@ -9,7 +9,7 @@ import kotlin.reflect.full.isSubtypeOf
 import kotlin.reflect.typeOf
 
 enum class FieldType {
-  TEXT, INT, FLOAT, BOOL,
+  TEXT, INT, LONG, FLOAT, DOUBLE, BOOL,
   TIME, DATE, DATETIME
 }
 
@@ -36,8 +36,10 @@ object TypeEngine {
 
   private val typeToClass = mutableMapOf<FieldType, KClass<*>>().apply {
     put(FieldType.TEXT, String::class)
-    put(FieldType.INT, Long::class)
-    put(FieldType.FLOAT, Double::class)
+    put(FieldType.INT, Int::class)
+    put(FieldType.LONG, Long::class)
+    put(FieldType.FLOAT, Float::class)
+    put(FieldType.DOUBLE, Double::class)
     put(FieldType.BOOL, Boolean::class)
 
     put(FieldType.TIME, LocalTime::class)
@@ -51,8 +53,10 @@ object TypeEngine {
 
   fun convert(type: KType): FieldType? {
     if (type.isSubtypeOf(TEXT)) return FieldType.TEXT
-    if (type.isSubtypeOf(INT) || type.isSubtypeOf(LONG)) return FieldType.INT
-    if (type.isSubtypeOf(FLOAT) || type.isSubtypeOf(DOUBLE)) return FieldType.FLOAT
+    if (type.isSubtypeOf(INT)) return FieldType.INT
+    if (type.isSubtypeOf(LONG)) return FieldType.LONG
+    if (type.isSubtypeOf(FLOAT)) return FieldType.FLOAT
+    if (type.isSubtypeOf(DOUBLE)) return FieldType.DOUBLE
     if (type.isSubtypeOf(BOOL)) return FieldType.BOOL
 
     if (type.isSubtypeOf(TIME)) return FieldType.TIME

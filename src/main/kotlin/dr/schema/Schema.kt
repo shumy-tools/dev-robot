@@ -173,7 +173,7 @@ class Schema {
       }
     }
 
-    internal fun fireListeners(event: EventType, inst: Instruction) {
+    /*internal fun fireListeners(event: EventType, inst: Instruction) {
       inst.action.entity.schema.listeners.forEach {
         when (inst.action.type) {
           ActionType.CREATE -> it.get(ActionType.CREATE, event)?.onCreate(inst as Insert)
@@ -184,7 +184,7 @@ class Schema {
           ActionType.UNLINK -> it.get(ActionType.UNLINK, event)?.onUnlink(inst as Delete)
         }
       }
-    }
+    }*/
 
     fun toMap(simple: Boolean): Map<String, Any> {
       val map = linkedMapOf<String, Any>()

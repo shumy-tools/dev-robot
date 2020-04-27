@@ -3,10 +3,7 @@ package dr
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import dr.adaptor.SQLAdaptor
-import dr.io.Delete
-import dr.io.Insert
-import dr.io.Instructions
-import dr.io.Update
+import dr.io.*
 import dr.query.QTree
 import dr.schema.SParser
 import dr.spi.*
@@ -55,14 +52,15 @@ class TestModificationAdaptor: IModificationAdaptor {
 
 fun main(args: Array<String>) {
   val schema = SParser.parse(OwnedUserType::class, Sell::class, User::class, Role::class, Auction::class)
-  val adaptor = SQLAdaptor(schema, "jdbc:h2:mem:testdb")
-  adaptor.createSchema()
 
-  /*
-  val schema = SParser.parse(OwnedUserType::class, Sell::class, User::class, Role::class, Auction::class)
-  val server = DrServer(schema, TestAuthorizer(), TestModificationAdaptor(), TestQueryAdaptor()).also {
-    //it.start(8080)
-  }*/
+  val sib = SchemaInstructionBuilder(schema)
+  val adaptor = SQLAdaptor("jdbc:h2:mem:testdb").also {
+    it.createSchema(sib.transform())
+  }
+
+  val server = DrServer(schema, TestAuthorizer(), adaptor, TestQueryAdaptor()).also {
+    it.start(8080)
+  }
 
   /*
   println("Q1")
