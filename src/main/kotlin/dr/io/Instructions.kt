@@ -1,6 +1,9 @@
 package dr.io
 
 import dr.schema.ActionType
+import dr.schema.tabular.TProperty
+import dr.schema.tabular.TRef
+import dr.schema.tabular.Table
 import java.util.*
 
 class Instructions(private val root: Instruction, val all: List<Instruction>) {

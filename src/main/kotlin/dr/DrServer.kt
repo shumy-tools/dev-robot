@@ -6,21 +6,23 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dr.ctx.Session
-import dr.query.QueryService
 import dr.io.*
+import dr.query.QueryService
 import dr.schema.SEntity
 import dr.schema.Schema
+import dr.spi.IAdaptor
 import dr.spi.IAuthorizer
-import dr.spi.IModificationAdaptor
-import dr.spi.IQueryAdaptor
 import dr.spi.IQueryExecutor
+import dr.spi.IReadAccess
 import dr.state.Machine
 import dr.state.buildMachine
 import io.javalin.Javalin
 import io.javalin.apibuilder.ApiBuilder.*
 import io.javalin.http.Context
+import java.security.MessageDigest
 import java.util.*
 import kotlin.reflect.KClass
+
 
 object JsonParser {
   val mapper: ObjectMapper = jacksonObjectMapper()
@@ -46,20 +48,20 @@ object JsonParser {
   fun <T: Any> read(json: String, type: KClass<out T>): T {
     return mapper.readValue(json, type.java)
   }
+
+  @Suppress("UNCHECKED_CAST")
+  fun readMap(json: String): Map<String, Any> {
+    return mapper.readValue(json, Map::class.java) as Map<String, Any>
+  }
 }
 
-class DrServer(
-  val schema: Schema,
-  val authorizer: IAuthorizer,
-  val mAdaptor: IModificationAdaptor,
-  val qAdaptor: IQueryAdaptor
-) {
+class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAuthorizer? = null) {
   internal val processor = InputProcessor(schema)
-  internal val translator = InstructionBuilder(schema)
-  internal val qService = QueryService(schema, qAdaptor)
+  internal val translator = InstructionBuilder(adaptor.tables())
+  internal val qService = QueryService(schema, adaptor)
 
   private val machines: Map<SEntity, Machine<*, *>>
-  private val queries = mutableMapOf<String, IQueryExecutor>()
+  private val queries = mutableMapOf<String, Pair<IQueryExecutor, IReadAccess>>()
 
   init {
     println("----Checking State Machines----")
@@ -98,10 +100,7 @@ class DrServer(
         post("update/:entity/:id", this::update)
         post("action/:entity/:id", this::action)
 
-
-        path("query") {
-          post("compile", this::compile)
-        }
+        post("query", this::query)
       }
     }
   }
@@ -143,7 +142,7 @@ class DrServer(
       machines[sEntity]?.let { it.onCreate(dEntity) }
 
       val instructions = translator.create(dEntity)
-      mAdaptor.commit(instructions)
+      adaptor.commit(instructions)
 
       mapOf("@type" to "ok").plus(instructions.output)
     } catch (ex: Exception) {
@@ -168,7 +167,7 @@ class DrServer(
       machines[sEntity]?.let { it.onUpdate(id, dEntity) }
 
       val instructions = translator.update(id, dEntity)
-      mAdaptor.commit(instructions)
+      adaptor.commit(instructions)
 
       mapOf("@type" to "ok").plus(instructions.output)
     } catch (ex: Exception) {
@@ -203,21 +202,46 @@ class DrServer(
     ctx.result(json).contentType("application/json")
   }
 
-  fun compile(ctx: Context) {
+  fun query(ctx: Context) {
     val res = try {
-      val qExec = qService.compile(ctx.body())
+      val isCompile = ctx.queryParam("compile") != null
+      val exec = ctx.queryParam("exec")
 
-      // TODO: check access control from qExec.accessed
+      when {
+        isCompile -> {
+          val uuid = ctx.body().hash()
+          if (queries[uuid] == null)
+            queries[uuid] = qService.compile(ctx.body())
 
-      val uuid = UUID.randomUUID().toString()
-      queries[uuid] = qExec
+          mapOf("@type" to "ok", "uuid" to uuid)
+        }
 
-      mapOf("@type" to "ok", "uuid" to uuid)
+        exec != null -> {
+          val (query, access) = queries[exec] ?: throw Exception("Compiled query not found! - ($exec)")
+          // TODO: check access control from qExec.accessed
+
+          val params = JsonParser.readMap(ctx.body())
+          val res = query.exec(params)
+
+          mapOf("@type" to "ok").plus(res.raw())
+        }
+
+        else -> throw Exception("Unrecognized query command!")
+      }
     } catch (ex: Exception) {
+      ex.printStackTrace()
       mapOf("@type" to "error", "msg" to ex.message)
     }
 
     val json = JsonParser.write(res)
     ctx.result(json).contentType("application/json")
   }
+}
+
+fun String.hash(): String {
+  val compact = replace(Regex("\\s"), "")
+
+  val digest = MessageDigest.getInstance("SHA-256")
+  val bytes = digest.digest(compact.toByteArray())
+  return Base64.getUrlEncoder().encodeToString(bytes)
 }

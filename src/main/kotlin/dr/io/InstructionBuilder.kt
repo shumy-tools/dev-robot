@@ -1,22 +1,21 @@
 package dr.io
 
+import dr.schema.*
 import dr.schema.ActionType.*
-import dr.schema.EntityType
-import dr.schema.SRelation
-import dr.schema.Schema
+import dr.schema.tabular.*
 
-class InstructionBuilder(private val schema: Schema) {
+class InstructionBuilder(private val tables: Tables) {
 
   fun create(data: DEntity): Instructions {
     val (head, tail) = data.unpack
-    val root = Insert(Table(head.schema), CREATE)
+    val root = Insert(tables.get(head.schema), CREATE)
     val all = processEntity(head, tail, root)
 
     return Instructions(root, all)
   }
 
   fun update(id: Long, data: DEntity): Instructions {
-    val root = Update(Table(data.schema), id, UPDATE)
+    val root = Update(tables.get(data.schema), id, UPDATE)
     val (topInclude, bottomInclude) = processUnpackedEntity(data, root)
     val all = topInclude.plus(root).plus(bottomInclude)
 
@@ -26,7 +25,7 @@ class InstructionBuilder(private val schema: Schema) {
   /* ------------------------------------------------------------ private ------------------------------------------------------------ */
   private fun addEntity(entity: DEntity): Pair<Insert, List<Instruction>> {
     val (head, tail) = entity.unpack
-    val rootInst = Insert(Table(head.schema), ADD)
+    val rootInst = Insert(tables.get(head.schema), ADD)
     return Pair(rootInst, processEntity(head, tail, rootInst))
   }
 
@@ -46,7 +45,7 @@ class InstructionBuilder(private val schema: Schema) {
         throw Exception("Not a top @Sealed entity! - (${topEntity.name})")
 
       topInst.putData(TType, topEntity.name)
-      topInst = Insert(Table(item.schema), CREATE).apply {
+      topInst = Insert(tables.get(item.schema), CREATE).apply {
         putRef(TSuperRef(topEntity), topInst)
         val (subTopInclude, subBottomInclude) = processUnpackedEntity(item, this)
         allInst.addAll(subTopInclude)
@@ -155,12 +154,12 @@ class InstructionBuilder(private val schema: Schema) {
   private fun link(entity: DEntity, sRelation: SRelation, link: Long, topInst: Instruction): Instruction {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
-      Update(Table(sRelation.ref), link, LINK).apply {
+      Update(tables.get(sRelation.ref), link, LINK).apply {
         putRef(TInverseRef(entity.schema, sRelation), topInst)
       }
     } else {
       // A <-- [inv ref] --> B
-      Insert(Table(entity.schema, sRelation), LINK).apply {
+      Insert(tables.get(entity.schema, sRelation), LINK).apply {
         putResolvedRef(TDirectRef(sRelation.ref, sRelation, false), link)
         putRef(TInverseRef(entity.schema, sRelation, false), topInst)
       }
@@ -170,12 +169,12 @@ class InstructionBuilder(private val schema: Schema) {
   private fun unlink(entity: DEntity, sRelation: SRelation, link: Long, topInst: Instruction): Instruction {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
-      Update(Table(sRelation.ref), link, UNLINK).apply {
+      Update(tables.get(sRelation.ref), link, UNLINK).apply {
         putResolvedRef(TInverseRef(entity.schema, sRelation), null)
       }
     } else {
       // A <-- [inv ref] --> B
-      Delete(Table(entity.schema, sRelation), UNLINK).apply {
+      Delete(tables.get(entity.schema, sRelation), UNLINK).apply {
         putResolvedRef(TDirectRef(sRelation.ref, sRelation, false), link)
         putRef(TInverseRef(entity.schema, sRelation, false), topInst)
       }
@@ -185,7 +184,7 @@ class InstructionBuilder(private val schema: Schema) {
   private fun unwrapTraits(at: SRelation, traits: List<Any>, topInst: Instruction) {
     for (trait in traits) {
       val name = trait.javaClass.kotlin.qualifiedName
-      val sTrait = schema.traits[name] ?: throw Exception("Trait type not found! - ($name)")
+      val sTrait = tables.schema.traits[name] ?: throw Exception("Trait type not found! - ($name)")
 
       val dTrait = DEntity(sTrait, cEntity = trait)
 

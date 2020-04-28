@@ -2,6 +2,7 @@ package dr.test
 
 import dr.io.*
 import dr.schema.*
+import dr.schema.tabular.TParser
 import org.junit.Test
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -68,7 +69,7 @@ private fun Instructions.process(): List<Instruction> {
 
 class InputTest {
   private val ip = InputProcessor(schema)
-  private val trans = InstructionBuilder(schema)
+  private val trans = InstructionBuilder(TParser(schema).transform())
 
   private val fieldInputs = """{
     "oneText":"one",

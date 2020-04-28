@@ -45,7 +45,7 @@ open class Machine<S: Enum<*>, E: Any> {
   @Suppress("UNCHECKED_CAST")
   fun onEvent(id: Long, inEvt: Any) {
     val event = inEvt as E
-    val state = stateQuery.exec("id" to id).getValue("@state") as String
+    val state = stateQuery.exec("id" to id).get<String>("@state")
 
     val evtType = event.javaClass.kotlin
     val states = events[evtType] ?: throw Exception("StateMachine event '$event' not found! - (${this.javaClass.kotlin.qualifiedName})")
@@ -58,7 +58,7 @@ open class Machine<S: Enum<*>, E: Any> {
   }
 
   fun onUpdate(id: Long, entity: DEntity) {
-    val state = stateQuery.exec("id" to id).getValue("@state") as String
+    val state = stateQuery.exec("id" to id).get<String>("@state")
     //TODO: what events to fire?
   }
 

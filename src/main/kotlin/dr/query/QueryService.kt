@@ -3,7 +3,7 @@ package dr.query
 import dr.schema.SEntity
 import dr.schema.SRelation
 import dr.schema.Schema
-import dr.spi.IQueryAdaptor
+import dr.spi.IAdaptor
 import dr.spi.IQueryExecutor
 import dr.spi.IReadAccess
 import org.antlr.v4.runtime.CharStreams
@@ -17,10 +17,10 @@ import java.time.LocalTime
 /* ------------------------- api -------------------------*/
 class QueryService(
   private val schema: Schema,
-  private val adaptor: IQueryAdaptor
+  private val adaptor: IAdaptor
 ) {
 
-  fun compile(query: String): IQueryExecutor {
+  fun compile(query: String): Pair<IQueryExecutor, IReadAccess> {
     val lexer = QueryLexer(CharStreams.fromString(query))
     val tokens = CommonTokenStream(lexer)
     val parser = QueryParser(tokens)
@@ -36,7 +36,7 @@ class QueryService(
       throw Exception("Failed to compile query! ${listener.errors}")
 
     val native = this.adaptor.compile(listener.compiled!!)
-    return QueryExecutorWithValidator(native, listener.accessed, listener.parameters)
+    return Pair(QueryExecutorWithValidator(native, listener.parameters), listener.accessed)
   }
 }
 
@@ -303,9 +303,9 @@ private fun transformParam(param: QueryParser.ParamContext) = when {
 }
 
 private fun transformValue(value: QueryParser.ValueContext) = when {
-  value.TEXT() != null -> QParam(ParamType.TEXT, value.TEXT().text)
-  value.INT() != null -> QParam(ParamType.INT, value.INT().text.toLong())
-  value.FLOAT() != null -> QParam(ParamType.FLOAT, value.FLOAT().text.toDouble())
+  value.TEXT() != null -> QParam(ParamType.TEXT, value.TEXT().text.substring(1, value.TEXT().text.length-1))
+  value.INT() != null -> QParam(ParamType.INT, value.INT().text.toInt())
+  value.FLOAT() != null -> QParam(ParamType.FLOAT, value.FLOAT().text.toFloat())
   value.BOOL() != null -> QParam(ParamType.BOOL, value.BOOL().text.toBoolean())
   value.TIME() != null -> QParam(ParamType.TIME, LocalTime.parse(value.TIME().text.substring(1)))
   value.DATE() != null -> QParam(ParamType.DATE, LocalDate.parse(value.DATE().text.substring(1)))

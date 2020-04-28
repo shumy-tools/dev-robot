@@ -154,7 +154,7 @@ data class Address(
 @Master
 data class Role(
   val name: String,
-  val order: Int
+  val ord: Int
 )
 
 @Master

@@ -1,32 +1,10 @@
 package dr
 
 import dr.adaptor.SQLAdaptor
-import dr.io.SchemaInstructionBuilder
-import dr.query.QTree
 import dr.schema.SParser
+import dr.schema.tabular.TParser
 import dr.spi.IAuthorizer
-import dr.spi.IQueryAdaptor
-import dr.spi.IQueryExecutor
 import dr.spi.IReadAccess
-
-
-class TestQueryExecutor: IQueryExecutor {
-  override fun accessed(): IReadAccess {
-    TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-  }
-
-  override fun exec(params: Map<String, Any>): Map<String, Any> {
-    return emptyMap()
-  }
-}
-
-class TestQueryAdaptor: IQueryAdaptor {
-  override fun compile(query: QTree): IQueryExecutor {
-    //val json = mapper.writeValueAsString(query)
-    //println("tree = $json")
-    return TestQueryExecutor()
-  }
-}
 
 class TestAuthorizer: IAuthorizer {
   override fun read(access: IReadAccess): Boolean {
@@ -37,13 +15,11 @@ class TestAuthorizer: IAuthorizer {
 
 fun main(args: Array<String>) {
   val schema = SParser.parse(OwnedUserType::class, Sell::class, User::class, Role::class, Auction::class)
-
-  val sib = SchemaInstructionBuilder(schema)
-  val adaptor = SQLAdaptor("jdbc:h2:mem:testdb").also {
-    it.createSchema(sib.transform())
+  val adaptor = SQLAdaptor(schema, "jdbc:h2:mem:testdb").also {
+    it.createSchema()
   }
 
-  val server = DrServer(schema, TestAuthorizer(), adaptor, TestQueryAdaptor()).also {
+  val server = DrServer(schema, adaptor, TestAuthorizer()).also {
     it.start(8080)
   }
 

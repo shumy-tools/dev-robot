@@ -1,33 +1,31 @@
-package dr.io
+package dr.schema.tabular
 
 import dr.schema.EntityType
 import dr.schema.SEntity
 import dr.schema.SRelation
 import dr.schema.Schema
 
-class SchemaInstructionBuilder(private val schema: Schema) {
-  private val tables = linkedMapOf<Table, SchemaInstruction>()
+class TParser(private val schema: Schema) {
+  private val tables = linkedMapOf<String, Table>()
 
-  fun transform(): List<SchemaInstruction> {
+  fun transform(): Tables {
     for (ent in schema.masters.values) {
       ent.getOrCreateTable()
     }
 
-    return tables.values.toList()
+    return Tables(schema, tables)
   }
 
-  private fun SEntity.getOrCreateTable(): SchemaInstruction {
+  private fun SEntity.getOrCreateTable(): Table {
     var isNew = false
-    val table = Table(this)
-
-    val topInst = tables.getOrPut(table) { isNew = true; SchemaInstruction(table) }
+    val topInst = tables.getOrPut(this.name) { isNew = true; Table(this) }
     if (isNew)
       processTable(topInst)
 
     return topInst
   }
 
-  private fun SEntity.processTable(rootInst: SchemaInstruction) {
+  private fun SEntity.processTable(rootInst: Table) {
     processUnpackedTable(rootInst)
 
     var topEntity = this
@@ -37,7 +35,7 @@ class SchemaInstructionBuilder(private val schema: Schema) {
     }
   }
 
-  private fun SEntity.processUnpackedTable(topInst: SchemaInstruction) {
+  private fun SEntity.processUnpackedTable(topInst: Table) {
     if (isSealed)
       topInst.addProperty(TType)
 
@@ -85,7 +83,7 @@ class SchemaInstructionBuilder(private val schema: Schema) {
     }
   }
 
-  private fun SEntity.linkTable(sRelation: SRelation): SchemaInstruction {
+  private fun SEntity.linkTable(sRelation: SRelation): Table {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
       val refTable = sRelation.ref.getOrCreateTable()
@@ -94,8 +92,8 @@ class SchemaInstructionBuilder(private val schema: Schema) {
     } else {
       // A <-- [inv ref] --> B
       sRelation.ref.getOrCreateTable()
-      SchemaInstruction(Table(this, sRelation)).also {
-        tables[it.table] = it
+      Table(this, sRelation).also {
+        tables[it.name] = it
         it.addRef(TDirectRef(sRelation.ref, sRelation, false))
         it.addRef(TInverseRef(this, sRelation, false))
       }

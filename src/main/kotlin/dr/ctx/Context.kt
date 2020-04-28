@@ -17,7 +17,7 @@ object Context {
     val entity = server.processor.create(data)
 
     val instructions = server.translator.create(entity)
-    server.mAdaptor.commit(instructions)
+    server.adaptor.commit(instructions)
 
     return instructions.output
   }
@@ -27,13 +27,13 @@ object Context {
     val entity = server.processor.update(type, data)
 
     val instructions = server.translator.update(id, entity)
-    server.mAdaptor.commit(instructions)
+    server.adaptor.commit(instructions)
 
     return instructions.output
   }
 
   fun query(query: String): IQueryExecutor {
-    return get().server.qService.compile(query)
+    return get().server.qService.compile(query).first
   }
 }
 
