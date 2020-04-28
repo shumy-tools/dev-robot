@@ -118,9 +118,16 @@ fun Instruction.sql(): String {
 
 
 /* ------------------------- query -------------------------*/
+class QueryMapper(val schema: SEntity) {
+  lateinit var sql: String
+  val params = linkedMapOf<String, QParam>()
+}
+
 fun testQuery(): String = "SELECT 1"
 
-fun Table.select(mapper: MutableList<String>, selection: QSelect, filter: QExpression?, limit: Int?, page: Int?): String {
+fun Table.select(selection: QSelect, filter: QExpression?, limit: Int?, page: Int?): QueryMapper {
+  val mapper = QueryMapper(sEntity)
+
   val selectionSQL = if (selection.hasAll) {
     props.joinToString { """"${propSqlName(it)}"""" }
   } else {
@@ -129,33 +136,27 @@ fun Table.select(mapper: MutableList<String>, selection: QSelect, filter: QExpre
 
   val filterSQL = if (filter != null) "WHERE ${expression(mapper, filter)}" else ""
 
-  val limitSQL = if (limit != null) "LIMIT $limit" else ""
+  val limitSQL = if (limit != null) " LIMIT $limit" else ""
   val limitAndPageSQL = if (page != null) "$limitSQL OFFSET ${page * limit!!}" else limitSQL
 
-  return """SELECT "$SQL_ID", $selectionSQL FROM ${sqlName()} $filterSQL $limitAndPageSQL"""
+  mapper.sql = """SELECT "$SQL_ID", $selectionSQL FROM ${sqlName()} $filterSQL$limitAndPageSQL;"""
+  return mapper
 }
 
-fun Table.expression(mapper: MutableList<String>, expr: QExpression): String = if (expr.predicate != null) {
+fun Table.expression(mapper: QueryMapper, expr: QExpression): String = if (expr.predicate != null) {
   filter(mapper, expr.predicate)
 } else {
   "(${expression(mapper, expr.left!!)} ${expr.oper!!.sql()} ${expression(mapper, expr.right!!)})"
 }
 
 @Suppress("UNCHECKED_CAST")
-fun Table.filter(mapper: MutableList<String>, predicate: QPredicate): String {
+fun Table.filter(mapper: QueryMapper, predicate: QPredicate): String {
   // TODO: build a sub-query path!
   val subQuery = predicate.path.first().name
 
-  val value = predicate.param.value
-  val param = when(predicate.param.type) {
-    TEXT, TIME, DATE, DATETIME -> "'$value'"
-    INT, FLOAT, BOOL -> value
-    LIST -> "(${(value as List<Any>).joinToString { it.toString() }})"
-    PARAM -> { mapper.add(subQuery); "?" }
+  mapper.params[subQuery] = predicate.param
 
-  }
-
-  return "$subQuery ${predicate.comp.sql()} $param"
+  return """"$subQuery" ${predicate.comp.sql()} ?"""
 }
 
 fun OperType.sql() = when(this) {

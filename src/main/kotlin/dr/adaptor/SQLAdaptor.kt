@@ -2,8 +2,10 @@ package dr.adaptor
 
 import com.zaxxer.hikari.HikariDataSource
 import dr.io.Instructions
+import dr.query.ParamType
 import dr.query.QSelect
 import dr.query.QTree
+import dr.schema.FieldType
 import dr.schema.FieldType.*
 import dr.schema.Schema
 import dr.schema.tabular.ID
@@ -13,7 +15,9 @@ import dr.schema.tabular.Tables
 import dr.spi.IAdaptor
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
+import dr.spi.Rows
 import java.sql.Connection
+import java.sql.ResultSet
 import java.sql.SQLException
 import java.sql.Statement
 
@@ -73,7 +77,7 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
           seq++
         }
 
-        print("  SQL -> $sql $values")
+        print("  SQL: $sql $values")
         val affectedRows = stmt.executeUpdate()
         if (affectedRows == 0)
           throw SQLException("Instruction failed, no rows affected - $inst")
@@ -88,7 +92,9 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
       conn.commit()
       println("TX-COMMIT")
     } catch (ex: Exception) {
+      println()
       conn.rollback()
+      throw ex
     } finally {
       conn.close()
     }
@@ -96,33 +102,43 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
 
   override fun compile(query: QTree): IQueryExecutor {
     val table = tables.get(query.entity)
-    val mapper = mutableListOf<String>()
-    val mainSql = query.run { table.select(mapper, select, filter, limit, page) }
-
-    val main = SubQuery(mainSql, table, query.select, mapper)
+    val mapper = query.run { table.select(select, filter, limit, page) }
+    val main = SubQuery(mapper, query.select)
 
     return MultiQueryExecutor(ds, main, emptyMap())
   }
 }
 
 /* ------------------------- helpers -------------------------*/
-typealias Rows = List<Map<String, Any?>>
+fun ResultSet.getField(seq: Int, type: FieldType): Any? = when(type) {
+  TEXT -> getString(seq)
+  INT -> getInt(seq)
+  LONG -> getLong(seq)
+  FLOAT -> getFloat(seq)
+  DOUBLE -> getDouble(seq)
+  BOOL -> getBoolean(seq)
+  TIME -> getTime(seq).toLocalTime()
+  DATE -> getDate(seq).toLocalDate()
+  DATETIME -> getTimestamp(seq).toLocalDateTime()
+}
 
-private class SubQuery(val sql: String, val table: Table, val select: QSelect, val mapper: List<String>) {
+private class SubQuery(val mapper: QueryMapper, val select: QSelect) {
   fun exec(conn: Connection, params: Map<String, Any>): Rows {
-    println("SUB-QUERY: $sql")
-    val stmt = conn.prepareStatement(testQuery())
+    print("SUB-QUERY: ${mapper.sql} [")
+    val stmt = conn.prepareStatement(mapper.sql)
 
     var seq = 1
-    for(param in mapper) {
-      val value = params.getValue(param)
+    for((name, param) in mapper.params) {
+      val value = if (param.type == ParamType.PARAM) params.getValue(name) else param.value
+      print(value)
       stmt.setObject(seq, value)
+
+      if (seq < mapper.params.size) print(", ")
       seq++
     }
+    println("]")
 
     val rs = stmt.executeQuery()
-    println("(columns=${rs.metaData.columnCount})")
-
     val result = mutableListOf<Map<String, Any?>>()
     while (rs.next()) {
       val row = linkedMapOf<String, Any?>()
@@ -131,23 +147,20 @@ private class SubQuery(val sql: String, val table: Table, val select: QSelect, v
       var rSeq = 1
       row[SQL_ID] = rs.getLong(rSeq)
 
-      select.fields.forEach {
+      val fields = if (select.hasAll) {
+        mapper.schema.fields.map { it.key }
+      } else {
+        select.fields.map { it.name }
+      }
+
+      fields.forEach {
         rSeq++
-        val sField = table.sEntity.fields.getValue(it.name)
-        row[it.name] = when(sField.type) {
-          TEXT -> rs.getString(rSeq)
-          INT -> rs.getInt(rSeq)
-          LONG -> rs.getLong(rSeq)
-          FLOAT -> rs.getFloat(rSeq)
-          DOUBLE -> rs.getDouble(rSeq)
-          BOOL -> rs.getBoolean(rSeq)
-          TIME -> rs.getTime(rSeq).toLocalTime()
-          DATE -> rs.getDate(rSeq).toLocalDate()
-          DATETIME -> rs.getTimestamp(rSeq).toLocalDateTime()
-        }
+        val sField = mapper.schema.fields.getValue(it)
+        row[it] = rs.getField(rSeq, sField.type)
       }
     }
 
+    println("  $result")
     return result
   }
 }
@@ -155,9 +168,9 @@ private class SubQuery(val sql: String, val table: Table, val select: QSelect, v
 private class MultiQueryExecutor(val ds: HikariDataSource, val main: SubQuery, val queries: Map<String, SubQuery>): IQueryExecutor {
   override fun exec(params: Map<String, Any>): IResult {
     ds.connection.use { conn ->
-      //for ((rel, sQuery) in queries)
       val mRes = main.exec(conn, params)
-      println(mRes)
+
+      //for ((rel, sQuery) in queries)
 
       return SQLResult(mRes, emptyMap())
     }
@@ -169,8 +182,8 @@ private class SQLResult(val main: Rows, val rs: Map<String, Rows>): IResult {
     TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
   }
 
-  override fun raw(): Map<String, Any?> {
-    return emptyMap()
+  override fun raw(): Rows {
+    return main
   }
 }
 

@@ -15,7 +15,9 @@ interface IQueryExecutor {
   fun exec(vararg params: Pair<String, Any>) = exec(params.toMap())
 }
 
+typealias Rows = List<Map<String, Any?>>
+
 interface IResult {
   fun <T: Any> get(name: String): T
-  fun raw(): Map<String, Any?>
+  fun raw(): Rows
 }

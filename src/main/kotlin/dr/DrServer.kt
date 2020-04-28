@@ -204,10 +204,21 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
   fun query(ctx: Context) {
     val res = try {
+      val isInline = ctx.queryParam("inline") != null
       val isCompile = ctx.queryParam("compile") != null
       val exec = ctx.queryParam("exec")
 
       when {
+        isInline -> {
+          val (query, access) = qService.compile(ctx.body())
+          // TODO: check access control from query.accessed
+
+          val res = query.exec()
+          mutableMapOf<String, Any>("@type" to "ok").apply {
+            this["data"] = res.raw()
+          }
+        }
+
         isCompile -> {
           val uuid = ctx.body().hash()
           if (queries[uuid] == null)
@@ -218,12 +229,14 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
         exec != null -> {
           val (query, access) = queries[exec] ?: throw Exception("Compiled query not found! - ($exec)")
-          // TODO: check access control from qExec.accessed
+          // TODO: check access control from query.accessed
 
           val params = JsonParser.readMap(ctx.body())
           val res = query.exec(params)
 
-          mapOf("@type" to "ok").plus(res.raw())
+          mutableMapOf<String, Any>("@type" to "ok").apply {
+            this["data"] = res.raw()
+          }
         }
 
         else -> throw Exception("Unrecognized query command!")
