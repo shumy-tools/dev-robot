@@ -1,22 +1,27 @@
 package dr.adaptor
 
 import com.zaxxer.hikari.HikariDataSource
+import dr.io.Delete
+import dr.io.Insert
 import dr.io.Instructions
-import dr.query.ParamType
-import dr.query.QSelect
+import dr.io.Update
+import dr.query.QRelation
 import dr.query.QTree
 import dr.schema.FieldType
 import dr.schema.FieldType.*
+import dr.schema.SEntity
 import dr.schema.Schema
-import dr.schema.tabular.ID
-import dr.schema.tabular.TParser
+import dr.schema.tabular.*
 import dr.schema.tabular.Table
-import dr.schema.tabular.Tables
 import dr.spi.IAdaptor
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
 import dr.spi.Rows
-import java.sql.Connection
+import org.jooq.*
+import org.jooq.conf.RenderQuotedNames
+import org.jooq.conf.Settings
+import org.jooq.impl.DSL.table
+import org.jooq.impl.DSL.using
 import java.sql.ResultSet
 import java.sql.SQLException
 import java.sql.Statement
@@ -31,12 +36,15 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
     it.addDataSourceProperty("prepStmtCacheSqlLimit", 2048)
   }
 
+  private val settings = Settings()
+    .withRenderQuotedNames(RenderQuotedNames.ALWAYS)
+    .withExecuteLogging(true)
+
+  private val db = using(ds, SQLDialect.H2, settings)
+
   init {
-    ds.connection.use { conn ->
-      val stmt = conn.prepareStatement(testQuery())
-      if(!stmt.executeQuery().next())
-        throw SQLException("Database connection failed! - ($url)")
-    }
+    if (db.selectOne().fetch().isEmpty())
+      throw SQLException("Database connection failed! - ($url)")
   }
 
   fun createSchema() {
@@ -60,57 +68,85 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
   override fun tables(): Tables = tables
 
   override fun commit(instructions: Instructions) {
-    val conn = ds.connection
-    try {
-      conn.autoCommit = false
+    db.transaction { conf ->
       println("TX-START")
-
       instructions.exec { inst ->
-        val sql = inst.sql()
-        val stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)
+        val tableName = inst.table.sqlName()
+        when (inst) {
+          is Insert -> {
+            val fields = inst.data.keys.map { fn(propSqlName(it)) }
+            val refs = inst.resolvedRefs.keys.map { fn(inst.table.refSqlName(it)) }
+            val insert = using(conf)
+              .insertInto(table(tableName), fields.plus(refs))
+              .values(inst.data.values.plus(inst.resolvedRefs.values))
+              //.returning(fn(SQL_ID))
 
-        val values = mutableListOf<Any?>()
-        var seq = 1
-        for (value in inst.data.values.plus(inst.resolvedRefs.values)) {
-          values.add(value)
-          stmt.setObject(seq, value)
-          seq++
+            print("  ${insert.sql}")
+
+            // FIX: jOOQ is not returning the generated key!!!
+            //val id = insert.fetchOne() as Long? ?: throw Exception("Insert failed! No return $ID!")
+
+            val stmt = conf.connectionProvider().acquire().prepareStatement(insert.sql, Statement.RETURN_GENERATED_KEYS)
+
+            var seq = 1
+            for (value in inst.data.values.plus(inst.resolvedRefs.values)) {
+              stmt.setObject(seq, value)
+              seq++
+            }
+
+            val affectedRows = stmt.executeUpdate()
+            if (affectedRows == 0)
+              throw Exception("Instruction failed, no rows affected!")
+
+            val genKeys = stmt.generatedKeys
+            val id = if (genKeys.next()) genKeys.getLong(1) else 0L
+            println(" - $ID=$id")
+
+            id
+          }
+
+          is Update -> {
+            var dbUpdate = using(conf).update(table(tableName)) as UpdateSetMoreStep<*>
+            inst.data.forEach { dbUpdate = dbUpdate.set(fn(propSqlName(it.key)), it.value) }
+            inst.resolvedRefs.forEach { dbUpdate = dbUpdate.set(fn(inst.table.refSqlName(it.key)), it.value) }
+            val update = dbUpdate.where(fn(SQL_ID).eq(inst.id))
+
+            println("  ${update.sql}")
+            val affectedRows = update.execute()
+            if (affectedRows == 0)
+              throw Exception("Instruction failed, no rows affected!")
+
+            0L
+          }
+
+          is Delete -> {
+            // TODO: disable stuff?
+            0L
+          }
         }
-
-        print("  SQL: $sql $values")
-        val affectedRows = stmt.executeUpdate()
-        if (affectedRows == 0)
-          throw SQLException("Instruction failed, no rows affected - $inst")
-
-        val genKeys = stmt.generatedKeys
-        val id = if (genKeys.next()) genKeys.getLong(1) else 0L
-        if (id != 0L) println(" - $ID=$id") else println()
-
-        id
       }
-
-      conn.commit()
       println("TX-COMMIT")
-    } catch (ex: Exception) {
-      println()
-      conn.rollback()
-      throw ex
-    } finally {
-      conn.close()
     }
   }
 
   override fun compile(query: QTree): IQueryExecutor {
-    val table = tables.get(query.entity)
-    val mapper = query.run { table.select(select, filter, limit, page) }
-    val main = SubQuery(mapper, query.select)
+    // process main query
+    val mTable = tables.get(query.entity)
+    val mQuery = query.run { db.select(mTable, select, filter, limit, page) }
+    val mSubQuery = SubQuery(mTable, mQuery)
 
-    return MultiQueryExecutor(ds, main, emptyMap())
+    // process sub-queries
+    val queries = linkedMapOf<String, SubQuery>()
+    for (qRel in query.select.relations) {
+      queries[qRel.name] = tables.createSubQuery(db, mSubQuery, qRel)
+    }
+
+    return MultiQueryExecutor(ds, mSubQuery, queries)
   }
 }
 
 /* ------------------------- helpers -------------------------*/
-fun ResultSet.getField(seq: Int, type: FieldType): Any? = when(type) {
+private fun ResultSet.getField(seq: Int, type: FieldType): Any? = when(type) {
   TEXT -> getString(seq)
   INT -> getInt(seq)
   LONG -> getLong(seq)
@@ -122,69 +158,90 @@ fun ResultSet.getField(seq: Int, type: FieldType): Any? = when(type) {
   DATETIME -> getTimestamp(seq).toLocalDateTime()
 }
 
-private class SubQuery(val mapper: QueryMapper, val select: QSelect) {
-  fun exec(conn: Connection, params: Map<String, Any>): Rows {
-    print("SUB-QUERY: ${mapper.sql} [")
-    val stmt = conn.prepareStatement(mapper.sql)
+private fun Tables.createSubQuery(db: DSLContext, topQuery: SubQuery, qRel: QRelation): SubQuery {
+  //val sRelation = topTable.sEntity.rels[qRel.name]!!
+  val rTable = get(qRel.entity)
 
-    var seq = 1
-    for((name, param) in mapper.params) {
-      val value = if (param.type == ParamType.PARAM) params.getValue(name) else param.value
-      print(value)
-      stmt.setObject(seq, value)
-
-      if (seq < mapper.params.size) print(", ")
-      seq++
+  /*if (!sRelation.isCollection) {
+    if (sRelation.type == RelationType.CREATE && (sRelation.isUnique || sRelation.ref.type == EntityType.TRAIT)) {
+      // A {<rel>: <fields>}
+      // filter-each ("@<rel>_<field>" in ?)
+    } else {
+      // A ref_<rel> --> B
+      // match ("@ref__<rel>", "@id" in ?)
     }
-    println("]")
-
-    val rs = stmt.executeQuery()
-    val result = mutableListOf<Map<String, Any?>>()
-    while (rs.next()) {
-      val row = linkedMapOf<String, Any?>()
-      result.add(row)
-
-      var rSeq = 1
-      row[SQL_ID] = rs.getLong(rSeq)
-
-      val fields = if (select.hasAll) {
-        mapper.schema.fields.map { it.key }
-      } else {
-        select.fields.map { it.name }
-      }
-
-      fields.forEach {
-        rSeq++
-        val sField = mapper.schema.fields.getValue(it)
-        row[it] = rs.getField(rSeq, sField.type)
-      }
+  } else {
+    if (sRelation.type == RelationType.CREATE || (sRelation.type == RelationType.LINK && sRelation.isUnique && sRelation.traits.isEmpty())) {
+      // A <-- inv_<A>_<rel> B
+      // match ("@id", "@inv_<A>__<rel>" in ?)
+    } else {
+      // A <-- [inv ref] --> B
+      // match ("@id", JOIN, "@id" in ?)
     }
+  }*/
 
-    println("  $result")
+  val includeIdFilter = topQuery.hasRefTo(rTable.sEntity)
+  val sQuery = qRel.run { db.select(rTable, select, filter, limit, page, includeIdFilter) }
+  return SubQuery(rTable, sQuery, includeIdFilter)
+}
+
+private class SubQueryResult {
+  class Row {
+    val selected = linkedMapOf<String, Any?>()
+    val directRefs = linkedMapOf<String, Pair<SEntity, Long?>>()
+
+    override fun toString() = selected.plus(directRefs.map { it.key to "(${it.value.first.name}:${it.value.second})" }).toString()
+  }
+
+  val ids = mutableSetOf<Long>()
+  val rows = linkedMapOf<Long, Row>()
+}
+
+private class SubQuery(val tlb: Table, val query: Select<*>, val includeIdFilter: Boolean = false) {
+  val sEntity: SEntity
+    get() = tlb.sEntity
+
+  lateinit var idFilter: List<Long>
+
+  fun hasRefTo(sEntity: SEntity): Boolean {
+    return tlb.refs.filterIsInstance<TDirectRef>().any { it.rel.ref == sEntity }
+  }
+
+  fun exec(params: Map<String, Any>): Result<*> {
+    println("SUB-QUERY: ${query.sql} ${params.values}")
+    params.forEach { query.bind(it.key, it.value) }
+
+    //if (includeIdFilter)
+    //  query.bind("id-filter", idFilter)
+
+    val result = query.fetch()
+    println(result)
+
     return result
   }
 }
 
-private class MultiQueryExecutor(val ds: HikariDataSource, val main: SubQuery, val queries: Map<String, SubQuery>): IQueryExecutor {
+private class MultiQueryExecutor(val ds: HikariDataSource, val main: SubQuery, val qTree: Map<String, SubQuery>): IQueryExecutor {
   override fun exec(params: Map<String, Any>): IResult {
-    ds.connection.use { conn ->
-      val mRes = main.exec(conn, params)
+    val mRes = main.exec(params)
 
-      //for ((rel, sQuery) in queries)
+    for ((relName, sQuery) in qTree) {
+      if (sQuery.includeIdFilter)
+        sQuery.idFilter = mRes.map { it[SQL_ID]!! as Long }
 
-      return SQLResult(mRes, emptyMap())
+      val sRes = sQuery.exec(params)
     }
+
+    return SQLResult(emptyList())
   }
 }
 
-private class SQLResult(val main: Rows, val rs: Map<String, Rows>): IResult {
+private class SQLResult(val raw: Rows): IResult {
   override fun <T : Any> get(name: String): T {
     TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
   }
 
-  override fun raw(): Rows {
-    return main
-  }
+  override fun raw() = raw
 }
 
 

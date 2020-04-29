@@ -1,12 +1,21 @@
 package dr.adaptor
 
-import dr.io.*
-import dr.query.*
-import dr.query.OperType.*
 import dr.query.CompType.*
-import dr.query.ParamType.*
-import dr.schema.*
+import dr.query.OperType.AND
+import dr.query.OperType.OR
+import dr.query.ParamType.PARAM
+import dr.query.QExpression
+import dr.query.QPredicate
+import dr.query.QSelect
+import dr.schema.FieldType
 import dr.schema.tabular.*
+import org.jooq.Condition
+import org.jooq.DSLContext
+import org.jooq.Field
+import org.jooq.Select
+import org.jooq.impl.DSL
+import org.jooq.impl.DSL.param
+import org.jooq.impl.DSL.table
 
 /* ------------------------- schema -------------------------*/
 const val SQL_ID = "@id"
@@ -16,7 +25,7 @@ fun Table.sqlName(): String {
   return if (sRelation == null) entity else "${entity}__${sRelation.name}"
 }
 
-fun Table.propSqlName(prop: TProperty) = when(prop) {
+fun propSqlName(prop: TProperty) = when(prop) {
   is TType -> "@type"
   is TEmbedded -> "@${prop.rel.name}"
   is TField -> prop.field.name
@@ -87,89 +96,64 @@ fun Table.refColumn(ref: TRef): String {
   return """"${refSqlName(ref)}" BIGINT$unique"""
 }
 
-
-/* ------------------------- data -------------------------*/
-fun Instruction.sql(): String {
-  val tableName = table.sqlName()
-  val separator = if (data.isNotEmpty() && resolvedRefs.isNotEmpty()) "," else ""
-
-  return when (this) {
-    is Insert -> {
-      val number = data.size + resolvedRefs.size
-      val nInputs = (1..number).joinToString { "?" }
-
-      val fields = data.keys.joinToString { """"${table.propSqlName(it)}"""" }
-      val refs = resolvedRefs.keys.joinToString { """"${table.refSqlName(it)}"""" }
-      "INSERT INTO $tableName($fields$separator $refs) VALUES ($nInputs);"
-    }
-
-    is Update -> {
-      val fields = data.keys.joinToString { """"${table.propSqlName(it)}" = ?""" }
-      val refs = resolvedRefs.keys.joinToString { """"${table.refSqlName(it)}" = ?""" }
-      """UPDATE $tableName SET $fields$separator $refs WHERE "$SQL_ID" = ${id};"""
-    }
-
-    is Delete -> {
-      // TODO: disable stuff?
-      ""
-    }
-  }
-}
-
-
 /* ------------------------- query -------------------------*/
-class QueryMapper(val schema: SEntity) {
-  lateinit var sql: String
-  val params = linkedMapOf<String, QParam>()
-}
+fun fn(fName: String): Field<Any> = DSL.field(DSL.name(fName))
 
-fun testQuery(): String = "SELECT 1"
-
-fun Table.select(selection: QSelect, filter: QExpression?, limit: Int?, page: Int?): QueryMapper {
-  val mapper = QueryMapper(sEntity)
-
-  val selectionSQL = if (selection.hasAll) {
-    props.joinToString { """"${propSqlName(it)}"""" }
+fun DSLContext.select(tlb: Table, selection: QSelect, filter: QExpression?, limit: Int?, page: Int?, includeIdFilter: Boolean = false): Select<*> {
+  val allFields = if (selection.hasAll) {
+    tlb.props.map { fn(propSqlName(it)) }
   } else {
-    selection.fields.joinToString { """"${it.name}"""" }
+    selection.fields.map { fn(it.name) }
   }
 
-  val filterSQL = if (filter != null) "WHERE ${expression(mapper, filter)}" else ""
+  val directRefs = tlb.refs.filterIsInstance<TDirectRef>().map { fn(tlb.refSqlName(it)) }
+  val dbSelect = select(
+    listOf(fn(SQL_ID))
+      .plus(allFields)
+      .plus(directRefs))
+    .from(table(tlb.sqlName()))
 
-  val limitSQL = if (limit != null) " LIMIT $limit" else ""
-  val limitAndPageSQL = if (page != null) "$limitSQL OFFSET ${page * limit!!}" else limitSQL
+  val dbFilter = mutableListOf<Condition>()
+  if (filter != null) dbFilter.add(expression(tlb, filter))
+  //if (includeIdFilter) dbFilter.add(fn(SQL_ID).`in`(idFields as java.util.Collection<*>))
 
-  mapper.sql = """SELECT "$SQL_ID", $selectionSQL FROM ${sqlName()} $filterSQL$limitAndPageSQL;"""
-  return mapper
+  val dbFiltered = dbSelect.where(dbFilter)
+  return when {
+    page != null -> dbFiltered.limit(limit).offset(page * limit!!)
+    limit != null -> dbFiltered.limit(limit)
+    else -> dbFiltered
+  }
 }
 
-fun Table.expression(mapper: QueryMapper, expr: QExpression): String = if (expr.predicate != null) {
-  filter(mapper, expr.predicate)
+fun DSLContext.expression(tlb: Table, expr: QExpression): Condition = if (expr.predicate != null) {
+  filter(tlb, expr.predicate)
 } else {
-  "(${expression(mapper, expr.left!!)} ${expr.oper!!.sql()} ${expression(mapper, expr.right!!)})"
+  val left = expression(tlb, expr.left!!)
+  val right = expression(tlb, expr.right!!)
+
+  when(expr.oper!!) {
+    OR -> left.or(right)
+    AND -> left.and(right)
+  }
 }
 
 @Suppress("UNCHECKED_CAST")
-fun Table.filter(mapper: QueryMapper, predicate: QPredicate): String {
+fun DSLContext.filter(tlb: Table, predicate: QPredicate): Condition {
   // TODO: build a sub-query path!
   val subQuery = predicate.path.first().name
 
-  mapper.params[subQuery] = predicate.param
+  //mapper.params[subQuery] = predicate.param
 
-  return """"$subQuery" ${predicate.comp.sql()} ?"""
-}
+  val path = fn(subQuery)
+  val value = if (predicate.param.type == PARAM) param(predicate.param.value as String) else predicate.param.value
 
-fun OperType.sql() = when(this) {
-  OR -> "OR"
-  AND -> "AND"
-}
-
-fun CompType.sql() = when(this) {
-  EQUAL -> "="
-  DIFFERENT -> "!="
-  MORE -> ">"
-  LESS -> "<"
-  MORE_EQ -> ">="
-  LESS_EQ -> "<="
-  IN -> "IN"
+  return when(predicate.comp) {
+    EQUAL -> path.eq(value)
+    DIFFERENT -> path.ne(value)
+    MORE -> path.greaterThan(value)
+    LESS -> path.lessThan(value)
+    MORE_EQ -> path.greaterOrEqual(value)
+    LESS_EQ -> path.lessOrEqual(value)
+    IN -> path.`in`(value)
+  }
 }

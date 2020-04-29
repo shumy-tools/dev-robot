@@ -6,6 +6,9 @@ import dr.schema.SRelation
 import dr.schema.Schema
 
 const val ID = "@id"
+const val TYPE = "@type"
+const val STATE = "@state"
+const val SUPER = "@super"
 
 data class Tables(val schema: Schema, private val tables: Map<String, Table>) {
   val size: Int
@@ -15,7 +18,7 @@ data class Tables(val schema: Schema, private val tables: Map<String, Table>) {
 
   fun get(ent: String): Table {
     val tName = tableNameFrom(ent)
-    return tables.getValue(tName)
+    return tables[tName] ?: throw Exception("No table found: $tName")
   }
 
   fun get(ent: SEntity, rel: SRelation? = null): Table {
@@ -42,15 +45,11 @@ data class Table(val sEntity: SEntity, val sRelation: SRelation? = null) {
 }
 
 sealed class TProperty {
-  private val name: String by lazy {
-    when (this) {
-      is TType -> "@type"
-      is TEmbedded -> "@${rel.name}"
-      is TField -> field.name
-    }
+  override fun toString() = when(this) {
+    is TType -> TYPE
+    is TEmbedded -> "@${rel.name}"
+    is TField -> field.name
   }
-
-  override fun toString() = name
 }
 
   object TType: TProperty()
@@ -72,15 +71,11 @@ sealed class TRef {
     }
   }
 
-  private val name: String by lazy {
-    when (this) {
-      is TSuperRef -> "@super"
-      is TDirectRef -> if (!includeRelName) "@ref-to-${refEntity.name}" else "@ref-to-${refEntity.name}-${rel.name}"
-      is TInverseRef -> if (!includeRelName) "@inv-to-${refEntity.name}" else "@inv-to-${refEntity.name}-${rel.name}"
-    }
+  override fun toString() = when(this) {
+    is TSuperRef -> SUPER
+    is TDirectRef -> if (!includeRelName) "@ref-to-${refEntity.name}" else "@ref-to-${refEntity.name}-${rel.name}"
+    is TInverseRef -> if (!includeRelName) "@inv-to-${refEntity.name}" else "@inv-to-${refEntity.name}-${rel.name}"
   }
-
-  override fun toString() = name
 }
 
   class TSuperRef(override val refEntity: SEntity): TRef()

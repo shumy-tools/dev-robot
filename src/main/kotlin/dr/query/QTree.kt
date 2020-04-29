@@ -66,7 +66,7 @@ data class QTree(
   )
 
     data class QField(
-      val entity: String,
+      val table: String,
       val name: String,
 
       val sort: SortType,

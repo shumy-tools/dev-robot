@@ -15,10 +15,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 
 /* ------------------------- api -------------------------*/
-class QueryService(
-  private val schema: Schema,
-  private val adaptor: IAdaptor
-) {
+class QueryService(private val schema: Schema, private val adaptor: IAdaptor) {
 
   fun compile(query: String): Pair<IQueryExecutor, IReadAccess> {
     val lexer = QueryLexer(CharStreams.fromString(query))
@@ -27,7 +24,7 @@ class QueryService(
     val tree = parser.query()
 
     val walker = ParseTreeWalker()
-    val listener = DrQueryListener(this.schema)
+    val listener = DrQueryListener(schema)
 
     walker.walk(listener, tree)
     //println("tokens: ${tokens.tokens.map { it.text }}")
@@ -129,7 +126,7 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
     val filter = qline.filter()?.let { processExpr(prefix, it.expr(), sEntity) }
 
     val select = QSelect(hasAll, fields, relations)
-    return QRelation(lEntity.name, prefix.last(), filter, limit, page, select)
+    return QRelation(sEntity.name, prefix.last(), filter, limit, page, select)
   }
 
   private fun processRelations(prefix: List<String>, relations: List<QueryParser.RelationContext>, sEntity: SEntity): List<QRelation> {

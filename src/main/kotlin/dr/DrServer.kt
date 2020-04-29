@@ -122,6 +122,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
       mapOf("@type" to "ok").plus(dEntity.checkFields())
     } catch (ex: Exception) {
+      ex.printStackTrace()
       mapOf("@type" to "error", "msg" to ex.message)
     }
 
@@ -146,6 +147,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
       mapOf("@type" to "ok").plus(instructions.output)
     } catch (ex: Exception) {
+      ex.printStackTrace()
       mapOf("@type" to "error", "msg" to ex.message)
     }
 
@@ -171,6 +173,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
       mapOf("@type" to "ok").plus(instructions.output)
     } catch (ex: Exception) {
+      ex.printStackTrace()
       mapOf("@type" to "error", "msg" to ex.message)
     }
 
@@ -195,6 +198,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
       mapOf("@type" to "ok")
     } catch (ex: Exception) {
+      ex.printStackTrace()
       mapOf("@type" to "error", "msg" to ex.message)
     }
 
@@ -233,7 +237,6 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
           val params = JsonParser.readMap(ctx.body())
           val res = query.exec(params)
-
           mutableMapOf<String, Any>("@type" to "ok").apply {
             this["data"] = res.raw()
           }

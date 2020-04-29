@@ -5,6 +5,8 @@ import dr.ctx.Context
 import dr.io.DEntity
 import dr.schema.SEntity
 import dr.schema.SMachine
+import dr.schema.tabular.ID
+import dr.schema.tabular.STATE
 import dr.spi.IQueryExecutor
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty1
@@ -15,7 +17,7 @@ fun buildMachine(sEntity: SEntity): Machine<*, *> {
   val instance = sMachine.clazz.createInstance()
 
   instance.sMachine = sMachine
-  instance.stateQuery = Context.query("${sEntity.name} | @id == ?id | { @state }")
+  instance.stateQuery = Context.query("${sEntity.name} | $ID == ?id | { $STATE }")
 
   return instance
 }
@@ -45,7 +47,7 @@ open class Machine<S: Enum<*>, E: Any> {
   @Suppress("UNCHECKED_CAST")
   fun onEvent(id: Long, inEvt: Any) {
     val event = inEvt as E
-    val state = stateQuery.exec("id" to id).get<String>("@state")
+    val state = stateQuery.exec("id" to id).get<String>(STATE)
 
     val evtType = event.javaClass.kotlin
     val states = events[evtType] ?: throw Exception("StateMachine event '$event' not found! - (${this.javaClass.kotlin.qualifiedName})")
@@ -58,7 +60,7 @@ open class Machine<S: Enum<*>, E: Any> {
   }
 
   fun onUpdate(id: Long, entity: DEntity) {
-    val state = stateQuery.exec("id" to id).get<String>("@state")
+    val state = stateQuery.exec("id" to id).get<String>(STATE)
     //TODO: what events to fire?
   }
 

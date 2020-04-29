@@ -3,6 +3,8 @@ package dr.query
 import dr.schema.FieldType
 import dr.schema.SEntity
 import dr.schema.SField
+import dr.schema.tabular.ID
+import dr.schema.tabular.TYPE
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
 import kotlin.reflect.KClass
@@ -33,13 +35,18 @@ class QueryExecutorWithValidator(private val native: IQueryExecutor, parameters:
     return native.exec(params)
   }
 
-  private fun check(entity: SEntity, field: String, comp: CompType, value: Any): Boolean {
-    val eField = entity.fields[field] ?: (entity.rels[field] ?: throw Exception("Bug! Expected '${entity.name}.$field'"))
-    return if (eField is SField) {
-      fieldTable.check(eField.type, comp, value.javaClass.kotlin)
-    } else {
-      // TODO: check relation constraints?
-      false
+  private fun check(entity: SEntity, field: String, comp: CompType, value: Any) = when (field) {
+    // TODO: insert other special types
+    ID -> fieldTable.check(FieldType.LONG, comp, value.javaClass.kotlin)
+    TYPE -> fieldTable.check(FieldType.TEXT, comp, value.javaClass.kotlin)
+    else -> {
+      val eField = entity.fields[field] ?: (entity.rels[field] ?: throw Exception("Bug! Expected '${entity.name}.$field'"))
+      if (eField is SField) {
+        fieldTable.check(eField.type, comp, value.javaClass.kotlin)
+      } else {
+        // TODO: check relation constraints?
+        false
+      }
     }
   }
 }
@@ -67,5 +74,6 @@ private val fieldTable = CompatibilityTable().apply {
   set(FieldType.TEXT, CompType.DIFFERENT, String::class)
   set(FieldType.TEXT, CompType.IN, List::class)
 
-  set(FieldType.INT, CompType.EQUAL, Long::class)
+  set(FieldType.INT, CompType.EQUAL, Int::class)
+  set(FieldType.LONG, CompType.EQUAL, Long::class)
 }
