@@ -31,6 +31,12 @@ data class Table(val sEntity: SEntity, val sRelation: SRelation? = null) {
   val props: List<TProperty> = mutableListOf()
   val refs: List<TRef> = mutableListOf()
 
+  val directRefs: Map<String, TDirectRef> by lazy {
+    refs.filterIsInstance<TDirectRef>().map { it.rel.name to it }.toMap()
+  }
+
+  //val inverseRefs: List<TInverseRef> by lazy { refs.filterIsInstance<TInverseRef>() }
+
   val name: String by lazy {
     tableNameFrom(sEntity.name, sRelation?.name)
   }
@@ -45,13 +51,37 @@ data class Table(val sEntity: SEntity, val sRelation: SRelation? = null) {
 }
 
 sealed class TProperty {
-  override fun toString() = when(this) {
-    is TType -> TYPE
-    is TEmbedded -> "@${rel.name}"
-    is TField -> field.name
+  val jType: Class<out Any> by lazy {
+    when(this) {
+      is TID -> java.lang.Long::class.java
+      is TType -> java.lang.String::class.java
+      is TEmbedded -> java.lang.String::class.java
+      is TField -> field.jType
+    }
   }
+
+  val name: String by lazy {
+    when(this) {
+      is TID -> ID
+      is TType -> TYPE
+      is TEmbedded -> "@${rel.name}"
+      is TField -> field.name
+    }
+  }
+
+  val isUnique: Boolean by lazy {
+    when (this) {
+      is TID -> true
+      is TType -> false
+      is TEmbedded -> false
+      is TField -> field.isUnique
+    }
+  }
+
+  override fun toString() = name
 }
 
+  object TID: TProperty()
   object TType: TProperty()
   class TEmbedded(val rel: SRelation): TProperty()
   class TField(val field: SField): TProperty()

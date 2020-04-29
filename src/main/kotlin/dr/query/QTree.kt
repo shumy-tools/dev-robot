@@ -1,5 +1,7 @@
 package dr.query
 
+import dr.schema.SEntity
+
 enum class SortType {
   NONE, ASC, DSC
 }
@@ -25,7 +27,7 @@ enum class ParamType {
 
 // ----------- query structure -----------
 data class QTree(
-  val entity: String,
+  val entity: SEntity,
 
   val filter: QExpression?,
   val limit: Int?,
@@ -48,7 +50,7 @@ data class QTree(
     )
 
       data class QDeref(
-        val entity: String,
+        val entity: SEntity,
         val deref: DerefType,
         val name: String
       )
@@ -66,16 +68,16 @@ data class QTree(
   )
 
     data class QField(
-      val table: String,
       val name: String,
+      val jType: Class<out Any>,
 
       val sort: SortType,
       val order: Int
     )
 
     data class QRelation(
-      val entity: String,
       val name: String,
+      val ref: SEntity,
 
       val filter: QExpression?,
       val limit: Int?,

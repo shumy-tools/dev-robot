@@ -204,16 +204,16 @@ class InstructionBuilder(private val tables: Tables) {
 /* ------------------------- helpers -------------------------*/
 private fun Instruction.include(fields: List<DField>, at: SRelation? = null): Map<String, Any?> {
   return if (at != null) {
-    this.with(TEmbedded(at)) { this.addFields(fields) }
+    this.with(TEmbedded(at)) { addFields(fields) }
   } else {
-    this.addFields(fields)
+    addFields(fields)
   }
 }
 
 private fun Instruction.addFields(fields: List<DField>): Map<String, Any?> {
   val output = linkedMapOf<String, Any?>()
   for (field in fields) {
-    this.putData(TField(field.schema), field.value)
+    putData(TField(field.schema), field.value)
     if (!field.schema.isInput)
       output[field.name] = field.value
   }

@@ -90,23 +90,23 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
   override fun enterQuery(ctx: QueryParser.QueryContext) {
     // check entity name
     val eText = ctx.entity().text
-    val entity = this.schema.entities[eText] ?: throw Exception("No entity found: $eText")
+    val sEntity = this.schema.entities[eText] ?: throw Exception("No entity found: $eText")
 
     // process query
-    val rel = processQLine(listOf(eText), ctx.qline(), entity, entity)
-    this.compiled = QTree(eText, rel.filter, rel.limit, rel.page, rel.select)
+    val rel = processQLine(listOf(eText), ctx.qline(), sEntity)
+    this.compiled = QTree(sEntity, rel.filter, rel.limit, rel.page, rel.select)
   }
 
   override fun visitErrorNode(error: ErrorNode) {
     this.errors.add(error.text)
   }
 
-  private fun processQLine(prefix: List<String>, qline: QueryParser.QlineContext, lEntity: SEntity, sEntity: SEntity): QRelation {
+  private fun processQLine(prefix: List<String>, qline: QueryParser.QlineContext, refEntity: SEntity): QRelation {
     // process select fields
-    val (hasAll, fields) = processFields(prefix, qline.select().fields(), sEntity)
+    val (hasAll, fields) = processFields(prefix, qline.select().fields(), refEntity)
 
     // process select relations
-    val relations = processRelations(prefix, qline.select().relation(), sEntity)
+    val relations = processRelations(prefix, qline.select().relation(), refEntity)
 
     val limit = qline.limit()?.let {
       val limit = it.INT().text.toInt()
@@ -123,10 +123,10 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
     }
 
     // process filter paths
-    val filter = qline.filter()?.let { processExpr(prefix, it.expr(), sEntity) }
+    val filter = qline.filter()?.let { processExpr(prefix, it.expr(), refEntity) }
 
     val select = QSelect(hasAll, fields, relations)
-    return QRelation(sEntity.name, prefix.last(), filter, limit, page, select)
+    return QRelation(prefix.last(), refEntity, filter, limit, page, select)
   }
 
   private fun processRelations(prefix: List<String>, relations: List<QueryParser.RelationContext>, sEntity: SEntity): List<QRelation> {
@@ -138,7 +138,7 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
       exists(present, full)
 
       val rel = sEntity.rels[path] ?: throw Exception("Invalid relation path '${sEntity.name}.$path'")
-      processQLine(full, it.qline(), sEntity, rel.ref)
+      processQLine(full, it.qline(), rel.ref)
     }
   }
 
@@ -155,9 +155,7 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
         val full = accessed.addField(prefix, path)
         exists(present, full)
 
-        if (sEntity.fields[path] == null && !isSpecialField(sEntity, path))
-          throw Exception("Invalid field path '${sEntity.name}.$path'")
-
+        val jType = sEntity.fields[path]?.jType ?: throw Exception("Invalid field path '${sEntity.name}.$path'")
         val sortType = sortType(it.order()?.text)
 
         val order = it.INT()?.let { ord ->
@@ -167,7 +165,7 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
           order
         } ?: 0
 
-        QField(sEntity.name, path, sortType, order)
+        QField(path, jType, sortType, order)
       })
     }
   }
@@ -201,7 +199,7 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
     // process head
     val path = predicate.path().ID().text
     val full = accessed.addField(prefix, path)
-    val qDerefHead = QDeref(sEntity.name, DerefType.ONE, path)
+    val qDerefHead = QDeref(sEntity, DerefType.ONE, path)
 
     // process tail
     val fullPath = predicate.path().next()
@@ -224,7 +222,7 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
           lRelation = lEntity.rels[nextPath] ?: throw Exception("Invalid relation path '${lEntity.name}.$nextPath'")
         }
 
-        QDeref(lEntity.name, drType, nextPath)
+        QDeref(lEntity, drType, nextPath)
       }
 
       listOf(qDerefHead).plus(qDerefTail)
@@ -239,8 +237,7 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
     val compType = compType(predicate.comp().text)
     val qParam = transformParam(predicate.param())
 
-    val lEntity = schema.entities[qDeref.entity]
-    this.parameters.add(Parameter(lEntity!!, qDeref.name, compType, qParam))
+    this.parameters.add(Parameter(qDeref.entity, qDeref.name, compType, qParam))
 
     return QPredicate(qDerefList, compType, qParam)
   }
@@ -255,13 +252,6 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
 
 
 /* ------------------------- helpers -------------------------*/
-private fun isSpecialField(sEntity: SEntity, name: String) = when(name) {
-  "@id" -> true
-  "@type" -> sEntity.isSealed
-  "@state" -> sEntity.machine != null
-  else -> false
-}
-
 private fun sortType(sort: String?) = when(sort) {
   "asc" -> SortType.ASC
   "dsc" -> SortType.DSC

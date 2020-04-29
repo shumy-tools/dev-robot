@@ -28,21 +28,22 @@ class TParser(private val schema: Schema) {
   private fun SEntity.processTable(rootInst: Table) {
     processUnpackedTable(rootInst)
 
-    var topEntity = this
+    //var topEntity = this
     for (item in sealed.values) {
-      item.getOrCreateTable().also { it.addRef(TSuperRef(topEntity)) }
-      topEntity = item
+      item.getOrCreateTable()
+      //topEntity = item
     }
   }
 
   private fun SEntity.processUnpackedTable(topInst: Table) {
-    if (isSealed)
-      topInst.addProperty(TType)
-
     // --------------------------------- fields ---------------------------------------------
     // A <fields>
     for (field in fields.values) {
-      topInst.addProperty(TField(field))
+      when (field.name) {
+        ID -> topInst.addProperty(TID)
+        TYPE -> topInst.addProperty(TType)
+        else -> topInst.addProperty(TField(field))
+      }
     }
 
     // --------------------------------- allOwnedReferences ----------------------------------
@@ -53,7 +54,7 @@ class TParser(private val schema: Schema) {
       } else {
         // A ref_<rel> --> B
         oRef.ref.getOrCreateTable()
-        topInst.addRef(TDirectRef(this, oRef))
+        topInst.addRef(TDirectRef(oRef.ref, oRef))
       }
     }
 
@@ -68,7 +69,7 @@ class TParser(private val schema: Schema) {
     for (lRef in allLinkedReferences.values) {
       // A ref_<rel> --> B
       val refTable = lRef.ref.getOrCreateTable()
-      topInst.addRef(TDirectRef(this, lRef))
+      topInst.addRef(TDirectRef(lRef.ref, lRef))
       if (lRef.traits.isNotEmpty()) {
         topInst.addProperty(TEmbedded(lRef))
       }
@@ -94,6 +95,7 @@ class TParser(private val schema: Schema) {
       sRelation.ref.getOrCreateTable()
       Table(this, sRelation).also {
         tables[it.name] = it
+        it.addProperty(TID)
         it.addRef(TDirectRef(sRelation.ref, sRelation, false))
         it.addRef(TInverseRef(this, sRelation, false))
       }

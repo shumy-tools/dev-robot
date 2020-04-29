@@ -5,24 +5,17 @@ import dr.io.Delete
 import dr.io.Insert
 import dr.io.Instructions
 import dr.io.Update
-import dr.query.QRelation
-import dr.query.QTree
-import dr.schema.FieldType
-import dr.schema.FieldType.*
-import dr.schema.SEntity
+import dr.query.*
 import dr.schema.Schema
 import dr.schema.tabular.*
 import dr.schema.tabular.Table
 import dr.spi.IAdaptor
 import dr.spi.IQueryExecutor
-import dr.spi.IResult
-import dr.spi.Rows
 import org.jooq.*
 import org.jooq.conf.RenderQuotedNames
 import org.jooq.conf.Settings
-import org.jooq.impl.DSL.table
-import org.jooq.impl.DSL.using
-import java.sql.ResultSet
+import org.jooq.impl.DSL.*
+import org.jooq.impl.SQLDataType
 import java.sql.SQLException
 import java.sql.Statement
 
@@ -48,20 +41,41 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
   }
 
   fun createSchema() {
-    ds.connection.use { conn ->
-      tables.allTables().forEach { inst ->
-        val sql = inst.createSql()
-        println(sql)
-        conn.createStatement().use { it.execute(sql) }
-      }
+    val allConstraints = linkedMapOf<Table, List<Constraint>>()
+    tables.allTables().forEach { tlb ->
+      val constraints = mutableListOf<Constraint>()
+      allConstraints[tlb] = constraints
 
-      tables.allTables().forEach { inst ->
-        inst.refs.forEach { ref ->
-          val sql = inst.foreignKeySql(ref)
-          println(sql)
-          conn.createStatement().use { it.execute(sql) }
+      var dbTable = db.createTable(table(tlb.sqlName()))
+      for (prop in tlb.props) {
+        if (prop.isUnique) constraints.add(unique(prop.name))
+
+        dbTable = when(prop) {
+          is TID -> dbTable.column(prop.name, SQLDataType.BIGINT.nullable(false).identity(true))
+          is TType -> dbTable.column(prop.name, SQLDataType.VARCHAR.nullable(false))
+          is TEmbedded -> dbTable.column(prop.name, SQLDataType.JSON.nullable(prop.rel.isOptional))
+          is TField -> dbTable.column(prop.name, prop.field.type.toSqlType().nullable(prop.field.isOptional))
         }
       }
+
+      for (ref in tlb.refs) {
+        val rName = ref.fn(tlb)
+        dbTable = dbTable.column(rName, SQLDataType.BIGINT) // TODO: is nullable?
+
+        if (ref.isUnique) constraints.add(unique(rName))
+        val fk = foreignKey(rName).references(table(ref.refTable.sqlName()))
+        constraints.add(fk)
+      }
+
+      val dbFinal = dbTable.constraint(primaryKey(ID))
+      println(dbFinal.sql)
+      dbFinal.execute()
+    }
+
+    allConstraints.forEach { (tlb, cList) ->
+      val dbAlterTable = db.alterTable(table(tlb.sqlName())).add(cList)
+      println(dbAlterTable.sql)
+      dbAlterTable.execute()
     }
   }
 
@@ -74,8 +88,8 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
         val tableName = inst.table.sqlName()
         when (inst) {
           is Insert -> {
-            val fields = inst.data.keys.map { fn(propSqlName(it)) }
-            val refs = inst.resolvedRefs.keys.map { fn(inst.table.refSqlName(it)) }
+            val fields = inst.data.keys.map { it.fn() }
+            val refs = inst.resolvedRefs.keys.map { it.fn(inst.table) }
             val insert = using(conf)
               .insertInto(table(tableName), fields.plus(refs))
               .values(inst.data.values.plus(inst.resolvedRefs.values))
@@ -107,9 +121,9 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
 
           is Update -> {
             var dbUpdate = using(conf).update(table(tableName)) as UpdateSetMoreStep<*>
-            inst.data.forEach { dbUpdate = dbUpdate.set(fn(propSqlName(it.key)), it.value) }
-            inst.resolvedRefs.forEach { dbUpdate = dbUpdate.set(fn(inst.table.refSqlName(it.key)), it.value) }
-            val update = dbUpdate.where(fn(SQL_ID).eq(inst.id))
+            inst.data.forEach { dbUpdate = dbUpdate.set(it.key.fn(), it.value) }
+            inst.resolvedRefs.forEach { dbUpdate = dbUpdate.set(it.key.fn(inst.table), it.value) }
+            val update = dbUpdate.where(idFn().eq(inst.id))
 
             println("  ${update.sql}")
             val affectedRows = update.execute()
@@ -130,23 +144,103 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
   }
 
   override fun compile(query: QTree): IQueryExecutor {
-    // process main query
     val mTable = tables.get(query.entity)
-    val mQuery = query.run { db.select(mTable, select, filter, limit, page) }
-    val mSubQuery = SubQuery(mTable, mQuery)
+    val mStruct = query.run { mTable.select(select, filter, limit, page) }
+    return MultiQueryExecutor(mStruct)
+  }
 
-    // process sub-queries
-    val queries = linkedMapOf<String, SubQuery>()
-    for (qRel in query.select.relations) {
-      queries[qRel.name] = tables.createSubQuery(db, mSubQuery, qRel)
+  private fun Table.select(selection: QSelect, filter: QExpression?, limit: Int?, page: Int?): QStruct {
+    val allFields = mutableListOf<Field<Any>>()
+    joinFields(MAIN, "", selection, allFields)
+
+    val mTable = table(sqlName()).asTable(MAIN)
+    val dbSelect = db.select(allFields).from(mTable)
+
+    val dbJoin = joinTables(MAIN, dbSelect, selection, filter, limit, page)
+
+    val dbFilter = mutableListOf<Condition>()
+    if (filter != null) dbFilter.add(expression(filter))
+
+    val dbFiltered = dbJoin.where(dbFilter)
+    val dbFinal = when {
+      page != null -> dbFiltered.limit(limit).offset(page * limit!!)
+      limit != null -> dbFiltered.limit(limit)
+      else -> dbFiltered
     }
 
-    return MultiQueryExecutor(ds, mSubQuery, queries)
+    return QStruct(dbFinal)
+  }
+
+  @Suppress("UNCHECKED_CAST")
+  private fun Table.joinFields(prefix: String, alias: String, selection: QSelect, joinFields: MutableList<Field<Any>>) {
+    val idField = if (prefix == MAIN) idFn(prefix) else idFn(prefix).`as`("$alias.$ID")
+    joinFields.add(idField as Field<Any>)
+
+    val fields = if (prefix == MAIN) dbFields(selection, prefix) else dbFields(selection, prefix).map { it.`as`("$alias.${it.name}") }
+    joinFields.addAll(fields)
+
+    val refs = dbDirectRefs(selection)
+    for (qRel in refs.keys) {
+      val rTable = tables.get(qRel.ref)
+      rTable.joinFields(qRel.name, "$alias.${qRel.name}", qRel.select, joinFields)
+    }
+  }
+
+  private fun Table.joinTables(prefix: String, dbSelect: SelectJoinStep<*>, selection: QSelect, filter: QExpression?, limit: Int?, page: Int?): SelectJoinStep<*> {
+    var nextJoin = dbSelect
+
+    val refs = dbDirectRefs(selection)
+    for (dRef in refs.values) {
+      val rTable = table(dRef.rel.ref.sqlName()).asTable(dRef.rel.name)
+      val rField = dRef.fn(this, prefix)
+      val rId = idFn(dRef.rel.name)
+      nextJoin = dbSelect.join(rTable).on(rField.eq(rId))
+    }
+
+    for (qRel in refs.keys) {
+      val nextTable = tables.get(qRel.ref)
+      nextJoin = nextTable.joinTables(qRel.name, nextJoin, qRel.select, qRel.filter, qRel.limit, qRel.page)
+    }
+
+    return nextJoin
+  }
+
+  private fun Table.expression(expr: QExpression, prefix: String = MAIN): Condition = if (expr.predicate != null) {
+    filter(expr.predicate)
+  } else {
+    val left = expression(expr.left!!, prefix)
+    val right = expression(expr.right!!, prefix)
+
+    when(expr.oper!!) {
+      OperType.OR -> left.or(right)
+      OperType.AND -> left.and(right)
+    }
+  }
+
+  @Suppress("UNCHECKED_CAST")
+  private fun filter(predicate: QPredicate, prefix: String = MAIN): Condition {
+    // TODO: build a sub-query path!
+    val subQuery = predicate.path.first().name
+
+    //mapper.params[subQuery] = predicate.param
+
+    val path = field(name(prefix, subQuery))
+    val value = if (predicate.param.type == ParamType.PARAM) param(predicate.param.value as String) else predicate.param.value
+
+    return when(predicate.comp) {
+      CompType.EQUAL -> path.eq(value)
+      CompType.DIFFERENT -> path.ne(value)
+      CompType.MORE -> path.greaterThan(value)
+      CompType.LESS -> path.lessThan(value)
+      CompType.MORE_EQ -> path.greaterOrEqual(value)
+      CompType.LESS_EQ -> path.lessOrEqual(value)
+      CompType.IN -> path.`in`(value)
+    }
   }
 }
 
 /* ------------------------- helpers -------------------------*/
-private fun ResultSet.getField(seq: Int, type: FieldType): Any? = when(type) {
+/*private fun ResultSet.getField(seq: Int, type: FieldType): Any? = when(type) {
   TEXT -> getString(seq)
   INT -> getInt(seq)
   LONG -> getLong(seq)
@@ -243,5 +337,4 @@ private class SQLResult(val raw: Rows): IResult {
 
   override fun raw() = raw
 }
-
-
+*/

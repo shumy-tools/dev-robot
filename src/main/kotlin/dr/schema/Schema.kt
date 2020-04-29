@@ -2,7 +2,11 @@ package dr.schema
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import dr.io.*
+import dr.schema.tabular.TYPE
 import dr.state.Machine
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 import kotlin.reflect.KProperty1
@@ -188,7 +192,7 @@ class Schema {
 
     fun toMap(simple: Boolean): Map<String, Any> {
       val map = linkedMapOf<String, Any>()
-      if(!simple) map["@type"] = type.name.toLowerCase()
+      if(!simple) map[TYPE] = type.name.toLowerCase()
       if (sealed.isNotEmpty()) map["sealed"] = sealed.map { it.key to it.value.toMap(simple) }.toMap()
       if (fields.isNotEmpty()) map["fields"] = fields.filter { if (simple) it.value.isInput && !it.value.isOptional else true }.map { it.key to it.value.toMap(simple) }.toMap()
       if (rels.isNotEmpty()) map["rels"] = rels.filter { if (simple) it.value.isInput && !it.value.isOptional else true }.map { it.key to it.value.toMap(simple) }.toMap()
@@ -203,29 +207,42 @@ class Schema {
     }
 
 
-    sealed class SFieldOrRelation(private val property: KProperty1<Any, *>, val isOptional: Boolean) {
-      val name: String
-        get() = property.name
-
+    sealed class SFieldOrRelation(val name: String, private val property: KProperty1<Any, *>?, val isOptional: Boolean) {
       var isInput: Boolean = false
         internal set
 
       var isUnique: Boolean = false
         internal set
 
-      fun getValue(instance: Any): Any? = this.property.get(instance)
+      fun getValue(instance: Any): Any? = this.property?.get(instance)
     }
 
       class SField (
-        property: KProperty1<Any, *>,
+        name: String,
+        property: KProperty1<Any, *>?,
         val type: FieldType,
         val checks: Set<SCheck>,
 
         isOptional: Boolean
-      ): SFieldOrRelation(property, isOptional) {
+      ): SFieldOrRelation(name, property, isOptional) {
+        val jType: Class<out Any> by lazy {
+          when (type) {
+            FieldType.TEXT -> java.lang.String::class.java
+            FieldType.INT -> java.lang.Integer::class.java
+            FieldType.LONG -> java.lang.Long::class.java
+            FieldType.FLOAT -> java.lang.Float::class.java
+            FieldType.DOUBLE -> java.lang.Double::class.java
+            FieldType.BOOL -> java.lang.Boolean::class.java
+
+            FieldType.TIME -> LocalTime::class.java
+            FieldType.DATE -> LocalDate::class.java
+            FieldType.DATETIME -> LocalDateTime::class.java
+          }
+        }
+
         fun toMap(simple: Boolean): Map<String, Any> {
           val map = linkedMapOf<String, Any>()
-          map["@type"] = type.name.toLowerCase()
+          map[TYPE] = type.name.toLowerCase()
           if(!simple) map["input"] = isInput
           if(!simple) map["optional"] = isOptional
           if(!simple) map["unique"] = isUnique
@@ -235,7 +252,8 @@ class Schema {
       }
 
       class SRelation (
-        property: KProperty1<Any, *>,
+        name: String,
+        property: KProperty1<Any, *>?,
         val type: RelationType,
         val ref: SEntity,
         val traits: Map<String, SEntity>,
@@ -243,10 +261,10 @@ class Schema {
         val isCollection: Boolean,
         val isOpen: Boolean,
         isOptional: Boolean
-      ): SFieldOrRelation(property, isOptional) {
+      ): SFieldOrRelation(name, property, isOptional) {
         fun toMap(simple: Boolean): Map<String, Any> {
           val map = linkedMapOf<String, Any>()
-          map["@type"] = type.name.toLowerCase()
+          map[TYPE] = type.name.toLowerCase()
           if(!simple) map["input"] = isInput
           if(!simple) map["optional"] = isOptional
           if(!simple) map["unique"] = isUnique

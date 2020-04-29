@@ -1,5 +1,9 @@
 package dr.schema
 
+import dr.schema.tabular.ID
+import dr.schema.tabular.STATE
+import dr.schema.tabular.SUPER
+import dr.schema.tabular.TYPE
 import dr.state.Machine
 import kotlin.reflect.*
 import kotlin.reflect.full.*
@@ -86,7 +90,13 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
     }
 
     val sealed = findAnnotation<Sealed>()
-    val sEntity = SEntity(this, type, sealed != null, initFun, processListeners(), processStateMachine(type))
+    val machine = processStateMachine(type)
+    val sEntity = SEntity(this, type, sealed != null, initFun, processListeners(), machine)
+
+    // TODO: add history table also?
+    // entities with state machine have state
+    if (machine != null)
+      sEntity.addProperty(STATE, SField(STATE, null, FieldType.TEXT, emptySet(), false))
 
     tmpSchema.schema.addEntity(sEntity)
     if (ownedBy != null)
@@ -94,6 +104,9 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
 
     val tmpInputProps = mutableSetOf<KProperty1<Any, *>>()
     val allProps = memberProperties.map { it.name to (it as KProperty1<Any, *>) }.toMap()
+
+    // all entities have an id
+    sEntity.addProperty(ID, SField(ID, null, FieldType.LONG, emptySet(), false))
 
     // process ordered inputs
     for (param in this.primaryConstructor!!.parameters) {
@@ -117,6 +130,9 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
 
     // process sealed inheritance
     sealed?.let {
+      // sealed entities have type
+      sEntity.addProperty(TYPE, SField(TYPE, null, FieldType.TEXT, emptySet(), false))
+
       for (clazz in sealed.value) {
         if (tmpSchema.owned.contains(clazz.qualifiedName))
           throw Exception("Entity already owned! - (${clazz.qualifiedName} -|> ${sEntity.name}) & (${clazz.qualifiedName} owned-by ${tmpSchema.owned[clazz.qualifiedName]})")
@@ -125,6 +141,8 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
         if (xEntity.type == EntityType.MASTER)
           throw Exception("A master cannot inherit a sealed class! - (${xEntity.name} -|> ${sEntity.name})")
 
+        // sub entities have super reference
+        xEntity.addProperty(SUPER, SRelation(SUPER, null, RelationType.CREATE, sEntity, emptyMap(), false, false, false))
         sEntity.addSealed(xEntity.name, xEntity)
       }
     }
@@ -157,6 +175,9 @@ private fun KClass<*>.processStateMachine(type: EntityType): SMachine? {
 
     val states = stateClass.java.enumConstants.map { it.toString() }
     val events = evtClass.sealedSubclasses.map { it.qualifiedName!! to it }.toMap()
+
+    if (states.isEmpty())
+      throw Exception("StateMachine '${machine.value.qualifiedName}' requires at least one state!")
 
     SMachine(machine.value, states, events)
   }
@@ -210,7 +231,7 @@ private fun KProperty1<Any, *>.processFieldOrRelation(sEntity: SEntity, tmpSchem
     val type = TypeEngine.convert(this.returnType) ?: throw Exception("Unrecognized field type! - (${sEntity.name}, ${this.name})")
     val checks = this.processChecks()
 
-    SField(this, type, checks, this.returnType.isMarkedNullable)
+    SField(name, this, type, checks, this.returnType.isMarkedNullable)
   }
 
   if (this.hasAnnotation<Unique>())
@@ -331,7 +352,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
   if (rType == RelationType.CREATE && ref.type == EntityType.MASTER)
     throw Exception("Cannot create a master through a relation! - (${sEntity.name}, ${this.name})")
 
-  return SRelation(this, rType, ref, traits, isCollection, isOpen, isOptional)
+  return SRelation(name, this, rType, ref, traits, isCollection, isOpen, isOptional)
 }
 
 private fun KType.processCreateRelation(sEntity: SEntity, rel: String, isPack: Boolean, tmpSchema: TempSchema): SEntity {

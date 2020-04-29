@@ -3,6 +3,8 @@ package dr.io
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.annotation.JsonTypeName
 import dr.schema.*
+import dr.schema.tabular.STATE
+import dr.schema.tabular.TYPE
 
 class DEntity(
   val schema: SEntity,
@@ -150,7 +152,13 @@ sealed class Data
       get() = schema.name
 
     val value: Any? by lazy {
-      val value = entity.getFieldValue(schema)
+      val value = entity.getFieldValue(schema) ?: when(name) {
+        //TYPE -> // TODO: how to set this value onCreate?
+        //SUPER -> // TODO: how to set this value onCreate?
+        STATE -> if (entity.isCreate) entity.schema.machine!!.states.first() else null
+        else -> null
+      }
+
       val checks = entity.schema.checkFieldConstraints(schema, value)
       if (checks.isNotEmpty())
         throw Exception("Constraint check failed '${checks.first()}'! - (${entity.schema.name}, ${schema.name})")

@@ -20,7 +20,7 @@ data class EmbeddedAddress(val country: String, val city: String)
 @Master
 class OwnedUserType (
   val boss: String,
-  @Create val users: Pack<UserType>
+  @Create val user: Pack<UserType>
 ) {
   lateinit var inputOrDerived: String
 

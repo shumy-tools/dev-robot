@@ -122,8 +122,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
       mapOf("@type" to "ok").plus(dEntity.checkFields())
     } catch (ex: Exception) {
-      ex.printStackTrace()
-      mapOf("@type" to "error", "msg" to ex.message)
+      ex.handleError()
     }
 
     val json = JsonParser.write(res)
@@ -147,8 +146,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
       mapOf("@type" to "ok").plus(instructions.output)
     } catch (ex: Exception) {
-      ex.printStackTrace()
-      mapOf("@type" to "error", "msg" to ex.message)
+      ex.handleError()
     }
 
     val json = JsonParser.write(res)
@@ -173,8 +171,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
       mapOf("@type" to "ok").plus(instructions.output)
     } catch (ex: Exception) {
-      ex.printStackTrace()
-      mapOf("@type" to "error", "msg" to ex.message)
+      ex.handleError()
     }
 
     val json = JsonParser.write(res)
@@ -198,8 +195,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
       mapOf("@type" to "ok")
     } catch (ex: Exception) {
-      ex.printStackTrace()
-      mapOf("@type" to "error", "msg" to ex.message)
+      ex.handleError()
     }
 
     val json = JsonParser.write(res)
@@ -245,13 +241,18 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
         else -> throw Exception("Unrecognized query command!")
       }
     } catch (ex: Exception) {
-      ex.printStackTrace()
-      mapOf("@type" to "error", "msg" to ex.message)
+      ex.handleError()
     }
 
     val json = JsonParser.write(res)
     ctx.result(json).contentType("application/json")
   }
+}
+
+fun Exception.handleError(): Map<String, Any> {
+  printStackTrace()
+  val message = (if (cause != null) cause!!.message else message) ?: "Unrecognized error!"
+  return mapOf("@type" to "error", "msg" to message.replace('"', '\''))
 }
 
 fun String.hash(): String {
