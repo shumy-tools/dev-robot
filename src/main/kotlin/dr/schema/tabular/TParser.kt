@@ -6,7 +6,7 @@ import dr.schema.SRelation
 import dr.schema.Schema
 
 class TParser(private val schema: Schema) {
-  private val tables = linkedMapOf<String, Table>()
+  private val tables = linkedMapOf<String, STable>()
 
   fun transform(): Tables {
     for (ent in schema.masters.values) {
@@ -16,21 +16,21 @@ class TParser(private val schema: Schema) {
     return Tables(schema, tables)
   }
 
-  private fun SEntity.getOrCreateTable(): Table {
+  private fun SEntity.getOrCreateTable(): STable {
     var isNew = false
-    val topInst = tables.getOrPut(this.name) { isNew = true; Table(this) }
+    val topInst = tables.getOrPut(this.name) { isNew = true; STable(this) }
     if (isNew)
       processTable(topInst)
 
     return topInst
   }
 
-  private fun SEntity.processTable(rootInst: Table) {
+  private fun SEntity.processTable(rootInst: STable) {
     processUnpackedTable(rootInst)
     sealed.values.forEach { it.getOrCreateTable() }
   }
 
-  private fun SEntity.processUnpackedTable(topInst: Table) {
+  private fun SEntity.processUnpackedTable(topInst: STable) {
     // --------------------------------- fields ---------------------------------------------
     // A <fields>
     for (field in fields.values) {
@@ -79,7 +79,7 @@ class TParser(private val schema: Schema) {
     }
   }
 
-  private fun SEntity.linkTable(sRelation: SRelation): Table {
+  private fun SEntity.linkTable(sRelation: SRelation): STable {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
       val refTable = sRelation.ref.getOrCreateTable()
@@ -88,7 +88,7 @@ class TParser(private val schema: Schema) {
     } else {
       // A <-- [inv ref] --> B
       sRelation.ref.getOrCreateTable()
-      Table(this, sRelation).also {
+      STable(this, sRelation).also {
         tables[it.name] = it
         it.addProperty(TID)
         it.addRef(TDirectRef(sRelation.ref, sRelation, false))

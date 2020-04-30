@@ -5,7 +5,7 @@ import dr.schema.RefID
 import dr.schema.tabular.ID
 import dr.schema.tabular.TProperty
 import dr.schema.tabular.TRef
-import dr.schema.tabular.Table
+import dr.schema.tabular.STable
 import java.util.*
 
 class Instructions(private val all: MutableList<Instruction> = mutableListOf()) {
@@ -61,7 +61,7 @@ class Instructions(private val all: MutableList<Instruction> = mutableListOf()) 
 
 
 sealed class Instruction {
-  abstract val table: Table
+  abstract val table: STable
   abstract val action: ActionType
 
   private val _resolvedRefs = linkedMapOf<TRef, RefID>()
@@ -131,16 +131,16 @@ sealed class Instruction {
   }
 }
 
-  class Insert(override val table: Table, override val action: ActionType): Instruction() {
+  class Insert(override val table: STable, override val action: ActionType): Instruction() {
     init { setId(null) } // reserve the first position
     override fun toString() = "Insert($action) - {table=${tableText()}${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
   }
 
-  class Update(override val table: Table, val id: Long?, override val action: ActionType): Instruction() {
+  class Update(override val table: STable, val id: Long?, override val action: ActionType): Instruction() {
     init { setId(id) }
     override fun toString() = "Update($action) - {table=${tableText()}, id=$id${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
   }
 
-  class Delete(override val table: Table, override val action: ActionType): Instruction() {
+  class Delete(override val table: STable, override val action: ActionType): Instruction() {
     override fun toString() = "Delete($action) - {table=${tableText()}${resolvedRefsText()}${unresolvedRefsText()}}"
   }

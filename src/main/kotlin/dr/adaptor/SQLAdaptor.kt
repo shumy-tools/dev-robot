@@ -8,9 +8,8 @@ import dr.io.Update
 import dr.query.*
 import dr.schema.Schema
 import dr.schema.tabular.*
-import dr.schema.tabular.Table
+import dr.schema.tabular.STable
 import dr.spi.IAdaptor
-import dr.spi.IQueryExecutor
 import org.jooq.*
 import org.jooq.conf.RenderQuotedNames
 import org.jooq.conf.Settings
@@ -42,7 +41,7 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
   }
 
   fun createSchema() {
-    val allConstraints = linkedMapOf<Table, List<Constraint>>()
+    val allConstraints = linkedMapOf<STable, List<Constraint>>()
     tables.allTables().forEach { tlb ->
       val constraints = mutableListOf<Constraint>()
       allConstraints[tlb] = constraints

@@ -14,12 +14,12 @@ const val MAIN = "main"
 
 fun SEntity.sqlName() = name.replace('.', '_')
 
-fun Table.sqlName(): String {
+fun STable.sqlName(): String {
   val entity = sEntity.sqlName()
   return if (sRelation == null) entity else "${entity}__${sRelation.name}"
 }
 
-fun Table.refSqlName(tRef: TRef) = when(tRef) {
+fun STable.refSqlName(tRef: TRef) = when(tRef) {
   is TSuperRef -> SUPER
   is TDirectRef -> if (!tRef.includeRelName) "@ref" else "@ref__${tRef.rel.name}"
   is TInverseRef -> if (sRelation == null) {
@@ -31,13 +31,13 @@ fun Table.refSqlName(tRef: TRef) = when(tRef) {
   }
 }
 
-fun Table.dbFields(selection: QSelect, prefix: String = MAIN) = if (selection.hasAll) {
+fun STable.dbFields(selection: QSelect, prefix: String = MAIN) = if (selection.hasAll) {
   props.filter { it.name != ID }.map { it.fn(prefix) }
 } else {
   selection.fields.filter { it.name != ID }.map { it.fn(prefix) }
 }
 
-fun Table.dbDirectRefs(selection: QSelect) = selection.relations.mapNotNull {
+fun STable.dbDirectRefs(selection: QSelect) = selection.relations.mapNotNull {
   val value = directRefs[it.name]
   if (value != null) it to value else null
 }.toMap()
@@ -51,7 +51,7 @@ fun idFn(prefix: String? = null): Field<Long> = if (prefix != null) {
 }
 
 @Suppress("UNCHECKED_CAST")
-fun TRef.fn(tlb: Table, prefix: String? = null): Field<Long> = if (prefix != null) {
+fun TRef.fn(tlb: STable, prefix: String? = null): Field<Long> = if (prefix != null) {
   DSL.field(DSL.name(prefix, tlb.refSqlName(this)), java.lang.Long::class.java) as Field<Long>
 } else {
   DSL.field(DSL.name(tlb.refSqlName(this)), java.lang.Long::class.java) as Field<Long>

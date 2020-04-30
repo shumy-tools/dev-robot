@@ -2,12 +2,12 @@ package dr.adaptor
 
 import dr.query.*
 import dr.schema.tabular.ID
-import dr.schema.tabular.Table
+import dr.schema.tabular.STable
 import dr.schema.tabular.Tables
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
 import org.jooq.*
-import org.jooq.impl.DSL
+import org.jooq.impl.DSL.*
 
 /*if (!sRelation.isCollection) {
   if (sRelation.type == RelationType.CREATE && (sRelation.isUnique || sRelation.ref.type == EntityType.TRAIT)) {
@@ -27,44 +27,60 @@ import org.jooq.impl.DSL
   }
 }*/
 
-class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, query: QTree): IQueryExecutor {
-  private val main: Select<*>
+class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, private val qTree: QTree): IQueryExecutor {
+  private val mTable = tables.get(qTree.entity)
+  private val qTable = table(mTable.sqlName()).asTable(MAIN)
+
+  private val joinFields = mutableListOf<Field<Any>>()
+  private val joinTables = mutableListOf<Pair<Table<*>, Condition>>()
+
+  private var hasInClause = false
+  private var conditions: Condition? = null
+
   private val inverted = linkedMapOf<String, SQLQueryExecutor>()
 
   // compile QTree
   init {
-    val mTable = tables.get(query.entity)
-    main = query.run { mTable.select(select, filter, limit, page) }
+    qTree.run { mTable.compile(select, filter) }
   }
 
   override fun exec(params: Map<String, Any>): IResult {
-    println(main.sql)
-    params.forEach { main.bind(it.key, it.value) }
+    val mParams = params.toMutableMap()
+    val query = db.selectQuery().apply {
+      addSelect(joinFields)
+      addFrom(qTable)
+
+      joinTables.forEach { addJoin(it.first, it.second) }
+      if (conditions != null) {
+        // needs to rebuild conditions with included values when "IN" clause is present!
+        if (hasInClause) addConditions(mTable.expression(qTree.filter!!, params = mParams)) else addConditions(conditions)
+      }
+
+      when {
+        qTree.page != null -> { addLimit(qTree.limit); addOffset((qTree.page - 1) * qTree.limit!!) }
+        qTree.limit != null -> addLimit(qTree.limit)
+        else -> Unit
+      }
+    }
+
+    println(query.sql)
+    mParams.forEach { query.bind(it.key, it.value) }
 
     val data = TData()
-    val directResult = main.fetch()
+    val directResult = query.fetch()
     directResult.forEach { data.process(it) }
 
     return SQLResult(data)
   }
 
-  private fun Table.select(selection: QSelect, filter: QExpression?, limit: Int?, page: Int?): Select<*> {
-    val mTable = DSL.table(sqlName()).asTable(MAIN)
-    val allFields = joinFields(selection)
-
-    val dbSelect = db.select(allFields).from(mTable)
-    val dbJoin = joinTables(dbSelect, selection)
-    val dbFiltered = if (filter != null) dbJoin.where(expression(filter)) else dbJoin.where()
-
-    return when {
-      page != null -> dbFiltered.limit(limit).offset((page-1) * limit!!)
-      limit != null -> dbFiltered.limit(limit)
-      else -> dbFiltered
-    }
+  private fun STable.compile(selection: QSelect, filter: QExpression?) {
+    joinFields(selection)
+    joinTables(selection)
+    if (filter != null) conditions = expression(filter)
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun Table.joinFields(selection: QSelect, prefix: String = MAIN, alias: String = "", joinFields: MutableList<Field<Any>> = mutableListOf()): List<Field<Any>> {
+  private fun STable.joinFields(selection: QSelect, prefix: String = MAIN, alias: String = "") {
     val idField = if (prefix == MAIN) idFn(prefix) else idFn(prefix).`as`("$alias.$ID")
     joinFields.add(idField as Field<Any>)
 
@@ -74,33 +90,27 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, q
     val refs = dbDirectRefs(selection)
     for (qRel in refs.keys) {
       val rTable = tables.get(qRel.ref)
-      rTable.joinFields(qRel.select, qRel.name, "$alias.${qRel.name}", joinFields)
+      rTable.joinFields(qRel.select, qRel.name, "$alias.${qRel.name}")
     }
-
-    return joinFields
   }
 
-  private fun Table.joinTables(dbSelect: SelectJoinStep<*>, selection: QSelect, prefix: String = MAIN): SelectJoinStep<*> {
-    var nextJoin = dbSelect
-
+  private fun STable.joinTables(selection: QSelect, prefix: String = MAIN) {
     val refs = dbDirectRefs(selection)
     for (dRef in refs.values) {
-      val rTable = DSL.table(dRef.rel.ref.sqlName()).asTable(dRef.rel.name)
+      val rTable = table(dRef.rel.ref.sqlName()).asTable(dRef.rel.name)
       val rField = dRef.fn(this, prefix)
       val rId = idFn(dRef.rel.name)
-      nextJoin = dbSelect.join(rTable).on(rField.eq(rId))
+      joinTables.add(rTable to rField.eq(rId))
     }
 
     for (qRel in refs.keys) {
       val nextTable = tables.get(qRel.ref)
-      nextJoin = nextTable.joinTables(nextJoin, qRel.select, qRel.name)
+      nextTable.joinTables(qRel.select, qRel.name)
     }
-
-    return nextJoin
   }
 
-  private fun Table.expression(expr: QExpression, prefix: String = MAIN): Condition = if (expr.predicate != null) {
-    filter(expr.predicate)
+  private fun STable.expression(expr: QExpression, prefix: String = MAIN, params: MutableMap<String, Any> = mutableMapOf()): Condition = if (expr.predicate != null) {
+    predicate(expr.predicate, params)
   } else {
     val left = expression(expr.left!!, prefix)
     val right = expression(expr.right!!, prefix)
@@ -112,23 +122,31 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, q
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun filter(predicate: QPredicate, prefix: String = MAIN): Condition {
+  private fun predicate(pred: QPredicate, params: MutableMap<String, Any>, prefix: String = MAIN): Condition {
     // TODO: build a sub-query path!
-    val subQuery = predicate.path.first().name
+    val subQuery = pred.path.first().name
 
     //mapper.params[subQuery] = predicate.param
 
-    val path = DSL.field(DSL.name(prefix, subQuery))
-    val value = if (predicate.param.type == ParamType.PARAM) DSL.param(predicate.param.value as String) else predicate.param.value
+    val path = field(name(prefix, subQuery))
+    val value = if (pred.param.type == ParamType.PARAM) param(pred.param.value as String) else pred.param.value
 
-    return when(predicate.comp) {
+    return when(pred.comp) {
       CompType.EQUAL -> path.eq(value)
       CompType.DIFFERENT -> path.ne(value)
       CompType.MORE -> path.greaterThan(value)
       CompType.LESS -> path.lessThan(value)
       CompType.MORE_EQ -> path.greaterOrEqual(value)
       CompType.LESS_EQ -> path.lessOrEqual(value)
-      CompType.IN -> path.`in`(value)
+      CompType.IN -> {
+        hasInClause = true
+        if (pred.param.type == ParamType.PARAM) {
+          val inValues = params.remove(pred.param.value)
+          path.`in`(inValues)
+        } else {
+          path.`in`(value)
+        }
+      }
     }
   }
 }

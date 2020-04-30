@@ -10,24 +10,24 @@ const val TYPE = "@type"
 const val STATE = "@state"
 const val SUPER = "@super"
 
-data class Tables(val schema: Schema, private val tables: Map<String, Table>) {
+data class Tables(val schema: Schema, private val tables: Map<String, STable>) {
   val size: Int
     get() = tables.size
 
-  fun allTables(): List<Table> = tables.values.toList()
+  fun allTables(): List<STable> = tables.values.toList()
 
-  fun get(ent: String): Table {
+  fun get(ent: String): STable {
     val tName = tableNameFrom(ent)
     return tables[tName] ?: throw Exception("No table found: $tName")
   }
 
-  fun get(ent: SEntity, rel: SRelation? = null): Table {
+  fun get(ent: SEntity, rel: SRelation? = null): STable {
     val tName = tableNameFrom(ent.name, rel?.name)
     return tables.getValue(tName)
   }
 }
 
-data class Table(val sEntity: SEntity, val sRelation: SRelation? = null) {
+data class STable(val sEntity: SEntity, val sRelation: SRelation? = null) {
   val props: List<TProperty> = mutableListOf()
   val refs: List<TRef> = mutableListOf()
 
@@ -90,8 +90,8 @@ sealed class TProperty {
 sealed class TRef {
   abstract val refEntity: SEntity
 
-  val refTable: Table
-    get() = Table(refEntity)
+  val refTable: STable
+    get() = STable(refEntity)
 
   val isUnique: Boolean by lazy {
     when (this) {
