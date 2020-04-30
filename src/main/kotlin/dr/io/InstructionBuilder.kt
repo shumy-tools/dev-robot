@@ -8,18 +8,25 @@ class InstructionBuilder(private val tables: Tables) {
 
   fun create(data: DEntity): Instructions {
     val (head, tail) = data.unpack
-    val root = Insert(tables.get(head.schema), CREATE)
-    val all = processEntity(head, tail, root)
+    val rootInst = Insert(tables.get(head.schema), CREATE)
+    val all = processEntity(head, tail, rootInst)
 
-    return Instructions(root, all)
+    return Instructions(all).apply {
+      root = rootInst
+    }
   }
 
   fun update(id: Long, data: DEntity): Instructions {
-    val root = Update(tables.get(data.schema), id, UPDATE)
-    val (topInclude, bottomInclude) = processUnpackedEntity(data, root)
-    val all = topInclude.plus(root).plus(bottomInclude)
+    val rootInst = Update(tables.get(data.schema), id, UPDATE)
+    val (topInclude, bottomInclude) = processUnpackedEntity(data, rootInst)
+    val all = mutableListOf(*topInclude.toTypedArray()).apply {
+      add(rootInst)
+      addAll(bottomInclude)
+    }
 
-    return Instructions(root, all)
+    return Instructions(all).apply {
+      root = rootInst
+    }
   }
 
   /* ------------------------------------------------------------ private ------------------------------------------------------------ */
@@ -29,7 +36,7 @@ class InstructionBuilder(private val tables: Tables) {
     return Pair(rootInst, processEntity(head, tail, rootInst))
   }
 
-  private fun processEntity(head: DEntity, tail: List<DEntity>, rootInst: Instruction): List<Instruction> {
+  private fun processEntity(head: DEntity, tail: List<DEntity>, rootInst: Instruction): MutableList<Instruction> {
     val allInst = mutableListOf<Instruction>()
     val (topInclude, bottomInclude) = processUnpackedEntity(head, rootInst)
 
@@ -106,12 +113,12 @@ class InstructionBuilder(private val tables: Tables) {
         is OneLinkWithoutTraits -> topInst.putResolvedRef(TDirectRef(entity.schema, lRef.schema), rValue.ref)
 
         is OneLinkWithTraits -> {
-          topInst.putResolvedRef(TDirectRef(entity.schema, lRef.schema), rValue.ref.id)
+          topInst.putResolvedRef(TDirectRef(entity.schema, lRef.schema), rValue.ref.refID)
           unwrapTraits(lRef.schema, rValue.ref.traits, topInst)
         }
 
         is OneUnlink -> {
-          topInst.putResolvedRef(TDirectRef(entity.schema, lRef.schema), null)
+          topInst.putResolvedRef(TDirectRef(entity.schema, lRef.schema), RefID())
           if (lRef.schema.traits.isNotEmpty()) {
             topInst.putData(TEmbedded(lRef.schema), null)
           }
@@ -125,7 +132,7 @@ class InstructionBuilder(private val tables: Tables) {
         is OneLinkWithoutTraits -> bottomInclude.add(link(entity, lCol.schema, rValue.ref, topInst))
 
         is OneLinkWithTraits -> {
-          val linkInst = link(entity, lCol.schema, rValue.ref.id, topInst)
+          val linkInst = link(entity, lCol.schema, rValue.ref.refID, topInst)
           bottomInclude.add(linkInst)
           unwrapTraits(lCol.schema, rValue.ref.traits, linkInst)
         }
@@ -135,7 +142,7 @@ class InstructionBuilder(private val tables: Tables) {
         }
 
         is ManyLinksWithTraits -> rValue.refs.forEach {
-          val linkInst = link(entity, lCol.schema, it.id, topInst)
+          val linkInst = link(entity, lCol.schema, it.refID, topInst)
           bottomInclude.add(linkInst)
           unwrapTraits(lCol.schema, it.traits, linkInst)
         }
@@ -151,10 +158,10 @@ class InstructionBuilder(private val tables: Tables) {
     return Pair(topInclude, bottomInclude)
   }
 
-  private fun link(entity: DEntity, sRelation: SRelation, link: Long, topInst: Instruction): Instruction {
+  private fun link(entity: DEntity, sRelation: SRelation, link: RefID, topInst: Instruction): Instruction {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
-      Update(tables.get(sRelation.ref), link, LINK).apply {
+      Update(tables.get(sRelation.ref), link.id, LINK).apply {
         putRef(TInverseRef(entity.schema, sRelation), topInst)
       }
     } else {
@@ -166,11 +173,11 @@ class InstructionBuilder(private val tables: Tables) {
     }
   }
 
-  private fun unlink(entity: DEntity, sRelation: SRelation, link: Long, topInst: Instruction): Instruction {
+  private fun unlink(entity: DEntity, sRelation: SRelation, link: RefID, topInst: Instruction): Instruction {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
-      Update(tables.get(sRelation.ref), link, UNLINK).apply {
-        putResolvedRef(TInverseRef(entity.schema, sRelation), null)
+      Update(tables.get(sRelation.ref), link.id, UNLINK).apply {
+        putResolvedRef(TInverseRef(entity.schema, sRelation), RefID())
       }
     } else {
       // A <-- [inv ref] --> B

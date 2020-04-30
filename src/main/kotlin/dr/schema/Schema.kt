@@ -1,7 +1,6 @@
 package dr.schema
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo
-import dr.io.*
 import dr.schema.tabular.TYPE
 import dr.state.Machine
 import java.time.LocalDate
@@ -78,6 +77,18 @@ enum class RelationType {
 }
 
 /* ------------------------- structures -------------------------*/
+class RefID(private var _id: Long? = null) {
+  var onSet: ((Long) -> Unit)? = null
+
+  var id = _id
+    set(value) {
+      field = value
+      _id = value
+      onSet?.invoke(value!!)
+    }
+
+}
+
 data class Pack<T: Any>(
   @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
   val head: T,
@@ -89,12 +100,12 @@ data class Pack<T: Any>(
 }
 
 data class Traits(
-  val id: Long,
+  val refID: RefID,
 
   @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
   val traits: List<Any>
 ) {
-  constructor(id: Long, vararg traits: Any): this(id, traits.toList())
+  constructor(id: RefID, vararg traits: Any): this(id, traits.toList())
 }
 
 class Schema {

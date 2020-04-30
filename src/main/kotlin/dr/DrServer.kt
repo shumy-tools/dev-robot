@@ -65,7 +65,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
   init {
     println("----Checking State Machines----")
-    dr.ctx.Context.set(Session(this))
+    dr.ctx.Context.session = Session(this)
       machines = schema.masters.filter { it.value.machine != null }.map {
         val instance = it.value to buildMachine(it.value)
         println("    ${it.value.machine!!.name} - OK")
@@ -84,8 +84,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
       val user = dr.base.User("admin", "admin@mail.com", listOf(1L))
 
       println("before - /api/*")
-      val session = Session(this, user)
-      dr.ctx.Context.set(session)
+      dr.ctx.Context.session = Session(this, user)
     }
 
     app.before("/api/*") { dr.ctx.Context.clear() }
@@ -105,7 +104,15 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
     }
   }
 
-  fun schema(ctx: Context) {
+  fun use(useFn: dr.ctx.Context.() -> Unit) {
+    dr.ctx.Context.session = Session(this)
+    dr.ctx.Context.instructions = Instructions()
+      dr.ctx.Context.useFn()
+      adaptor.commit(dr.ctx.Context.instructions)
+    dr.ctx.Context.clear()
+  }
+
+  private fun schema(ctx: Context) {
     val isSimple = ctx.queryParam("simple") != null
     val res = schema.toMap(isSimple)
 
@@ -113,7 +120,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
     ctx.result(json).contentType("application/json")
   }
 
-  fun check(ctx: Context) {
+  private fun check(ctx: Context) {
     val res = try {
       val entity = ctx.pathParam("entity")
 
@@ -129,7 +136,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
     ctx.result(json).contentType("application/json")
   }
 
-  fun create(ctx: Context) {
+  private fun create(ctx: Context) {
     val res = try {
       val entity = ctx.pathParam("entity")
 
@@ -138,10 +145,10 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
       val sEntity = schema.masters[entity] ?: throw Exception("Master entity not found! - ($entity)")
       val dEntity = processor.create(sEntity, ctx.body())
 
-      // execute machine if exists
-      machines[sEntity]?.let { it.onCreate(dEntity) }
-
       val instructions = translator.create(dEntity)
+      dr.ctx.Context.instructions = instructions
+
+      machines[sEntity]?.let { it.onCreate(dEntity) }
       adaptor.commit(instructions)
 
       mapOf("@type" to "ok").plus(instructions.output)
@@ -153,7 +160,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
     ctx.result(json).contentType("application/json")
   }
 
-  fun update(ctx: Context) {
+  private fun update(ctx: Context) {
     val res = try {
       val entity = ctx.pathParam("entity")
       val id = ctx.pathParam("id").toLong()
@@ -163,10 +170,10 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
       val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
       val dEntity = processor.update(sEntity, ctx.body())
 
-      // execute machine if exists
-      machines[sEntity]?.let { it.onUpdate(id, dEntity) }
-
       val instructions = translator.update(id, dEntity)
+      dr.ctx.Context.instructions = instructions
+
+      machines[sEntity]?.let { it.onUpdate(id, dEntity) }
       adaptor.commit(instructions)
 
       mapOf("@type" to "ok").plus(instructions.output)
@@ -178,7 +185,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
     ctx.result(json).contentType("application/json")
   }
 
-  fun action(ctx: Context) {
+  private fun action(ctx: Context) {
     val res = try {
       val entity = ctx.pathParam("entity")
       val id = ctx.pathParam("id").toLong()
@@ -202,7 +209,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
     ctx.result(json).contentType("application/json")
   }
 
-  fun query(ctx: Context) {
+  private fun query(ctx: Context) {
     val res = try {
       val isInline = ctx.queryParam("inline") != null
       val isCompile = ctx.queryParam("compile") != null
@@ -215,7 +222,9 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
           val res = query.exec()
           mutableMapOf<String, Any>("@type" to "ok").apply {
-            this["data"] = res.raw()
+            val data = res.raw()
+            this["count"] = data.size
+            this["data"] = data
           }
         }
 
@@ -249,13 +258,13 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
   }
 }
 
-fun Exception.handleError(): Map<String, Any> {
+private fun Exception.handleError(): Map<String, Any> {
   printStackTrace()
   val message = (if (cause != null) cause!!.message else message) ?: "Unrecognized error!"
   return mapOf("@type" to "error", "msg" to message.replace('"', '\''))
 }
 
-fun String.hash(): String {
+private fun String.hash(): String {
   val compact = replace(Regex("\\s"), "")
 
   val digest = MessageDigest.getInstance("SHA-256")

@@ -309,7 +309,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
 
       RelationType.LINK -> {
         if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.LIST_ID))
-          throw Exception("Link-collection without traits must be of type List<Long>! - (${sEntity.name}, ${this.name})")
+          throw Exception("Link-collection without traits must be of type List<RefID>! - (${sEntity.name}, ${this.name})")
 
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.LIST_TRAITS))
           throw Exception("Link-collection with traits type must be of type List<Traits>! - (${sEntity.name}, ${this.name})")
@@ -333,7 +333,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
 
       RelationType.LINK -> {
         if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.ID))
-          throw Exception("Link without traits must be of type, one of (Long, List<Long>)! - (${sEntity.name}, ${this.name})")
+          throw Exception("Link without traits must be of type, one of (RefID, List<RefID>)! - (${sEntity.name}, ${this.name})")
 
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.TRAITS))
           throw Exception("Link with traits must be of type, one of (Traits, List<Traits>)! - (${sEntity.name}, ${this.name})")

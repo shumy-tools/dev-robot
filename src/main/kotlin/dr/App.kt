@@ -2,6 +2,7 @@ package dr
 
 import dr.adaptor.SQLAdaptor
 import dr.schema.SParser
+import dr.schema.tabular.ID
 import dr.schema.tabular.TParser
 import dr.spi.IAuthorizer
 import dr.spi.IReadAccess
@@ -21,7 +22,18 @@ fun main(args: Array<String>) {
 
   val server = DrServer(schema, adaptor, TestAuthorizer()).also {
     it.start(8080)
+    it.use {
+      val roleID = create(Role("admin", 1))
+
+      create(User("Alex", "mail@pt", Address("Portugal", "Lisboa", null), listOf(roleID)))
+      create(User("Pedro", "mail@pt", Address("Portugal", "Aveiro", null), listOf(roleID)))
+      create(User("Maria", "mail@com", Address("France", "Paris", "a-detail"), listOf(roleID)))
+      create(User("Jose", "mail@pt", Address("Portugal", "Aveiro", null), listOf(roleID)))
+      create(User("Arnaldo", "mail@pt", Address("Germany", "Berlin", null), listOf(roleID)))
+    }
   }
+
+
 
   /*
   println("Q1")

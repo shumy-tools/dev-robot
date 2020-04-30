@@ -38,7 +38,7 @@ class UserType(
   @Checks(EmailCheck::class) val email: String,
 
   val password: String,
-  @Link(Role::class) val roles: List<Long>
+  @Link(Role::class) val roles: List<RefID>
 )
 
   @Detail
@@ -69,7 +69,7 @@ data class Trace2(val date: LocalDateTime)
 @Trait
 data class UserMarket(
   @Create val trace: Trace,         // Trace.date overrides UserMarket.date
-  @Link(User::class) val boss: Long
+  @Link(User::class) val boss: RefID
 ) {
   val date: LocalDateTime = LocalDateTime.now()
 }
@@ -89,7 +89,7 @@ data class User(
 
   //@Unique @Link(Role::class, traits = [Trace::class]) val roles: List<Traits>,
 
-  @Link(Role::class) val roles: List<Long>
+  @Link(Role::class) val roles: List<RefID>
 ) {
   val timestamp = LocalDateTime.now()
 }
@@ -161,7 +161,7 @@ data class Role(
 data class Auction(
   val name: String,
 
-  @Link(AuctionItem::class) val items: List<Long>,
+  @Link(AuctionItem::class) val items: List<RefID>,
   @Create val bids: List<Bid>
 ) {
   val timestamp = LocalDateTime.now()
@@ -182,8 +182,8 @@ data class Bid(
   val comments: String? = null,
 
   @Create val detail: BidDetail,
-  @Link(User::class) val from: Long,
-  @Link(AuctionItem::class) val item: Long
+  @Link(User::class) val from: RefID,
+  @Link(AuctionItem::class) val item: RefID
 ) {
   val timestamp = LocalDateTime.now()
 }

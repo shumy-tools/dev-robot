@@ -24,7 +24,7 @@ fun buildMachine(sEntity: SEntity): Machine<*, *> {
 
 open class Machine<S: Enum<*>, E: Any> {
   val user: User
-    get() = Context.get().user
+    get() = Context.session.user
 
   lateinit var sMachine: SMachine
     internal  set

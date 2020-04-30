@@ -68,13 +68,13 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
       }
 
       val dbFinal = dbTable.constraint(primaryKey(ID))
-      println(dbFinal.sql)
+      //println(dbFinal.sql)
       dbFinal.execute()
     }
 
     allConstraints.forEach { (tlb, cList) ->
       val dbAlterTable = db.alterTable(table(tlb.sqlName())).add(cList)
-      println(dbAlterTable.sql)
+      //println(dbAlterTable.sql)
       dbAlterTable.execute()
     }
   }
@@ -93,7 +93,7 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
             val insert = using(conf)
               .insertInto(table(tableName), fields.plus(refs))
               .values(inst.data.values.plus(inst.resolvedRefs.values))
-              //.returning(fn(SQL_ID))
+              //.returning(TID.fn())
 
             print("  ${insert.sql}")
 
@@ -156,14 +156,14 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
     val mTable = table(sqlName()).asTable(MAIN)
     val dbSelect = db.select(allFields).from(mTable)
 
-    val dbJoin = joinTables(MAIN, dbSelect, selection, filter, limit, page)
+    val dbJoin = joinTables(MAIN, dbSelect, selection)
 
     val dbFilter = mutableListOf<Condition>()
     if (filter != null) dbFilter.add(expression(filter))
 
     val dbFiltered = dbJoin.where(dbFilter)
     val dbFinal = when {
-      page != null -> dbFiltered.limit(limit).offset(page * limit!!)
+      page != null -> dbFiltered.limit(limit).offset((page-1) * limit!!)
       limit != null -> dbFiltered.limit(limit)
       else -> dbFiltered
     }
@@ -186,7 +186,7 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
     }
   }
 
-  private fun Table.joinTables(prefix: String, dbSelect: SelectJoinStep<*>, selection: QSelect, filter: QExpression?, limit: Int?, page: Int?): SelectJoinStep<*> {
+  private fun Table.joinTables(prefix: String, dbSelect: SelectJoinStep<*>, selection: QSelect): SelectJoinStep<*> {
     var nextJoin = dbSelect
 
     val refs = dbDirectRefs(selection)
@@ -199,7 +199,7 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
 
     for (qRel in refs.keys) {
       val nextTable = tables.get(qRel.ref)
-      nextJoin = nextTable.joinTables(qRel.name, nextJoin, qRel.select, qRel.filter, qRel.limit, qRel.page)
+      nextJoin = nextTable.joinTables(qRel.name, nextJoin, qRel.select)
     }
 
     return nextJoin

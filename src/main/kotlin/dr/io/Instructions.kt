@@ -1,17 +1,23 @@
 package dr.io
 
 import dr.schema.ActionType
+import dr.schema.RefID
+import dr.schema.tabular.ID
 import dr.schema.tabular.TProperty
 import dr.schema.tabular.TRef
 import dr.schema.tabular.Table
 import java.util.*
 
-class Instructions(private val root: Instruction, val all: List<Instruction>) {
-  val size: Int
-    get() = all.size
+class Instructions(private val all: MutableList<Instruction> = mutableListOf()) {
+  lateinit var root: Instruction
+    internal set
 
   val output: Map<String, Any?>
     get() = root.output
+
+  fun include(instructions: Instructions) {
+    all.addAll(instructions.all)
+  }
 
   fun exec(eFun: (Instruction) -> Long) {
     // fireCheckedListeners
@@ -19,29 +25,29 @@ class Instructions(private val root: Instruction, val all: List<Instruction>) {
       inst.action.entity.schema.fireListeners(EventType.CHECKED, inst)
     */
 
-    val ids = mutableMapOf<Instruction, Long>()
+    val ids = mutableMapOf<Instruction, RefID>()
 
     val head = all.first()
     if (head.unresolvedRefs.isNotEmpty())
       throw Exception("First instruction must have all references already resolved! - (Code bug, please report the issue)")
 
     val firstId = eFun(head)
-    ids[head] = firstId
+    ids[head] = RefID(firstId)
     if (head is Insert)
       head.setId(firstId)
 
     // execute and resolve children references
     for (inst in all.drop(1)) {
       inst.unresolvedRefs.forEach { (tRef, refInst) ->
-        val refId = ids[refInst] ?: throw Exception("ID not found for reference! - (${inst.table}, $tRef)")
-        inst.putResolvedRef(tRef, refId)
+        val refID = ids[refInst] ?: throw Exception("ID not found for reference! - (${inst.table}, $tRef)")
+        inst.putResolvedRef(tRef, refID)
       }
 
       // remove all resolved references
       (inst.unresolvedRefs as LinkedHashMap<TRef, Instruction>).clear()
 
       val id = eFun(inst)
-      ids[inst] = id
+      ids[inst] = RefID(id)
       if (inst is Insert)
         inst.setId(id)
     }
@@ -58,24 +64,30 @@ sealed class Instruction {
   abstract val table: Table
   abstract val action: ActionType
 
-  val data: Map<TProperty, Any?> = linkedMapOf()
-  val resolvedRefs: Map<TRef, Long?> = linkedMapOf()
-
-  val output: Map<String, Any?> = linkedMapOf()
-
-  fun isEmpty(): Boolean = data.isEmpty() && resolvedRefs.isEmpty() && unresolvedRefs.isEmpty()
-
-  internal val unresolvedRefs: Map<TRef, Instruction> = linkedMapOf()
+  private val _resolvedRefs = linkedMapOf<TRef, RefID>()
+  private val _unresolvedRefs = linkedMapOf<TRef, Instruction>()
   private var dataStack = Stack<LinkedHashMap<TProperty, Any?>>()
+
+  val refID = RefID()
+  val data = linkedMapOf<TProperty, Any?>()
+  val output = linkedMapOf<String, Any?>()
 
   init {
     dataStack.push(data as LinkedHashMap<TProperty, Any?>)
   }
 
+  val unresolvedRefs: Map<TRef, Instruction>
+    get() = _unresolvedRefs
+
+  val resolvedRefs: Map<TRef, Long?>
+    get() = _resolvedRefs.map { it.key to it.value.id }.toMap()
+
+  fun isEmpty(): Boolean = data.isEmpty() && _resolvedRefs.isEmpty() && _unresolvedRefs.isEmpty()
+
   internal fun tableText() = if (table.sRelation == null) table.sEntity.name else "${table.sEntity.name}-${table.sRelation?.name}"
   internal fun dataText() = if (data.isNotEmpty()) ", data=$data" else ""
   internal fun resolvedRefsText() = if (resolvedRefs.isNotEmpty()) ", refs=$resolvedRefs" else ""
-  internal fun unresolvedRefsText() = if (unresolvedRefs.isNotEmpty()) ", urefs=${unresolvedRefs.map { (name, inst) -> "$name=${inst.table}:${inst.hashCode()}" }}" else ""
+  internal fun unresolvedRefsText() = if (_unresolvedRefs.isNotEmpty()) ", urefs=${_unresolvedRefs.map { (name, inst) -> "$name=${inst.table}:${inst.hashCode()}" }}" else ""
 
   internal fun <T: Any> with(level: TProperty, call: () -> T): T {
     val map = linkedMapOf<TProperty, Any?>()
@@ -89,7 +101,8 @@ sealed class Instruction {
   }
 
   internal fun setId(id: Long?) {
-    putOutput("@id", id)
+    refID.id = id
+    putOutput(ID, id)
   }
 
   internal fun putData(key: TProperty, value: Any?) {
@@ -97,24 +110,24 @@ sealed class Instruction {
   }
 
   internal fun putOutput(key: String, value: Any?) {
-    (output as LinkedHashMap<String, Any?>)[key] = value
+    output[key] = value
   }
 
   internal fun putAllOutput(values: Map<String, Any?>) {
-    (output as LinkedHashMap<String, Any?>).putAll(values)
+    output.putAll(values)
   }
 
 
   internal fun putRef(key: TRef, ref: Instruction) {
     if (ref is Update) {
-      (resolvedRefs as LinkedHashMap<TRef, Long?>)[key] = ref.id
+      _resolvedRefs[key] = ref.refID
     } else {
-      (unresolvedRefs as LinkedHashMap<TRef, Instruction>)[key] = ref
+      _unresolvedRefs[key] = ref
     }
   }
 
-  internal fun putResolvedRef(key: TRef, ref: Long?) {
-    (resolvedRefs as LinkedHashMap<TRef, Long?>)[key] = ref
+  internal fun putResolvedRef(key: TRef, ref: RefID) {
+    _resolvedRefs[key] = ref
   }
 }
 
@@ -123,7 +136,8 @@ sealed class Instruction {
     override fun toString() = "Insert($action) - {table=${tableText()}${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
   }
 
-  class Update(override val table: Table, val id: Long, override val action: ActionType): Instruction() {
+  class Update(override val table: Table, val id: Long?, override val action: ActionType): Instruction() {
+    init { setId(id) }
     override fun toString() = "Update($action) - {table=${tableText()}, id=$id${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
   }
 

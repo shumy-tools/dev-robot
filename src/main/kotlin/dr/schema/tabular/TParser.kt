@@ -27,12 +27,7 @@ class TParser(private val schema: Schema) {
 
   private fun SEntity.processTable(rootInst: Table) {
     processUnpackedTable(rootInst)
-
-    //var topEntity = this
-    for (item in sealed.values) {
-      item.getOrCreateTable()
-      //topEntity = item
-    }
+    sealed.values.forEach { it.getOrCreateTable() }
   }
 
   private fun SEntity.processUnpackedTable(topInst: Table) {

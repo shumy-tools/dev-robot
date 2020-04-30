@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.annotation.JsonTypeName
 import dr.schema.*
 import dr.schema.tabular.STATE
-import dr.schema.tabular.TYPE
 
 class DEntity(
   val schema: SEntity,
@@ -233,8 +232,8 @@ sealed class LinkData
   sealed class ManyLinks: LinkData()
 
     @JsonTypeName("many-links")
-    data class ManyLinksWithoutTraits(val refs: Collection<Long>): ManyLinks() {
-      constructor(vararg refs: Long): this(refs.toList())
+    data class ManyLinksWithoutTraits(val refs: Collection<RefID>): ManyLinks() {
+      constructor(vararg refs: RefID): this(refs.toList())
     }
 
     @JsonTypeName("many-links-traits")
@@ -243,20 +242,20 @@ sealed class LinkData
     }
 
     @JsonTypeName("many-unlink")
-    data class ManyUnlink(val refs: Collection<Long>): ManyLinks() {
-      constructor(vararg refs: Long): this(refs.toList())
+    data class ManyUnlink(val refs: Collection<RefID>): ManyLinks() {
+      constructor(vararg refs: RefID): this(refs.toList())
     }
 
   sealed class OneLink: LinkData()
 
     @JsonTypeName("one-link")
-    data class OneLinkWithoutTraits(val ref: Long): OneLink()
+    data class OneLinkWithoutTraits(val ref: RefID): OneLink()
 
     @JsonTypeName("one-link-traits")
     data class OneLinkWithTraits(val ref: Traits): OneLink()
 
     @JsonTypeName("one-unlink")
-    data class OneUnlink(val ref: Long): OneLink()
+    data class OneUnlink(val ref: RefID): OneLink()
 
 
 /* ------------------------- helpers -------------------------*/
@@ -280,12 +279,12 @@ private fun SEntity.checkInclusion(prop: String, expected: Set<String>, inputs: 
 @Suppress("UNCHECKED_CAST")
 private fun Any?.translate(): LinkData {
   return when (val data = this!!) {
-    is Long -> OneLinkWithoutTraits(data)
+    is RefID -> OneLinkWithoutTraits(data)
     is Traits -> OneLinkWithTraits(data)
     is Collection<*> -> {
       if (data.isEmpty()) ManyLinksWithoutTraits() else {
-        if (data.first() is Long)
-          ManyLinksWithoutTraits(data as Collection<Long>)
+        if (data.first() is RefID)
+          ManyLinksWithoutTraits(data as Collection<RefID>)
         else
           ManyLinksWithTraits(data as Collection<Traits>)
       }

@@ -51,7 +51,6 @@ class TData {
   @Suppress("UNCHECKED_CAST")
   private fun LinkedHashMap<String, Any?>.processJoin(name: String, value: Any?) {
     val splits = name.split('.').drop(1)
-    print(splits)
 
     var place = this
     for (position in splits.dropLast(1)) {

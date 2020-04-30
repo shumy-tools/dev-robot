@@ -101,7 +101,7 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
     this.errors.add(error.text)
   }
 
-  private fun processQLine(prefix: List<String>, qline: QueryParser.QlineContext, refEntity: SEntity): QRelation {
+  private fun processQLine(prefix: List<String>, qline: QueryParser.QlineContext, refEntity: SEntity, isDirectRef: Boolean = false): QRelation {
     // process select fields
     val (hasAll, fields) = processFields(prefix, qline.select().fields(), refEntity)
 
@@ -109,21 +109,29 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
     val relations = processRelations(prefix, qline.select().relation(), refEntity)
 
     val limit = qline.limit()?.let {
+      if (isDirectRef)
+        throw Exception("Direct references don't support 'limit'! Use it on the top entity.")
+
       val limit = it.INT().text.toInt()
-      if (limit < 0)
+      if (limit < 1)
         throw Exception("Limit must be > 0")
       limit
     }
 
     val page = qline.page()?.let {
+      if (isDirectRef)
+        throw Exception("Direct references don't support 'page'! Use it on the top entity.")
+
       val page = it.INT().text.toInt()
-      if (page < 0)
+      if (page < 1)
         throw Exception("Page must be > 0")
       page
     }
 
     // process filter paths
     val filter = qline.filter()?.let { processExpr(prefix, it.expr(), refEntity) }
+    if (isDirectRef && filter != null)
+      throw Exception("Direct references don't support 'filter'! Use it on the top entity.")
 
     val select = QSelect(hasAll, fields, relations)
     return QRelation(prefix.last(), refEntity, filter, limit, page, select)
@@ -138,7 +146,7 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
       exists(present, full)
 
       val rel = sEntity.rels[path] ?: throw Exception("Invalid relation path '${sEntity.name}.$path'")
-      processQLine(full, it.qline(), rel.ref)
+      processQLine(full, it.qline(), rel.ref, !rel.isCollection)
     }
   }
 
@@ -160,7 +168,7 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
 
         val order = it.INT()?.let { ord ->
           val order = ord.text.toInt()
-          if (order < 0)
+          if (order < 1)
             throw Exception("Order must be > 0")
           order
         } ?: 0
@@ -236,6 +244,16 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
     val qDeref = qDerefList.last()
     val compType = compType(predicate.comp().text)
     val qParam = transformParam(predicate.param())
+
+    if (qDeref.entity.fields[qDeref.name] == null) {
+      val rel = qDeref.entity.rels[qDeref.name]
+      val completeError = if (rel != null) {
+        val oneOf = rel.ref.fields.map { it.key }.plus(rel.ref.rels.map { it.key })
+        " However, a relation with that name exists. Please complete the path with one of $oneOf"
+      } else ""
+
+      throw Exception("Invalid relation path '${qDeref.entity.name}.${qDeref.name}'!$completeError")
+    }
 
     this.parameters.add(Parameter(qDeref.entity, qDeref.name, compType, qParam))
 

@@ -2,38 +2,48 @@ package dr.ctx
 
 import dr.DrServer
 import dr.base.User
+import dr.io.Instructions
+import dr.schema.RefID
 import dr.schema.SEntity
 import dr.spi.IQueryExecutor
 
 object Context {
-  private val local = ThreadLocal<Session>()
+  private val tSession = ThreadLocal<Session>()
+  private val tInstructions = ThreadLocal<Instructions>()
 
-  fun get(): Session = local.get()!!
-  fun set(session: Session) = local.set(session)
-  fun clear() = local.set(null)
+  var session: Session
+    get() = tSession.get()!!
+    set(value) = tSession.set(value)
 
-  fun create(data: Any): Map<String, Any?> {
-    val server = get().server
-    val entity = server.processor.create(data)
+  var instructions: Instructions
+    get() = tInstructions.get()!!
+    set(value) = tInstructions.set(value)
 
-    val instructions = server.translator.create(entity)
-    server.adaptor.commit(instructions)
-
-    return instructions.output
+  fun clear() {
+    tSession.set(null)
+    tInstructions.set(null)
   }
 
-  fun update(id: Long, type: SEntity, data: Map<String, Any?>): Map<String, Any?> {
-    val server = get().server
+  fun create(data: Any): RefID {
+    val server = session.server
+    val entity = server.processor.create(data)
+
+    val more = server.translator.create(entity)
+    instructions.include(more)
+
+    return more.root.refID
+  }
+
+  fun update(id: Long, type: SEntity, data: Map<String, Any?>) {
+    val server = session.server
     val entity = server.processor.update(type, data)
 
-    val instructions = server.translator.update(id, entity)
-    server.adaptor.commit(instructions)
-
-    return instructions.output
+    val more = server.translator.update(id, entity)
+    instructions.include(more)
   }
 
   fun query(query: String): IQueryExecutor {
-    return get().server.qService.compile(query).first
+    return session.server.qService.compile(query).first
   }
 }
 

@@ -1,7 +1,5 @@
 package dr.schema
 
-import dr.schema.tabular.STATE
-import dr.schema.tabular.TYPE
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -27,11 +25,11 @@ private val DATE = typeOf<LocalDate?>()
 private val DATETIME = typeOf<LocalDateTime?>()
 
 object TypeEngine {
-  val ID = typeOf<Long>()
+  val ID = typeOf<RefID>()
   val PACK = typeOf<Pack<*>>()
 
   val LIST = typeOf<List<*>>()
-  val LIST_ID = typeOf<List<Long>>()
+  val LIST_ID = typeOf<List<RefID>>()
 
   val TRAITS = typeOf<Traits>()
   val LIST_TRAITS = typeOf<List<Traits>>()
