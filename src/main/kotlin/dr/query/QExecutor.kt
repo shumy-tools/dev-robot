@@ -8,6 +8,8 @@ import dr.schema.tabular.TYPE
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
 import kotlin.reflect.KClass
+import kotlin.reflect.full.isSubclassOf
+import kotlin.reflect.full.isSubtypeOf
 
 /* ------------------------- internal api -------------------------*/
 class Parameter(val entity: SEntity, val field: String, val comp: CompType, val param: QParam)
@@ -61,7 +63,9 @@ private class CompatibilityTable {
   }
 
   fun check(fieldType: FieldType, compType: CompType, argType: KClass<*>): Boolean {
-    return table[fieldType]?.get(compType) == argType
+    val testType = table[fieldType]?.get(compType)
+    return if (testType != null) argType.isSubclassOf(testType) else false
+    //return table[fieldType]?.get(compType) == argType
   }
 }
 
