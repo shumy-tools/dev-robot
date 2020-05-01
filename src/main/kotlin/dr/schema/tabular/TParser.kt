@@ -45,7 +45,7 @@ class TParser(private val schema: Schema) {
     for (oRef in allOwnedReferences.values) {
       if (oRef.isUnique || oRef.ref.type == EntityType.TRAIT) {
         // A {<rel>: <fields>}
-        topTable.addProperty(TEmbedded(oRef))
+        topTable.addProperty(TTraits(oRef.ref))
       } else {
         // A ref_<rel> --> B
         oRef.ref.getOrCreateTable()
@@ -58,7 +58,7 @@ class TParser(private val schema: Schema) {
       // A <-- inv_<A>_<rel> B
       val refTable = oCol.ref.getOrCreateTable()
       val invRef = TInverseRef(this, oCol)
-      topTable.addInvRef(invRef)
+      topTable.addOneToMany(invRef)
       refTable.addRef(invRef)
     }
 
@@ -67,17 +67,13 @@ class TParser(private val schema: Schema) {
       // A ref_<rel> --> B
       lRef.ref.getOrCreateTable()
       topTable.addRef(TDirectRef(lRef.ref, lRef))
-      if (lRef.traits.isNotEmpty()) {
-        topTable.addProperty(TEmbedded(lRef))
-      }
+      topTable.addTraits(lRef)
     }
 
     // --------------------------------- allLinkedCollections ---------------------------------
     for (lCol in allLinkedCollections.values) {
       val linkInst = linkTable(topTable, lCol)
-      if (lCol.traits.isNotEmpty()) {
-        linkInst.addProperty(TEmbedded(lCol))
-      }
+      linkInst.addTraits(lCol)
     }
   }
 
@@ -86,7 +82,7 @@ class TParser(private val schema: Schema) {
       // A <-- inv_<A>_<rel> B
       val refTable = sRelation.ref.getOrCreateTable()
       val invRef = TInverseRef(this, sRelation)
-      topTable.addInvRef(invRef)
+      topTable.addOneToMany(invRef)
       refTable.addRef(invRef)
 
       refTable
@@ -96,9 +92,14 @@ class TParser(private val schema: Schema) {
       STable(this, sRelation).also {
         tables[it.name] = it
         it.addProperty(TID)
-        it.addRef(TDirectRef(sRelation.ref, sRelation, false))
         it.addRef(TInverseRef(this, sRelation, false))
+        it.addRef(TDirectRef(sRelation.ref, sRelation, false))
+        topTable.addManyToMany(sRelation.name, it, sRelation.ref)
       }
     }
+  }
+
+  private fun STable.addTraits(rel: SRelation) = rel.traits.values.forEach {
+    addProperty(TTraits(it))
   }
 }

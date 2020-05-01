@@ -1,12 +1,10 @@
 package dr
 
-import com.fasterxml.jackson.annotation.JsonInclude
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.SerializationFeature
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dr.ctx.Session
-import dr.io.*
+import dr.io.InputProcessor
+import dr.io.InstructionBuilder
+import dr.io.Instructions
+import dr.io.JsonParser
 import dr.query.QueryService
 import dr.schema.SEntity
 import dr.schema.Schema
@@ -21,44 +19,11 @@ import io.javalin.apibuilder.ApiBuilder.*
 import io.javalin.http.Context
 import java.security.MessageDigest
 import java.util.*
-import kotlin.reflect.KClass
-
-
-object JsonParser {
-  val mapper: ObjectMapper = jacksonObjectMapper()
-    .registerModule(JavaTimeModule())
-    .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
-    .setSerializationInclusion(JsonInclude.Include.NON_NULL)
-
-  init {
-    mapper.registerSubtypes(
-      ManyLinksWithoutTraits::class.java,
-      OneLinkWithoutTraits::class.java,
-      ManyLinksWithTraits::class.java,
-      OneLinkWithTraits::class.java,
-      ManyUnlink::class.java,
-      OneUnlink::class.java
-    )
-  }
-
-  fun write(value: Any): String {
-    return mapper.writeValueAsString(value)
-  }
-
-  fun <T: Any> read(json: String, type: KClass<out T>): T {
-    return mapper.readValue(json, type.java)
-  }
-
-  @Suppress("UNCHECKED_CAST")
-  fun readMap(json: String): Map<String, Any> {
-    return mapper.readValue(json, Map::class.java) as Map<String, Any>
-  }
-}
 
 class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAuthorizer? = null) {
   internal val processor = InputProcessor(schema)
   internal val translator = InstructionBuilder(adaptor.tables())
-  internal val qService = QueryService(schema, adaptor)
+  internal val qService = QueryService(adaptor.tables(), adaptor)
 
   private val machines: Map<SEntity, Machine<*, *>>
   private val queries = mutableMapOf<String, Pair<IQueryExecutor, IReadAccess>>()
@@ -240,7 +205,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
           val (query, access) = queries[exec] ?: throw Exception("Compiled query not found! - ($exec)")
           // TODO: check access control from query.accessed
 
-          val params = JsonParser.readMap(ctx.body())
+          val params = JsonParser.readParams(ctx.body())
           val res = query.exec(params)
           mutableMapOf<String, Any>("@type" to "ok").apply {
             this["data"] = res.rows()

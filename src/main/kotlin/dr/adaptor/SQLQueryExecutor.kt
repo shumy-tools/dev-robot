@@ -1,8 +1,10 @@
 package dr.adaptor
 
+import dr.io.JsonParser
 import dr.query.*
 import dr.schema.tabular.ID
 import dr.schema.tabular.STable
+import dr.schema.tabular.TRAITS
 import dr.schema.tabular.Tables
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
@@ -11,27 +13,8 @@ import org.jooq.*
 import org.jooq.impl.DSL.*
 import java.util.concurrent.atomic.AtomicBoolean
 
-/*if (!sRelation.isCollection) {
-  if (sRelation.type == RelationType.CREATE && (sRelation.isUnique || sRelation.ref.type == EntityType.TRAIT)) {
-    // A {<rel>: <fields>}
-    // filter-each ("@<rel>_<field>" in ?)
-  } else {
-    // A ref_<rel> --> B
-    // match ("@ref__<rel>", "@id" in ?)
-  }
-} else {
-  if (sRelation.type == RelationType.CREATE || (sRelation.type == RelationType.LINK && sRelation.isUnique && sRelation.traits.isEmpty())) {
-    // A <-- inv_<A>_<rel> B
-    // match ("@id", "@inv_<A>__<rel>" in ?)
-  } else {
-    // A <-- [inv ref] --> B
-    // match ("@id", JOIN, "@id" in ?)
-  }
-}*/
-
 class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, private val qTree: QTree): IQueryExecutor {
-  private val sTable = tables.get(qTree.entity)
-  private val qTable = table(sTable.sqlName()).asTable(MAIN)
+  private val qTable = table(qTree.table.sqlName()).asTable(MAIN)
 
   private val joinFields = mutableListOf<Field<Any>>()
   private val joinTables = mutableListOf<Pair<Table<*>, Condition>>()
@@ -42,16 +25,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   private val inverted = linkedMapOf<String, Pair<Field<Long>, SQLQueryExecutor>>()
 
   // compile query tree
-  init {
-    sTable.compile(qTree.select, qTree.filter)
-
-    val invRefs = sTable.dbInverseRefs(qTree.select)
-    for ((qRel, iRef) in invRefs) {
-      val subTree = QTree(iRef.rel.ref, qRel)
-      val subQuery = SQLQueryExecutor(db, tables, subTree)
-      inverted[qRel.name] = Pair(iRef.fn(tables.get(iRef.rel.ref)), subQuery)
-    }
-  }
+  init { qTree.table.compile(qTree.select, qTree.filter) }
 
   override fun exec(params: Map<String, Any>): IResult {
     return subExec(params)
@@ -66,17 +40,19 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     if (fk != null) {
       query.addSelect(fk)
       query.addConditions((fk as Field<Any>).`in`(topIds))
+
+      // TODO: add refTable conditions?
     }
 
     // process results
-    val result = SQLResult()
+    val result = SQLResult(tables)
 
     // add main result
     println(query.sql)
     mParams.forEach { query.bind(it.key, it.value) }
     query.fetch().forEach { result.process(it, fk) }
 
-    // add sub-results to the main result
+    // add one-to-many and many-to-many results
     inverted.forEach {
       val subResult = it.value.second.subExec(params, it.value.first, ids) as SQLResult
       result.rows.keys.forEach { pk ->
@@ -88,7 +64,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
       }
     }
 
-    // TODO: also run TSuperRef
+    // TODO: add TSuperRef results
 
     return result
   }
@@ -96,7 +72,41 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   private fun STable.compile(selection: QSelect, filter: QExpression?) {
     joinFields(selection)
     joinTables(selection)
+
     if (filter != null) conditions = expression(filter)
+
+    // compile one-to-many relations
+    val oneToMany = qTree.table.dbOneToMany(qTree.select)
+    for ((qRel, iRef) in oneToMany) {
+      // add sub-query @A.id <-- B.inv_<A>_<rel>
+      val refTable = tables.get(iRef.rel.ref)
+      val subTree = QTree(refTable, qRel)
+
+      val subQuery = SQLQueryExecutor(db, tables, subTree)
+      inverted[qRel.name] = Pair(iRef.fn(refTable, MAIN), subQuery)
+      // TODO: process one-to-many with traits?
+    }
+
+    // compile many-to-many relations
+    val manyToMany = qTree.table.dbManyToMany(qTree.select)
+    for ((qRel, iRef) in manyToMany) {
+      println(qRel)
+
+      // simulate one-to-many via @A.id <-- @AX.inv (one-to-one AX.@ref --> B.@id)
+      val refFields = qRel.select.fields.filter { iRef.second.fields[it.name] != null }
+      val refSelect = QSelect(qRel.select.hasAll, refFields, emptyList())
+      val refRel = qRel.select.relations.plus(QRelation(qRel.name, qRel.ref, qRel.filter/* TODO: only refTable filter */, null, null, refSelect))
+
+      // TODO: include aux-table traits (select and filter)
+      val auxTable = tables.get(iRef.first.sEntity, iRef.first.sEntity.rels[qRel.name])
+      val auxFields = qRel.select.fields.filter { auxTable.props[it.name] != null }
+      val auxSelect = QSelect(qRel.select.hasAll, auxFields, refRel)
+      val auxTree = QTree(auxTable, null/* TODO: filter */, qRel.limit, qRel.page, auxSelect)
+
+
+      val subQuery = SQLQueryExecutor(db, tables, auxTree)
+      inverted[qRel.name] = Pair(invFn(MAIN), subQuery)
+    }
   }
 
   private fun buildQueryIds(mParams: MutableMap<String, Any>) = db.selectQuery().apply {
@@ -115,7 +125,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     joinTables.forEach { addJoin(it.first, it.second) }
     if (conditions != null) {
       // needs to rebuild conditions with included values when "IN" clause is present!
-      if (hasInClause.get()) addConditions(sTable.expression(qTree.filter!!, params = mParams)) else addConditions(conditions)
+      if (hasInClause.get()) addConditions(qTree.table.expression(qTree.filter!!, params = mParams)) else addConditions(conditions)
     }
 
     when {
@@ -133,15 +143,15 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     val fields = if (prefix == MAIN) dbFields(selection, prefix) else dbFields(selection, prefix).map { it.`as`("$alias.${it.name}") }
     joinFields.addAll(fields)
 
-    val refs = dbDirectRefs(selection)
+    val refs = dbOneToOne(selection)
     for (qRel in refs.keys) {
-      val rTable = tables.get(qRel.ref)
-      rTable.joinFields(qRel.select, qRel.name, "$alias.${qRel.name}")
+      qRel.ref.joinFields(qRel.select, qRel.name, "$alias.${qRel.name}")
     }
   }
 
   private fun STable.joinTables(selection: QSelect, prefix: String = MAIN) {
-    val refs = dbDirectRefs(selection)
+    // one-to-one A.@ref_<rel> --> B.@id
+    val refs = dbOneToOne(selection)
     for (dRef in refs.values) {
       val rTable = table(dRef.rel.ref.sqlName()).asTable(dRef.rel.name)
       val rField = dRef.fn(this, prefix)
@@ -150,8 +160,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     }
 
     for (qRel in refs.keys) {
-      val nextTable = tables.get(qRel.ref)
-      nextTable.joinTables(qRel.select, qRel.name)
+      qRel.ref.joinTables(qRel.select, qRel.name)
     }
   }
 
@@ -199,7 +208,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
 
 
 /* ------------------------- helpers -------------------------*/
-class SQLResult: IResult {
+class SQLResult(private val tables: Tables): IResult {
   internal val rows = linkedMapOf<Long, LinkedHashMap<String, Any?>>()
   internal val fkKeys = linkedMapOf<Long, MutableList<Long>>()
 
@@ -219,23 +228,22 @@ class SQLResult: IResult {
   }
 
   fun process(record: Record, fk: Field<Long>? = null) {
-    var rowID: Long? = null
+    val fieldID = record.fields().find { it.name == ID }!!
+    val rowID = (fieldID.getValue(record) as Long?)!!
     val row = linkedMapOf<String, Any?>()
+    rows[rowID] = row
+
     record.fields().forEach {
       val value = it.getValue(record)
-      if (it.name == ID)
-        rowID = value as Long
 
       // process foreignKeys
       if (fk != null && it.name == fk.name) {
         val fkRows = fkKeys.getOrPut(value as Long) { mutableListOf() }
-        fkRows.add(rowID!!)
+        fkRows.add(rowID)
       } else {
-        if (it.name.startsWith('.')) row.processJoin(it.name, value) else row[it.name] = value
+        if (it.name.startsWith('.')) row.processJoin(it.name, value) else row.setField(it.name, value)
       }
     }
-
-    rows[rowID!!] = row
   }
 
   @Suppress("UNCHECKED_CAST")
@@ -247,6 +255,21 @@ class SQLResult: IResult {
       place = place.getOrPut(position) { linkedMapOf<String, Any?>() } as LinkedHashMap<String, Any?>
     }
 
-    place[splits.last()] = value
+    place.setField(splits.last(), value)
+  }
+
+  private fun LinkedHashMap<String, Any?>.setField(name: String, value: Any?) {
+    if (value == null) {
+      this[name] = null
+      return
+    }
+
+    val cValue = if (name.startsWith(TRAITS)) {
+      val trait = name.substring(1)
+      val sTrait = tables.schema.traits.getValue(trait)
+      JsonParser.read((value as String), sTrait.clazz)
+    } else value
+
+    this[name] = cValue
   }
 }

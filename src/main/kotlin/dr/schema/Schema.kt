@@ -210,11 +210,15 @@ class Schema {
 
       return map
     }
+
+    override fun toString() = name
   }
 
     class SMachine(val clazz: KClass<out Machine<*, *>>, val states: List<String>, val events: Map<String, KClass<out Any>>) {
       val name: String
         get() = clazz.qualifiedName!!
+
+      override fun toString() = name
     }
 
 
@@ -260,6 +264,8 @@ class Schema {
 
           return map
         }
+
+        override fun toString() = name
       }
 
       class SRelation (
@@ -289,6 +295,8 @@ class Schema {
 
       class SCheck(val name: String, private val check: FieldCheck<Any>) {
         fun check(value: Any): String? = this.check.check(value)
+
+        override fun toString() = name
       }
 
     @Suppress("UNCHECKED_CAST")
@@ -296,6 +304,8 @@ class Schema {
       internal fun get(action: ActionType, event: EventType): EListener? = enabled[action]?.let {
         if (it.contains(event)) listener else null
       }
+
+      override fun toString() = name
     }
 
 /* ----------- Helper printer functions ----------- */

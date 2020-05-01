@@ -38,7 +38,9 @@ qline: filter? (limit page?)? select ;
 
     fields: ALL | (field (',' field)*) ;
 
-      field: ('(' order INT ')')? ID ;
+      field: ('(' order INT ')')? name ;
+
+        name: ID | TRAIT ;
 
         order: ('asc' | 'desc') ;
 
@@ -46,7 +48,8 @@ qline: filter? (limit page?)? select ;
 
 ALL: '*' ;
 NAME: [A-Z] ID ;
-ID: [_@]*[a-z][A-Za-z0-9_]* ;
+ID: [_@]?[a-z][A-Za-z0-9_]* ;
+TRAIT: [&] (ID '.')* NAME;
 
 // value types
   INT: '-'? [0-9]+ ;

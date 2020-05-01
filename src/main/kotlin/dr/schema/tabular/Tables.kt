@@ -4,8 +4,13 @@ import dr.schema.SEntity
 import dr.schema.SField
 import dr.schema.SRelation
 import dr.schema.Schema
+import kotlin.reflect.KClass
 
+const val TRAITS = "&"
 const val ID = "@id"
+const val REF = "@ref"
+const val INV = "@inv"
+
 const val TYPE = "@type"
 const val STATE = "@state"
 const val SUPER = "@super"
@@ -28,30 +33,37 @@ data class Tables(val schema: Schema, private val tables: Map<String, STable>) {
 }
 
 data class STable(val sEntity: SEntity, val sRelation: SRelation? = null) {
-  val props: List<TProperty> = mutableListOf()
-  val refs: List<TRef> = mutableListOf()
-
-  val inverseRefs: Map<String, TInverseRef> = linkedMapOf()
-
-  val directRefs: Map<String, TDirectRef> by lazy {
-    refs.filterIsInstance<TDirectRef>().map { it.rel.name to it }.toMap()
-  }
-
   val name: String by lazy {
     tableNameFrom(sEntity.name, sRelation?.name)
   }
 
+  val props: Map<String, TProperty> = linkedMapOf()
+  val refs: List<TRef> = mutableListOf()
+
+  val oneToOne: Map<String, TDirectRef> = linkedMapOf()
+  val oneToMany: Map<String, TInverseRef> = linkedMapOf()
+  val manyToMany: Map<String, Pair<STable, SEntity>> = linkedMapOf()
+
   internal fun addProperty(prop: TProperty) {
-    (props as MutableList<TProperty>).add(prop)
+    (props as LinkedHashMap<String, TProperty>)[prop.name] = prop
   }
 
   internal fun addRef(ref: TRef) {
     (refs as MutableList<TRef>).add(ref)
+    if (ref is TDirectRef) {
+      (oneToOne as LinkedHashMap<String, TDirectRef>)[ref.rel.name] = ref
+    }
   }
 
-  internal fun addInvRef(invRef: TInverseRef) {
-    (inverseRefs as LinkedHashMap<String, TInverseRef>)[invRef.rel.name] = invRef
+  internal fun addOneToMany(invRef: TInverseRef) {
+    (oneToMany as LinkedHashMap<String, TInverseRef>)[invRef.rel.name] = invRef
   }
+
+  internal fun addManyToMany(name: String, auxTable: STable, refTable: SEntity) {
+    (manyToMany as LinkedHashMap<String, Pair<STable, SEntity>>)[name] = Pair(auxTable, refTable)
+  }
+
+  override fun toString() = name
 }
 
 sealed class TProperty {
@@ -59,7 +71,7 @@ sealed class TProperty {
     when(this) {
       is TID -> java.lang.Long::class.java
       is TType -> java.lang.String::class.java
-      is TEmbedded -> java.lang.String::class.java
+      is TTraits -> java.lang.String::class.java
       is TField -> field.jType
     }
   }
@@ -68,7 +80,7 @@ sealed class TProperty {
     when(this) {
       is TID -> ID
       is TType -> TYPE
-      is TEmbedded -> "@${rel.name}"
+      is TTraits -> "$TRAITS${trait.name}"
       is TField -> field.name
     }
   }
@@ -77,7 +89,7 @@ sealed class TProperty {
     when (this) {
       is TID -> true
       is TType -> false
-      is TEmbedded -> false
+      is TTraits -> false
       is TField -> field.isUnique
     }
   }
@@ -87,7 +99,7 @@ sealed class TProperty {
 
   object TID: TProperty()
   object TType: TProperty()
-  class TEmbedded(val rel: SRelation): TProperty()
+  class TTraits(val trait: SEntity): TProperty()
   class TField(val field: SField): TProperty()
 
 
@@ -107,8 +119,8 @@ sealed class TRef {
 
   override fun toString() = when(this) {
     is TSuperRef -> SUPER
-    is TDirectRef -> if (!includeRelName) "@ref-to-${refEntity.name}" else "@ref-to-${refEntity.name}-${rel.name}"
-    is TInverseRef -> if (!includeRelName) "@inv-to-${refEntity.name}" else "@inv-to-${refEntity.name}-${rel.name}"
+    is TDirectRef -> if (!includeRelName) "$REF-to-${refEntity.name}" else "$REF-to-${refEntity.name}-${rel.name}"
+    is TInverseRef -> if (!includeRelName) "$INV-to-${refEntity.name}" else "$INV-to-${refEntity.name}-${rel.name}"
   }
 }
 

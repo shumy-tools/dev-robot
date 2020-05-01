@@ -1,9 +1,9 @@
 package dr.adaptor
 
 import com.zaxxer.hikari.HikariDataSource
+import dr.io.*
 import dr.io.Delete
 import dr.io.Insert
-import dr.io.Instructions
 import dr.io.Update
 import dr.query.*
 import dr.schema.Schema
@@ -47,13 +47,13 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
       allConstraints[tlb] = constraints
 
       var dbTable = db.createTable(table(tlb.sqlName()))
-      for (prop in tlb.props) {
+      for (prop in tlb.props.values) {
         if (prop.isUnique) constraints.add(unique(prop.name))
 
         dbTable = when(prop) {
           is TID -> dbTable.column(prop.name, SQLDataType.BIGINT.nullable(false).identity(true))
           is TType -> dbTable.column(prop.name, SQLDataType.VARCHAR.nullable(false))
-          is TEmbedded -> dbTable.column(prop.name, SQLDataType.JSON.nullable(prop.rel.isOptional))
+          is TTraits -> dbTable.column(prop.name, SQLDataType.VARCHAR.nullable(false))
           is TField -> dbTable.column(prop.name, prop.field.type.toSqlType().nullable(prop.field.isOptional))
         }
       }
@@ -68,7 +68,7 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
       }
 
       val dbFinal = dbTable.constraint(primaryKey(ID))
-      //println(dbFinal.sql)
+      println(dbFinal.sql)
       dbFinal.execute()
     }
 
@@ -92,11 +92,15 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
           is Insert -> {
             val fields = inst.data.keys.map { it.fn() }
             val refs = inst.resolvedRefs.keys.map { it.fn(inst.table) }
+
+            val dataFields = inst.data.values
+            val dataRefs = inst.resolvedRefs.values
+
             val insert = tx.insertInto(table(tableName), fields.plus(refs))
-              .values(inst.data.values.plus(inst.resolvedRefs.values))
+              .values(dataFields.plus(dataRefs))
               //.returning(TID.fn())
 
-            print("  ${insert.sql}")
+            print("  ${insert.sql}; ${dataFields.plus(dataRefs)}")
 
             // FIX: jOOQ is not returning the generated key!!!
             //val id = insert.fetchOne() as Long? ?: throw Exception("Insert failed! No return $ID!")
@@ -104,10 +108,14 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
             val stmt = conf.connectionProvider().acquire().prepareStatement(insert.sql, Statement.RETURN_GENERATED_KEYS)
 
             var seq = 1
-            for (value in inst.data.values.plus(inst.resolvedRefs.values)) {
-              stmt.setObject(seq, value)
+            inst.data.forEach {
+              // TODO: parse Trait class directly instead of a map?
+              val cValue = if (it.key is TTraits && it.value != null) JsonParser.write(it.value!!) else it.value
+              stmt.setObject(seq, cValue)
               seq++
             }
+
+            dataRefs.forEach {stmt.setObject(seq, it); seq++}
 
             val affectedRows = stmt.executeUpdate()
             if (affectedRows == 0)

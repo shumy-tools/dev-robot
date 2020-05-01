@@ -1,11 +1,14 @@
 package dr
 
 import dr.adaptor.SQLAdaptor
+import dr.io.JsonParser
 import dr.schema.SParser
+import dr.schema.Traits
 import dr.schema.tabular.ID
 import dr.schema.tabular.TParser
 import dr.spi.IAuthorizer
 import dr.spi.IReadAccess
+import java.time.LocalDateTime
 
 class TestAuthorizer: IAuthorizer {
   override fun read(access: IReadAccess): Boolean {
@@ -23,13 +26,31 @@ fun main(args: Array<String>) {
   val server = DrServer(schema, adaptor, TestAuthorizer()).also {
     it.start(8080)
     it.use {
-      val roleID = create(Role("admin", 1))
+      val adminID = create(Role("admin", 1))
+      val operID = create(Role("oper", 2))
+      val otherID = create(Role("other", 3))
 
-      create(User("Alex", "mail@pt", listOf(Address("Portugal", "Lisboa", null), Address("Portugal", "Porto", "alternative")), listOf(roleID)))
-      create(User("Pedro", "mail@pt", listOf(Address("Portugal", "Aveiro", null)), listOf(roleID)))
-      create(User("Maria", "mail@com", listOf(Address("France", "Paris", "a-detail")), listOf(roleID)))
-      create(User("Jose", "mail@pt", listOf(Address("Portugal", "Aveiro", null)), listOf(roleID)))
-      create(User("Arnaldo", "mail@pt", listOf(Address("Germany", "Berlin", null)), listOf(roleID)))
+      create(User("Alex", "mail@pt", listOf(Address("Portugal", "Lisboa", null), Address("Portugal", "Porto", "alternative")), listOf(
+        Traits(adminID, Trace(LocalDateTime.now()))
+      )))
+
+      create(User("Pedro", "mail@pt", listOf(Address("Portugal", "Aveiro", null)), listOf(
+        Traits(adminID, Trace(LocalDateTime.now())),
+        Traits(operID, Trace(LocalDateTime.now())),
+        Traits(otherID, Trace(LocalDateTime.now()))
+      )))
+
+      create(User("Maria", "mail@com", listOf(Address("France", "Paris", "a-detail")), listOf(
+        Traits(operID, Trace(LocalDateTime.now()))
+      )))
+
+      create(User("Jose", "mail@pt", listOf(Address("Portugal", "Aveiro", null)), listOf(
+        Traits(otherID, Trace(LocalDateTime.now()))
+      )))
+
+      create(User("Arnaldo", "mail@pt", listOf(Address("Germany", "Berlin", null)), listOf(
+        Traits(adminID, Trace(LocalDateTime.now()))
+      )))
     }
   }
 

@@ -1,6 +1,7 @@
 package dr.query
 
 import dr.schema.SEntity
+import dr.schema.tabular.STable
 
 enum class SortType {
   NONE, ASC, DSC
@@ -27,14 +28,14 @@ enum class ParamType {
 
 // ----------- query structure -----------
 data class QTree(
-  val entity: SEntity,
+  val table: STable,
 
   val filter: QExpression?,
   val limit: Int?,
   val page: Int?,
   val select: QSelect
 ) {
-  constructor(entity: SEntity, rel: QRelation): this(entity, rel.filter, rel.limit, rel.page, rel.select)
+  constructor(table: STable, rel: QRelation): this(table, rel.filter, rel.limit, rel.page, rel.select)
 }
 
   // ----------- filter structure -----------
@@ -52,7 +53,7 @@ data class QTree(
     )
 
       data class QDeref(
-        val entity: SEntity,
+        val table: STable,
         val deref: DerefType,
         val name: String
       )
@@ -79,7 +80,7 @@ data class QTree(
 
     data class QRelation(
       val name: String,
-      val ref: SEntity,
+      val ref: STable,
 
       val filter: QExpression?,
       val limit: Int?,

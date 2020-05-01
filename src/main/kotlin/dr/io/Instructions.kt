@@ -2,10 +2,7 @@ package dr.io
 
 import dr.schema.ActionType
 import dr.schema.RefID
-import dr.schema.tabular.ID
-import dr.schema.tabular.TProperty
-import dr.schema.tabular.TRef
-import dr.schema.tabular.STable
+import dr.schema.tabular.*
 import java.util.*
 
 class Instructions(private val all: MutableList<Instruction> = mutableListOf()) {
@@ -72,9 +69,7 @@ sealed class Instruction {
   val data = linkedMapOf<TProperty, Any?>()
   val output = linkedMapOf<String, Any?>()
 
-  init {
-    dataStack.push(data as LinkedHashMap<TProperty, Any?>)
-  }
+  init { dataStack.push(data) }
 
   val unresolvedRefs: Map<TRef, Instruction>
     get() = _unresolvedRefs
@@ -106,6 +101,7 @@ sealed class Instruction {
   }
 
   internal fun putData(key: TProperty, value: Any?) {
+    if(key.name == ID) return // ignore @id as a data value
     dataStack.peek()[key] = value
   }
 
@@ -132,7 +128,7 @@ sealed class Instruction {
 }
 
   class Insert(override val table: STable, override val action: ActionType): Instruction() {
-    init { setId(null) } // reserve the first position
+    init { setId(null) } // reserve the first position for @id in the output
     override fun toString() = "Insert($action) - {table=${tableText()}${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
   }
 

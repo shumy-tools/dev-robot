@@ -89,9 +89,8 @@ data class User(
 
   //@Link(Market::class, traits = [UserMarket::class]) val market: Traits,
 
-  //@Unique @Link(Role::class, traits = [Trace::class]) val roles: List<Traits>,
-
-  @Link(Role::class) val roles: List<RefID>
+  @Link(Role::class, traits = [Trace::class]) val roles: List<Traits>
+  //@Link(Role::class) val roles: List<RefID>
 ) {
   val timestamp = LocalDateTime.now()
 }

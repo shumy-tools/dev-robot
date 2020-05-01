@@ -1,7 +1,6 @@
 package dr.io
 
 import com.fasterxml.jackson.databind.node.ArrayNode
-import dr.JsonParser
 import dr.schema.*
 import java.time.LocalDate
 import java.time.LocalDateTime

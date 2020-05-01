@@ -1,8 +1,9 @@
 package dr.query
 
-import dr.schema.SEntity
 import dr.schema.SRelation
-import dr.schema.Schema
+import dr.schema.tabular.STable
+import dr.schema.tabular.TRAITS
+import dr.schema.tabular.Tables
 import dr.spi.IAdaptor
 import dr.spi.IQueryExecutor
 import dr.spi.IReadAccess
@@ -15,7 +16,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 
 /* ------------------------- api -------------------------*/
-class QueryService(private val schema: Schema, private val adaptor: IAdaptor) {
+class QueryService(private val tables: Tables, private val adaptor: IAdaptor) {
 
   fun compile(query: String): Pair<IQueryExecutor, IReadAccess> {
     val lexer = QueryLexer(CharStreams.fromString(query))
@@ -24,7 +25,7 @@ class QueryService(private val schema: Schema, private val adaptor: IAdaptor) {
     val tree = parser.query()
 
     val walker = ParseTreeWalker()
-    val listener = DrQueryListener(schema)
+    val listener = DrQueryListener(tables)
 
     walker.walk(listener, tree)
     //println("tokens: ${tokens.tokens.map { it.text }}")
@@ -79,7 +80,7 @@ private class AccessedPaths: IReadAccess {
   }
 }
 
-private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
+private class DrQueryListener(private val tables: Tables): QueryBaseListener() {
   val errors = mutableListOf<String>()
   val parameters = mutableListOf<Parameter>()
 
@@ -90,23 +91,24 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
   override fun enterQuery(ctx: QueryParser.QueryContext) {
     // check entity name
     val eText = ctx.entity().text
-    val sEntity = this.schema.entities[eText] ?: throw Exception("No entity found: $eText")
+    val sEntity = tables.schema.entities[eText] ?: throw Exception("No entity found: $eText")
+    val sTable = tables.get(sEntity)
 
     // process query
-    val rel = processQLine(listOf(eText), ctx.qline(), sEntity)
-    this.compiled = QTree(sEntity, rel)
+    val rel = processQLine(listOf(eText), ctx.qline(), sTable)
+    this.compiled = QTree(sTable, rel)
   }
 
   override fun visitErrorNode(error: ErrorNode) {
     this.errors.add(error.text)
   }
 
-  private fun processQLine(prefix: List<String>, qline: QueryParser.QlineContext, refEntity: SEntity, isDirectRef: Boolean = false): QRelation {
+  private fun processQLine(prefix: List<String>, qline: QueryParser.QlineContext, refTable: STable, isDirectRef: Boolean = false): QRelation {
     // process select fields
-    val (hasAll, fields) = processFields(prefix, qline.select().fields(), refEntity)
+    val (hasAll, fields) = processFields(prefix, qline.select().fields(), refTable)
 
     // process select relations
-    val relations = processRelations(prefix, qline.select().relation(), refEntity)
+    val relations = processRelations(prefix, qline.select().relation(), refTable)
 
     val limit = qline.limit()?.let {
       if (isDirectRef)
@@ -129,15 +131,15 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
     }
 
     // process filter paths
-    val filter = qline.filter()?.let { processExpr(prefix, it.expr(), refEntity) }
+    val filter = qline.filter()?.let { processExpr(prefix, it.expr(), refTable) }
     if (isDirectRef && filter != null)
       throw Exception("Direct references don't support 'filter'! Use it on the top entity.")
 
     val select = QSelect(hasAll, fields, relations)
-    return QRelation(prefix.last(), refEntity, filter, limit, page, select)
+    return QRelation(prefix.last(), refTable, filter, limit, page, select)
   }
 
-  private fun processRelations(prefix: List<String>, relations: List<QueryParser.RelationContext>, sEntity: SEntity): List<QRelation> {
+  private fun processRelations(prefix: List<String>, relations: List<QueryParser.RelationContext>, sTable: STable): List<QRelation> {
     val present = mutableSetOf<String>()
 
     return relations.map {
@@ -145,12 +147,12 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
       val full = accessed.addRelation(prefix, path)
       exists(present, full)
 
-      val rel = sEntity.rels[path] ?: throw Exception("Invalid relation path '${sEntity.name}.$path'")
-      processQLine(full, it.qline(), rel.ref, !rel.isCollection)
+      val rel = sTable.sEntity.rels[path] ?: throw Exception("Invalid relation path '${sTable.name}.$path'")
+      processQLine(full, it.qline(), tables.get(rel.ref), !rel.isCollection)
     }
   }
 
-  private fun processFields(prefix: List<String>, fields: QueryParser.FieldsContext, sEntity: SEntity): Pair<Boolean, List<QField>> {
+  private fun processFields(prefix: List<String>, fields: QueryParser.FieldsContext, sTable: STable): Pair<Boolean, List<QField>> {
     val present = mutableSetOf<String>()
 
     return if (fields.ALL() != null) {
@@ -159,13 +161,21 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
       Pair(true, listOf())
     } else {
       Pair(false, fields.field().map {
-        val path = it.ID().text
+        val path = it.name().text
         val full = accessed.addField(prefix, path)
         exists(present, full)
 
-        val jType = sEntity.fields[path]?.jType ?: throw Exception("Invalid field path '${sEntity.name}.$path'")
-        val sortType = sortType(it.order()?.text)
+        val jType = sTable.sEntity.fields[path]?.jType ?: if (path.startsWith(TRAITS)) {
+          // TODO: check if trait exists as a field?
 
+          val trait = path.substring(1)
+          if (tables.schema.traits[trait] == null)
+            throw Exception("Trait not found '${sTable.name}.$path'")
+
+          String::class.java
+        } else throw Exception("Invalid field path '${sTable.name}.$path'")
+
+        val sortType = sortType(it.order()?.text)
         val order = it.INT()?.let { ord ->
           val order = ord.text.toInt()
           if (order < 1)
@@ -178,59 +188,59 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
     }
   }
 
-  private fun processExpr(prefix: List<String>, expr: QueryParser.ExprContext, sEntity: SEntity): QExpression {
+  private fun processExpr(prefix: List<String>, expr: QueryParser.ExprContext, sTable: STable): QExpression {
     val list = expr.expr()
     val oper = expr.oper
 
     return when {
       list.size == 1 -> {
-        val qExpression = processExpr(prefix, list.last(), sEntity)
+        val qExpression = processExpr(prefix, list.last(), sTable)
         QExpression(qExpression, null, null, null)
       }
 
       oper != null -> {
-        val qLeft = processExpr(prefix, expr.left, sEntity)
-        val qRight = processExpr(prefix, expr.right, sEntity)
+        val qLeft = processExpr(prefix, expr.left, sTable)
+        val qRight = processExpr(prefix, expr.right, sTable)
         val operType = operType(oper.text)
 
         QExpression(qLeft, operType, qRight, null)
       }
 
       else -> {
-        val qPredicate = processPredicate(prefix, expr.predicate(), sEntity)
+        val qPredicate = processPredicate(prefix, expr.predicate(), sTable)
         QExpression(null, null, null, qPredicate)
       }
     }
   }
 
-  private fun processPredicate(prefix: List<String>, predicate: QueryParser.PredicateContext, sEntity: SEntity): QPredicate {
+  private fun processPredicate(prefix: List<String>, predicate: QueryParser.PredicateContext, sTable: STable): QPredicate {
     // process head
     val path = predicate.path().ID().text
     val full = accessed.addField(prefix, path)
-    val qDerefHead = QDeref(sEntity, DerefType.ONE, path)
+    val qDerefHead = QDeref(sTable, DerefType.ONE, path)
 
     // process tail
     val fullPath = predicate.path().next()
     val qDerefList = if (fullPath.isNotEmpty()) {
       var nextPath = path
       var nextFull = full
-      var lEntity = sEntity
-      var lRelation = lEntity.rels[path] ?: throw Exception("Invalid relation path '${lEntity.name}.$path'")
+      var lTable = sTable
+      var lRelation = lTable.sEntity.rels[path] ?: throw Exception("Invalid relation path '${lTable.name}.$path'")
 
       val qDerefTail = fullPath.mapIndexed { index, nxt ->
         val drType = derefType(nxt.deref().text)
-        checkDeref(drType, lEntity, nextPath, lRelation)
+        checkDeref(drType, lTable, nextPath, lRelation)
 
         // process next path
         nextPath = nxt.ID().text
         nextFull = accessed.addRelation(nextFull, nextPath)
 
-        lEntity = lRelation.ref
+        lTable = tables.get(lRelation.ref)
         if (index != fullPath.size - 1) {
-          lRelation = lEntity.rels[nextPath] ?: throw Exception("Invalid relation path '${lEntity.name}.$nextPath'")
+          lRelation = lTable.sEntity.rels[nextPath] ?: throw Exception("Invalid relation path '${lTable.name}.$nextPath'")
         }
 
-        QDeref(lEntity, drType, nextPath)
+        QDeref(lTable, drType, nextPath)
       }
 
       listOf(qDerefHead).plus(qDerefTail)
@@ -245,17 +255,17 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
     val compType = compType(predicate.comp().text)
     val qParam = transformParam(predicate.param())
 
-    if (qDeref.entity.fields[qDeref.name] == null) {
-      val rel = qDeref.entity.rels[qDeref.name]
+    if (qDeref.table.sEntity.fields[qDeref.name] == null) {
+      val rel = qDeref.table.sEntity.rels[qDeref.name]
       val completeError = if (rel != null) {
         val oneOf = rel.ref.fields.map { it.key }.plus(rel.ref.rels.map { it.key })
         " However, a relation with that name exists. Please complete the path with one of $oneOf"
       } else ""
 
-      throw Exception("Invalid relation path '${qDeref.entity.name}.${qDeref.name}'!$completeError")
+      throw Exception("Invalid relation path '${qDeref.table.sEntity.name}.${qDeref.name}'!$completeError")
     }
 
-    this.parameters.add(Parameter(qDeref.entity, qDeref.name, compType, qParam))
+    this.parameters.add(Parameter(qDeref.table, qDeref.name, compType, qParam))
 
     return QPredicate(qDerefList, compType, qParam)
   }
@@ -319,10 +329,10 @@ private fun transformValue(value: QueryParser.ValueContext) = when {
   else -> throw Exception("Unrecognized parameter type!")
 }
 
-private fun checkDeref(drType: DerefType, sEntity: SEntity, path: String, sRelation: SRelation) {
+private fun checkDeref(drType: DerefType, sTable: STable, path: String, sRelation: SRelation) {
   if (drType == DerefType.ONE && sRelation.isCollection)
-    throw Exception("Invalid relation path '${sEntity.name}.${path}.'. Expected one-to-many relation!")
+    throw Exception("Invalid relation path '${sTable.name}.${path}.'. Expected one-to-many relation!")
 
   if (drType == DerefType.MANY && !sRelation.isCollection)
-    throw Exception("Invalid relation path '${sEntity.name}.${path}..' Expected one-to-one relation!")
+    throw Exception("Invalid relation path '${sTable.name}.${path}..' Expected one-to-one relation!")
 }

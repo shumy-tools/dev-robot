@@ -4,8 +4,8 @@ import dr.query.QField
 import dr.query.QSelect
 import dr.schema.FieldType
 import dr.schema.SEntity
-import dr.schema.SField
 import dr.schema.tabular.*
+import org.jooq.DataType
 import org.jooq.Field
 import org.jooq.impl.DSL
 import org.jooq.impl.SQLDataType
@@ -32,20 +32,26 @@ fun STable.refSqlName(tRef: TRef) = when(tRef) {
 }
 
 fun STable.dbFields(selection: QSelect, prefix: String = MAIN) = if (selection.hasAll) {
-  props.filter { it.name != ID }.map { it.fn(prefix) }
+  props.values.filter { it.name != ID }.map { it.fn(prefix) }
 } else {
   selection.fields.filter { it.name != ID }.map { it.fn(prefix) }
 }
 
-fun STable.dbDirectRefs(selection: QSelect) = selection.relations.mapNotNull {
-  val value = directRefs[it.name]
+fun STable.dbOneToOne(selection: QSelect) = selection.relations.mapNotNull {
+  val value = oneToOne[it.name]
   if (value != null) it to value else null
 }.toMap()
 
-fun STable.dbInverseRefs(selection: QSelect) = selection.relations.mapNotNull {
-  val value = inverseRefs[it.name]
+fun STable.dbOneToMany(selection: QSelect) = selection.relations.mapNotNull {
+  val value = oneToMany[it.name]
   if (value != null) it to value else null
 }.toMap()
+
+fun STable.dbManyToMany(selection: QSelect) = selection.relations.mapNotNull {
+  val value = manyToMany[it.name]
+  if (value != null) it to value else null
+}.toMap()
+
 
 // "PLATFORM_CLASS_MAPPED_TO_KOTLIN"
 @Suppress("UNCHECKED_CAST")
@@ -53,6 +59,20 @@ fun idFn(prefix: String? = null): Field<Long> = if (prefix != null) {
   DSL.field(DSL.name(prefix, ID), java.lang.Long::class.java) as Field<Long>
 } else {
   DSL.field(DSL.name(ID), java.lang.Long::class.java) as Field<Long>
+}
+
+/*@Suppress("UNCHECKED_CAST")
+fun refFn(prefix: String? = null): Field<Long> = if (prefix != null) {
+  DSL.field(DSL.name(prefix, REF), java.lang.Long::class.java) as Field<Long>
+} else {
+  DSL.field(DSL.name(REF), java.lang.Long::class.java) as Field<Long>
+}*/
+
+@Suppress("UNCHECKED_CAST")
+fun invFn(prefix: String? = null): Field<Long> = if (prefix != null) {
+  DSL.field(DSL.name(prefix, INV), java.lang.Long::class.java) as Field<Long>
+} else {
+  DSL.field(DSL.name(INV), java.lang.Long::class.java) as Field<Long>
 }
 
 @Suppress("UNCHECKED_CAST")
@@ -69,12 +89,12 @@ fun TProperty.fn(prefix: String? = null): Field<Any> = if (prefix != null) {
   DSL.field(DSL.name(name), jType) as Field<Any>
 }
 
-@Suppress("UNCHECKED_CAST")
+/*@Suppress("UNCHECKED_CAST")
 fun SField.fn(prefix: String? = null): Field<Any> = if (prefix != null) {
   DSL.field(DSL.name(prefix, name), jType) as Field<Any>
 } else {
   DSL.field(DSL.name(name), jType) as Field<Any>
-}
+}*/
 
 @Suppress("UNCHECKED_CAST")
 fun QField.fn(prefix: String? = null): Field<Any> = if (prefix != null) {
@@ -83,7 +103,7 @@ fun QField.fn(prefix: String? = null): Field<Any> = if (prefix != null) {
   DSL.field(DSL.name(name), jType) as Field<Any>
 }
 
-fun FieldType.toSqlType() = when (this) {
+fun FieldType.toSqlType(): DataType<out Any> = when (this) {
   FieldType.TEXT -> SQLDataType.VARCHAR
   FieldType.INT -> SQLDataType.INTEGER
   FieldType.LONG -> SQLDataType.BIGINT

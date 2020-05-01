@@ -81,7 +81,7 @@ class InstructionBuilder(private val tables: Tables) {
     for (oRef in entity.allOwnedReferences) {
       if (oRef.schema.isUnique || oRef.schema.ref.type == EntityType.TRAIT) {
         // A {<rel>: <fields>}
-        val rOutput = topInst.include(entity.allFields, oRef.schema)
+        val rOutput = topInst.include(entity.allFields, oRef.schema.ref)
         topInst.putAllOutput(rOutput)
       } else {
         // A ref_<rel> --> B
@@ -114,13 +114,14 @@ class InstructionBuilder(private val tables: Tables) {
 
         is OneLinkWithTraits -> {
           topInst.putResolvedRef(TDirectRef(entity.schema, lRef.schema), rValue.ref.refID)
-          unwrapTraits(lRef.schema, rValue.ref.traits, topInst)
+          unwrapTraits(rValue.ref.traits, topInst)
         }
 
         is OneUnlink -> {
           topInst.putResolvedRef(TDirectRef(entity.schema, lRef.schema), RefID())
-          if (lRef.schema.traits.isNotEmpty()) {
-            topInst.putData(TEmbedded(lRef.schema), null)
+          lRef.schema.traits.values.forEach {
+            // TODO: is this correct (needs test)
+            topInst.putData(TTraits(it), null)
           }
         }
       }
@@ -134,7 +135,7 @@ class InstructionBuilder(private val tables: Tables) {
         is OneLinkWithTraits -> {
           val linkInst = link(entity, lCol.schema, rValue.ref.refID, topInst)
           bottomInclude.add(linkInst)
-          unwrapTraits(lCol.schema, rValue.ref.traits, linkInst)
+          unwrapTraits(rValue.ref.traits, linkInst)
         }
 
         is ManyLinksWithoutTraits -> rValue.refs.forEach {
@@ -144,7 +145,7 @@ class InstructionBuilder(private val tables: Tables) {
         is ManyLinksWithTraits -> rValue.refs.forEach {
           val linkInst = link(entity, lCol.schema, it.refID, topInst)
           bottomInclude.add(linkInst)
-          unwrapTraits(lCol.schema, it.traits, linkInst)
+          unwrapTraits(it.traits, linkInst)
         }
 
         is OneUnlink -> bottomInclude.add(unlink(entity, lCol.schema, rValue.ref, topInst))
@@ -188,20 +189,17 @@ class InstructionBuilder(private val tables: Tables) {
     }
   }
 
-  private fun unwrapTraits(at: SRelation, traits: List<Any>, topInst: Instruction) {
+  private fun unwrapTraits(traits: List<Any>, topInst: Instruction) {
     for (trait in traits) {
       val name = trait.javaClass.kotlin.qualifiedName
       val sTrait = tables.schema.traits[name] ?: throw Exception("Trait type not found! - ($name)")
-
-      val dTrait = DEntity(sTrait, cEntity = trait)
 
       /*
       topInst.with(true, at) {
         processUnpackedEntity(dTrait, topInst)
       }*/
 
-      // A <fields>
-      topInst.include(dTrait.allFields, at)
+      topInst.putData(TTraits(sTrait), trait)
 
       // TODO: process references!
     }
@@ -209,9 +207,9 @@ class InstructionBuilder(private val tables: Tables) {
 }
 
 /* ------------------------- helpers -------------------------*/
-private fun Instruction.include(fields: List<DField>, at: SRelation? = null): Map<String, Any?> {
+private fun Instruction.include(fields: List<DField>, at: SEntity? = null): Map<String, Any?> {
   return if (at != null) {
-    this.with(TEmbedded(at)) { addFields(fields) }
+    with(TTraits(at)) { addFields(fields) }
   } else {
     addFields(fields)
   }
