@@ -33,7 +33,9 @@ data class QTree(
   val limit: Int?,
   val page: Int?,
   val select: QSelect
-)
+) {
+  constructor(entity: SEntity, rel: QRelation): this(entity, rel.filter, rel.limit, rel.page, rel.select)
+}
 
   // ----------- filter structure -----------
   data class QExpression(

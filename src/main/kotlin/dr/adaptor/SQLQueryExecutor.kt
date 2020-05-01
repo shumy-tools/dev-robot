@@ -6,8 +6,10 @@ import dr.schema.tabular.STable
 import dr.schema.tabular.Tables
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
+import dr.spi.QRow
 import org.jooq.*
 import org.jooq.impl.DSL.*
+import java.util.concurrent.atomic.AtomicBoolean
 
 /*if (!sRelation.isCollection) {
   if (sRelation.type == RelationType.CREATE && (sRelation.isUnique || sRelation.ref.type == EntityType.TRAIT)) {
@@ -28,55 +30,99 @@ import org.jooq.impl.DSL.*
 }*/
 
 class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, private val qTree: QTree): IQueryExecutor {
-  private val mTable = tables.get(qTree.entity)
-  private val qTable = table(mTable.sqlName()).asTable(MAIN)
+  private val sTable = tables.get(qTree.entity)
+  private val qTable = table(sTable.sqlName()).asTable(MAIN)
 
   private val joinFields = mutableListOf<Field<Any>>()
   private val joinTables = mutableListOf<Pair<Table<*>, Condition>>()
 
-  private var hasInClause = false
+  private var hasInClause = AtomicBoolean(false)
   private var conditions: Condition? = null
 
-  private val inverted = linkedMapOf<String, SQLQueryExecutor>()
+  private val inverted = linkedMapOf<String, Pair<Field<Long>, SQLQueryExecutor>>()
 
-  // compile QTree
+  // compile query tree
   init {
-    qTree.run { mTable.compile(select, filter) }
+    sTable.compile(qTree.select, qTree.filter)
+
+    val invRefs = sTable.dbInverseRefs(qTree.select)
+    for ((qRel, iRef) in invRefs) {
+      val subTree = QTree(iRef.rel.ref, qRel)
+      val subQuery = SQLQueryExecutor(db, tables, subTree)
+      inverted[qRel.name] = Pair(iRef.fn(tables.get(iRef.rel.ref)), subQuery)
+    }
   }
 
   override fun exec(params: Map<String, Any>): IResult {
+    return subExec(params)
+  }
+
+  @Suppress("UNCHECKED_CAST")
+  fun subExec(params: Map<String, Any>, fk: Field<Long>? = null, topIds: Select<*>? = null): IResult {
     val mParams = params.toMutableMap()
-    val query = db.selectQuery().apply {
-      addSelect(joinFields)
-      addFrom(qTable)
+    val ids = buildQueryIds(params.toMutableMap())
+    val query = buildQuery(mParams)
 
-      joinTables.forEach { addJoin(it.first, it.second) }
-      if (conditions != null) {
-        // needs to rebuild conditions with included values when "IN" clause is present!
-        if (hasInClause) addConditions(mTable.expression(qTree.filter!!, params = mParams)) else addConditions(conditions)
-      }
+    if (fk != null) {
+      query.addSelect(fk)
+      query.addConditions((fk as Field<Any>).`in`(topIds))
+    }
 
-      when {
-        qTree.page != null -> { addLimit(qTree.limit); addOffset((qTree.page - 1) * qTree.limit!!) }
-        qTree.limit != null -> addLimit(qTree.limit)
-        else -> Unit
+    // process results
+    val result = SQLResult()
+
+    // add main result
+    println(query.sql)
+    mParams.forEach { query.bind(it.key, it.value) }
+    query.fetch().forEach { result.process(it, fk) }
+
+    // add sub-results to the main result
+    inverted.forEach {
+      val subResult = it.value.second.subExec(params, it.value.first, ids) as SQLResult
+      result.rows.keys.forEach { pk ->
+        val fkKeys = subResult.fkKeys[pk] // join results via "pk <-- fk"
+        fkKeys?.forEach { subID ->
+          val line = subResult.rows[subID]!!
+          result.addTo(pk, it.key, line)
+        }
       }
     }
 
-    println(query.sql)
-    mParams.forEach { query.bind(it.key, it.value) }
+    // TODO: also run TSuperRef
 
-    val data = TData()
-    val directResult = query.fetch()
-    directResult.forEach { data.process(it) }
-
-    return SQLResult(data)
+    return result
   }
 
   private fun STable.compile(selection: QSelect, filter: QExpression?) {
     joinFields(selection)
     joinTables(selection)
     if (filter != null) conditions = expression(filter)
+  }
+
+  private fun buildQueryIds(mParams: MutableMap<String, Any>) = db.selectQuery().apply {
+    addSelect(idFn())
+    buildQueryParts(mParams)
+  }
+
+  private fun buildQuery(mParams: MutableMap<String, Any>) = db.selectQuery().apply {
+    addSelect(joinFields)
+    buildQueryParts(mParams)
+  }
+
+  private fun SelectQuery<Record>.buildQueryParts(mParams: MutableMap<String, Any>) {
+    addFrom(qTable)
+
+    joinTables.forEach { addJoin(it.first, it.second) }
+    if (conditions != null) {
+      // needs to rebuild conditions with included values when "IN" clause is present!
+      if (hasInClause.get()) addConditions(sTable.expression(qTree.filter!!, params = mParams)) else addConditions(conditions)
+    }
+
+    when {
+      qTree.page != null -> { addLimit(qTree.limit); addOffset((qTree.page - 1) * qTree.limit!!) }
+      qTree.limit != null -> addLimit(qTree.limit)
+      else -> Unit
+    }
   }
 
   @Suppress("UNCHECKED_CAST")
@@ -139,7 +185,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
       CompType.MORE_EQ -> path.greaterOrEqual(value)
       CompType.LESS_EQ -> path.lessOrEqual(value)
       CompType.IN -> {
-        hasInClause = true
+        hasInClause.set(true)
         if (pred.param.type == ParamType.PARAM) {
           val inValues = params.remove(pred.param.value)
           path.`in`(inValues)
@@ -153,25 +199,43 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
 
 
 /* ------------------------- helpers -------------------------*/
-private class SQLResult(val data: TData): IResult {
+class SQLResult: IResult {
+  internal val rows = linkedMapOf<Long, LinkedHashMap<String, Any?>>()
+  internal val fkKeys = linkedMapOf<Long, MutableList<Long>>()
+
+  override fun row(id: Long) = rows[id]
+
+  override fun rows() = rows.values.toList()
+
   override fun <T : Any> get(name: String): T {
     TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
   }
 
-  override fun raw() = data.rows
-}
+  @Suppress("UNCHECKED_CAST")
+  fun addTo(pk: Long, name: String, row: QRow) {
+    val main = rows.getValue(pk)
+    val list = main.getOrPut(name) { mutableListOf<QRow>() } as MutableList<QRow>
+    list.add(row)
+  }
 
-private class TData {
-  val rows = mutableListOf<LinkedHashMap<String, Any?>>()
-
-  fun process(record: Record) {
+  fun process(record: Record, fk: Field<Long>? = null) {
+    var rowID: Long? = null
     val row = linkedMapOf<String, Any?>()
     record.fields().forEach {
       val value = it.getValue(record)
-      if (it.name.startsWith('.')) row.processJoin(it.name, value) else row[it.name] = value
+      if (it.name == ID)
+        rowID = value as Long
+
+      // process foreignKeys
+      if (fk != null && it.name == fk.name) {
+        val fkRows = fkKeys.getOrPut(value as Long) { mutableListOf() }
+        fkRows.add(rowID!!)
+      } else {
+        if (it.name.startsWith('.')) row.processJoin(it.name, value) else row[it.name] = value
+      }
     }
 
-    rows.add(row)
+    rows[rowID!!] = row
   }
 
   @Suppress("UNCHECKED_CAST")

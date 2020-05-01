@@ -94,7 +94,7 @@ private class DrQueryListener(private val schema: Schema): QueryBaseListener() {
 
     // process query
     val rel = processQLine(listOf(eText), ctx.qline(), sEntity)
-    this.compiled = QTree(sEntity, rel.filter, rel.limit, rel.page, rel.select)
+    this.compiled = QTree(sEntity, rel)
   }
 
   override fun visitErrorNode(error: ErrorNode) {

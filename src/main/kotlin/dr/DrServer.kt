@@ -222,7 +222,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
           val res = query.exec()
           mutableMapOf<String, Any>("@type" to "ok").apply {
-            val data = res.raw()
+            val data = res.rows()
             this["count"] = data.size
             this["data"] = data
           }
@@ -243,7 +243,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
           val params = JsonParser.readMap(ctx.body())
           val res = query.exec(params)
           mutableMapOf<String, Any>("@type" to "ok").apply {
-            this["data"] = res.raw()
+            this["data"] = res.rows()
           }
         }
 

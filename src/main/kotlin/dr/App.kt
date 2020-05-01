@@ -25,11 +25,11 @@ fun main(args: Array<String>) {
     it.use {
       val roleID = create(Role("admin", 1))
 
-      create(User("Alex", "mail@pt", Address("Portugal", "Lisboa", null), listOf(roleID)))
-      create(User("Pedro", "mail@pt", Address("Portugal", "Aveiro", null), listOf(roleID)))
-      create(User("Maria", "mail@com", Address("France", "Paris", "a-detail"), listOf(roleID)))
-      create(User("Jose", "mail@pt", Address("Portugal", "Aveiro", null), listOf(roleID)))
-      create(User("Arnaldo", "mail@pt", Address("Germany", "Berlin", null), listOf(roleID)))
+      create(User("Alex", "mail@pt", listOf(Address("Portugal", "Lisboa", null), Address("Portugal", "Porto", "alternative")), listOf(roleID)))
+      create(User("Pedro", "mail@pt", listOf(Address("Portugal", "Aveiro", null)), listOf(roleID)))
+      create(User("Maria", "mail@com", listOf(Address("France", "Paris", "a-detail")), listOf(roleID)))
+      create(User("Jose", "mail@pt", listOf(Address("Portugal", "Aveiro", null)), listOf(roleID)))
+      create(User("Arnaldo", "mail@pt", listOf(Address("Germany", "Berlin", null)), listOf(roleID)))
     }
   }
 

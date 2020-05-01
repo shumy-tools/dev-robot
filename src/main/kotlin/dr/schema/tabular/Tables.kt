@@ -31,11 +31,11 @@ data class STable(val sEntity: SEntity, val sRelation: SRelation? = null) {
   val props: List<TProperty> = mutableListOf()
   val refs: List<TRef> = mutableListOf()
 
+  val inverseRefs: Map<String, TInverseRef> = linkedMapOf()
+
   val directRefs: Map<String, TDirectRef> by lazy {
     refs.filterIsInstance<TDirectRef>().map { it.rel.name to it }.toMap()
   }
-
-  //val inverseRefs: List<TInverseRef> by lazy { refs.filterIsInstance<TInverseRef>() }
 
   val name: String by lazy {
     tableNameFrom(sEntity.name, sRelation?.name)
@@ -47,6 +47,10 @@ data class STable(val sEntity: SEntity, val sRelation: SRelation? = null) {
 
   internal fun addRef(ref: TRef) {
     (refs as MutableList<TRef>).add(ref)
+  }
+
+  internal fun addInvRef(invRef: TInverseRef) {
+    (inverseRefs as LinkedHashMap<String, TInverseRef>)[invRef.rel.name] = invRef
   }
 }
 

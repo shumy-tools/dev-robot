@@ -42,6 +42,11 @@ fun STable.dbDirectRefs(selection: QSelect) = selection.relations.mapNotNull {
   if (value != null) it to value else null
 }.toMap()
 
+fun STable.dbInverseRefs(selection: QSelect) = selection.relations.mapNotNull {
+  val value = inverseRefs[it.name]
+  if (value != null) it to value else null
+}.toMap()
+
 // "PLATFORM_CLASS_MAPPED_TO_KOTLIN"
 @Suppress("UNCHECKED_CAST")
 fun idFn(prefix: String? = null): Field<Long> = if (prefix != null) {

@@ -25,19 +25,19 @@ class TParser(private val schema: Schema) {
     return topInst
   }
 
-  private fun SEntity.processTable(rootInst: STable) {
-    processUnpackedTable(rootInst)
+  private fun SEntity.processTable(rootTable: STable) {
+    processUnpackedTable(rootTable)
     sealed.values.forEach { it.getOrCreateTable() }
   }
 
-  private fun SEntity.processUnpackedTable(topInst: STable) {
+  private fun SEntity.processUnpackedTable(topTable: STable) {
     // --------------------------------- fields ---------------------------------------------
     // A <fields>
     for (field in fields.values) {
       when (field.name) {
-        ID -> topInst.addProperty(TID)
-        TYPE -> topInst.addProperty(TType)
-        else -> topInst.addProperty(TField(field))
+        ID -> topTable.addProperty(TID)
+        TYPE -> topTable.addProperty(TType)
+        else -> topTable.addProperty(TField(field))
       }
     }
 
@@ -45,11 +45,11 @@ class TParser(private val schema: Schema) {
     for (oRef in allOwnedReferences.values) {
       if (oRef.isUnique || oRef.ref.type == EntityType.TRAIT) {
         // A {<rel>: <fields>}
-        topInst.addProperty(TEmbedded(oRef))
+        topTable.addProperty(TEmbedded(oRef))
       } else {
         // A ref_<rel> --> B
         oRef.ref.getOrCreateTable()
-        topInst.addRef(TDirectRef(oRef.ref, oRef))
+        topTable.addRef(TDirectRef(oRef.ref, oRef))
       }
     }
 
@@ -57,33 +57,38 @@ class TParser(private val schema: Schema) {
     for (oCol in allOwnedCollections.values) {
       // A <-- inv_<A>_<rel> B
       val refTable = oCol.ref.getOrCreateTable()
-      refTable.addRef(TInverseRef(this, oCol))
+      val invRef = TInverseRef(this, oCol)
+      topTable.addInvRef(invRef)
+      refTable.addRef(invRef)
     }
 
     // --------------------------------- allLinkedReferences ----------------------------------
     for (lRef in allLinkedReferences.values) {
       // A ref_<rel> --> B
-      val refTable = lRef.ref.getOrCreateTable()
-      topInst.addRef(TDirectRef(lRef.ref, lRef))
+      lRef.ref.getOrCreateTable()
+      topTable.addRef(TDirectRef(lRef.ref, lRef))
       if (lRef.traits.isNotEmpty()) {
-        topInst.addProperty(TEmbedded(lRef))
+        topTable.addProperty(TEmbedded(lRef))
       }
     }
 
     // --------------------------------- allLinkedCollections ---------------------------------
     for (lCol in allLinkedCollections.values) {
-      val linkInst = linkTable(lCol)
+      val linkInst = linkTable(topTable, lCol)
       if (lCol.traits.isNotEmpty()) {
         linkInst.addProperty(TEmbedded(lCol))
       }
     }
   }
 
-  private fun SEntity.linkTable(sRelation: SRelation): STable {
+  private fun SEntity.linkTable(topTable: STable, sRelation: SRelation): STable {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
       val refTable = sRelation.ref.getOrCreateTable()
-      refTable.addRef(TInverseRef(this, sRelation))
+      val invRef = TInverseRef(this, sRelation)
+      topTable.addInvRef(invRef)
+      refTable.addRef(invRef)
+
       refTable
     } else {
       // A <-- [inv ref] --> B

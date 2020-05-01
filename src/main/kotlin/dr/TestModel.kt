@@ -83,7 +83,9 @@ data class User(
 
   @Checks(EmailCheck::class) val email: String,
 
-  @Create val address: Address,
+  @Create val address: List<Address>,
+
+  //@Create val address: Address,
 
   //@Link(Market::class, traits = [UserMarket::class]) val market: Traits,
 
