@@ -45,7 +45,7 @@ class TParser(private val schema: Schema) {
     for (oRef in allOwnedReferences.values) {
       if (oRef.isUnique || oRef.ref.type == EntityType.TRAIT) {
         // A {<rel>: <fields>}
-        topTable.addProperty(TTraits(oRef.ref))
+        topTable.addProperty(TEmbedded(oRef, oRef.ref))
       } else {
         // A ref_<rel> --> B
         oRef.ref.getOrCreateTable()
@@ -100,6 +100,6 @@ class TParser(private val schema: Schema) {
   }
 
   private fun STable.addTraits(rel: SRelation) = rel.traits.values.forEach {
-    addProperty(TTraits(it))
+    addProperty(TEmbedded(rel, it))
   }
 }

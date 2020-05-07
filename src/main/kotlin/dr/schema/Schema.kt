@@ -100,7 +100,7 @@ data class Pack<T: Any>(
 }
 
 data class Traits(
-  val refID: RefID,
+  val id: RefID,
 
   @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
   val traits: List<Any>

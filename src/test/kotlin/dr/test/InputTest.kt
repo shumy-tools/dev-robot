@@ -35,14 +35,14 @@ data class A(
 data class B(
   val oneText: String,
   @Open @Create val twoEntity: C,
-  @Open @Link(C::class) val threeEntity: Long,
+  @Open @Link(C::class) val threeEntity: RefID,
   @Open @Link(C::class, Trace::class) val fourEntity: Traits
 )
 
 @Master
 data class B1(
   val oneText: String,
-  @Open @Link(C::class) val twoEntity: List<Long>,
+  @Open @Link(C::class) val twoEntity: List<RefID>,
   @Open @Link(C::class, Trace::class) val threeEntity: List<Traits>
 )
 
@@ -56,7 +56,7 @@ private fun Instructions.process(): List<Instruction> {
   this.exec {
     val id = when (it) {
       is Insert -> ++idSeq
-      is Update -> it.id
+      is Update -> 0L
       is Delete -> 0L
     }
 
@@ -117,7 +117,7 @@ class InputTest {
 
     assert(allInst.size == 2)
     assert(allInst[0].toString() == "Insert(ADD) - {table=dr.test.C, data={oneText=oneC}}")
-    assert(allInst[1].toString() == "Insert(CREATE) - {table=dr.test.B, data={oneText=oneB, @fourEntity={value=traceValue}}, refs={@ref-to-dr.test.B-threeEntity=1, @ref-to-dr.test.B-fourEntity=2, @ref-to-dr.test.B-twoEntity=10}}")
+    assert(allInst[1].toString() == "Insert(CREATE) - {table=dr.test.B, data={oneText=oneB, &dr.test.Trace@fourEntity=Trace(value=traceValue)}, refs={@ref-to-dr.test.B-threeEntity=1, @ref-to-dr.test.B-fourEntity=2, @ref-to-dr.test.B-twoEntity=10}}")
   }
 
   @Test fun testCreateWithCollections() {
@@ -137,8 +137,8 @@ class InputTest {
     assert(allInst[0].toString() == "Insert(CREATE) - {table=dr.test.B1, data={oneText=oneB1}}")
     assert(allInst[1].toString() == "Insert(LINK) - {table=dr.test.B1-twoEntity, refs={@ref-to-dr.test.C=1, @inv-to-dr.test.B1=10}}")
     assert(allInst[2].toString() == "Insert(LINK) - {table=dr.test.B1-twoEntity, refs={@ref-to-dr.test.C=2, @inv-to-dr.test.B1=10}}")
-    assert(allInst[3].toString() == "Insert(LINK) - {table=dr.test.B1-threeEntity, data={@threeEntity={value=trace1}}, refs={@ref-to-dr.test.C=100, @inv-to-dr.test.B1=10}}")
-    assert(allInst[4].toString() == "Insert(LINK) - {table=dr.test.B1-threeEntity, data={@threeEntity={value=trace2}}, refs={@ref-to-dr.test.C=200, @inv-to-dr.test.B1=10}}")
+    assert(allInst[3].toString() == "Insert(LINK) - {table=dr.test.B1-threeEntity, data={&dr.test.Trace@threeEntity=Trace(value=trace1)}, refs={@ref-to-dr.test.C=100, @inv-to-dr.test.B1=10}}")
+    assert(allInst[4].toString() == "Insert(LINK) - {table=dr.test.B1-threeEntity, data={&dr.test.Trace@threeEntity=Trace(value=trace2)}, refs={@ref-to-dr.test.C=200, @inv-to-dr.test.B1=10}}")
   }
 
   @Test fun testLinkRelations() {
@@ -154,7 +154,8 @@ class InputTest {
         "@type":"one-link-traits",
         "ref":{
           "id":200,
-          "traits":[{"@type":"dr.test.Trace","value":"traceUpdate"}]}
+          "traits":[{"@type":"dr.test.Trace","value":"traceUpdate"}]
+        }
       }
     }"""
 
@@ -163,7 +164,7 @@ class InputTest {
 
     assert(allInst.size == 2)
     assert(allInst[0].toString() == "Insert(ADD) - {table=dr.test.C, data={oneText=oneC}}")
-    assert(allInst[1].toString() == "Update(UPDATE) - {table=dr.test.B, id=20, data={@fourEntity={value=traceUpdate}}, refs={@ref-to-dr.test.B-threeEntity=100, @ref-to-dr.test.B-fourEntity=200, @ref-to-dr.test.B-twoEntity=10}}")
+    assert(allInst[1].toString() == "Update(UPDATE) - {table=dr.test.B, id=20, data={&dr.test.Trace@fourEntity=Trace(value=traceUpdate)}, refs={@ref-to-dr.test.B-threeEntity=100, @ref-to-dr.test.B-fourEntity=200, @ref-to-dr.test.B-twoEntity=10}}")
   }
 
   @Test fun testUnlinkRelations() {

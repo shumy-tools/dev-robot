@@ -53,7 +53,7 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
         dbTable = when(prop) {
           is TID -> dbTable.column(prop.name, SQLDataType.BIGINT.nullable(false).identity(true))
           is TType -> dbTable.column(prop.name, SQLDataType.VARCHAR.nullable(false))
-          is TTraits -> dbTable.column(prop.name, SQLDataType.VARCHAR.nullable(false))
+          is TEmbedded -> dbTable.column(prop.name, SQLDataType.VARCHAR.nullable(false))
           is TField -> dbTable.column(prop.name, prop.field.type.toSqlType().nullable(prop.field.isOptional))
         }
       }
@@ -110,7 +110,7 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
             var seq = 1
             inst.data.forEach {
               // TODO: parse Trait class directly instead of a map?
-              val cValue = if (it.key is TTraits && it.value != null) JsonParser.write(it.value!!) else it.value
+              val cValue = if (it.key is TEmbedded && it.value != null) JsonParser.write(it.value!!) else it.value
               stmt.setObject(seq, cValue)
               seq++
             }

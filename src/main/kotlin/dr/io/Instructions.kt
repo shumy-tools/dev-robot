@@ -5,7 +5,7 @@ import dr.schema.RefID
 import dr.schema.tabular.*
 import java.util.*
 
-class Instructions(private val all: MutableList<Instruction> = mutableListOf()) {
+class Instructions(val all: MutableList<Instruction> = mutableListOf()) {
   lateinit var root: Instruction
     internal set
 

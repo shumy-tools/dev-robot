@@ -4,7 +4,6 @@ import dr.schema.SEntity
 import dr.schema.SField
 import dr.schema.SRelation
 import dr.schema.Schema
-import kotlin.reflect.KClass
 
 const val TRAITS = "&"
 const val ID = "@id"
@@ -71,7 +70,7 @@ sealed class TProperty {
     when(this) {
       is TID -> java.lang.Long::class.java
       is TType -> java.lang.String::class.java
-      is TTraits -> java.lang.String::class.java
+      is TEmbedded -> java.lang.String::class.java
       is TField -> field.jType
     }
   }
@@ -80,7 +79,7 @@ sealed class TProperty {
     when(this) {
       is TID -> ID
       is TType -> TYPE
-      is TTraits -> "$TRAITS${trait.name}"
+      is TEmbedded -> "$TRAITS${trait.name}@${rel.name}"
       is TField -> field.name
     }
   }
@@ -89,7 +88,7 @@ sealed class TProperty {
     when (this) {
       is TID -> true
       is TType -> false
-      is TTraits -> false
+      is TEmbedded -> false
       is TField -> field.isUnique
     }
   }
@@ -99,7 +98,7 @@ sealed class TProperty {
 
   object TID: TProperty()
   object TType: TProperty()
-  class TTraits(val trait: SEntity): TProperty()
+  class TEmbedded(val rel: SRelation, val trait: SEntity): TProperty()
   class TField(val field: SField): TProperty()
 
 
