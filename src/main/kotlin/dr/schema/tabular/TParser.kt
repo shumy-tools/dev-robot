@@ -72,8 +72,8 @@ class TParser(private val schema: Schema) {
 
     // --------------------------------- allLinkedCollections ---------------------------------
     for (lCol in allLinkedCollections.values) {
-      val linkInst = linkTable(topTable, lCol)
-      linkInst.addTraits(lCol)
+      val auxTable = linkTable(topTable, lCol)
+      auxTable.addTraits(lCol)
     }
   }
 

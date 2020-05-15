@@ -2,10 +2,7 @@ package dr.adaptor
 
 import dr.io.JsonParser
 import dr.query.*
-import dr.schema.tabular.ID
-import dr.schema.tabular.STable
-import dr.schema.tabular.TRAITS
-import dr.schema.tabular.Tables
+import dr.schema.tabular.*
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
 import dr.spi.QRow
@@ -17,7 +14,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   private val qTable = table(qTree.table.sqlName()).asTable(MAIN)
 
   private val joinFields = mutableListOf<Field<Any>>()
-  private val joinTables = mutableListOf<Pair<Table<*>, Condition>>()
+  private val joinTables = mutableMapOf<String, Pair<Table<*>, Condition>>()
 
   private var hasInClause = AtomicBoolean(false)
   private var conditions: Condition? = null
@@ -110,7 +107,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   }
 
   private fun buildQueryIds(mParams: MutableMap<String, Any>) = db.selectQuery().apply {
-    addSelect(idFn())
+    addSelect(idFn(MAIN))
     buildQueryParts(mParams)
   }
 
@@ -122,7 +119,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   private fun SelectQuery<Record>.buildQueryParts(mParams: MutableMap<String, Any>) {
     addFrom(qTable)
 
-    joinTables.forEach { addJoin(it.first, it.second) }
+    joinTables.values.forEach { addJoin(it.first, it.second) }
     if (conditions != null) {
       // needs to rebuild conditions with included values when "IN" clause is present!
       if (hasInClause.get()) addConditions(qTree.table.expression(qTree.filter!!, params = mParams)) else addConditions(conditions)
@@ -153,10 +150,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     // one-to-one A.@ref_<rel> --> B.@id
     val refs = dbOneToOne(selection)
     for (dRef in refs.values) {
-      val rTable = table(dRef.rel.ref.sqlName()).asTable(dRef.rel.name)
-      val rField = dRef.fn(this, prefix)
-      val rId = idFn(dRef.rel.name)
-      joinTables.add(rTable to rField.eq(rId))
+      directJoin(dRef, prefix)
     }
 
     for (qRel in refs.keys) {
@@ -164,11 +158,18 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     }
   }
 
-  private fun STable.expression(expr: QExpression, prefix: String = MAIN, params: MutableMap<String, Any> = mutableMapOf()): Condition = if (expr.predicate != null) {
+  private fun STable.directJoin(dRef: TDirectRef, prefix: String = MAIN) {
+    val rTable = table(dRef.rel.ref.sqlName()).asTable(dRef.rel.name)
+    val rField = dRef.fn(this, prefix)
+    val rId = idFn(dRef.rel.name)
+    joinTables[rTable.name] = (rTable to rField.eq(rId))
+  }
+
+  private fun STable.expression(expr: QExpression, params: MutableMap<String, Any> = mutableMapOf()): Condition = if (expr.predicate != null) {
     predicate(expr.predicate, params)
   } else {
-    val left = expression(expr.left!!, prefix)
-    val right = expression(expr.right!!, prefix)
+    val left = expression(expr.left!!)
+    val right = expression(expr.right!!)
 
     when(expr.oper!!) {
       OperType.OR -> left.or(right)
@@ -177,13 +178,25 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun predicate(pred: QPredicate, params: MutableMap<String, Any>, prefix: String = MAIN): Condition {
-    // TODO: build a sub-query path!
-    val subQuery = pred.path.first().name
+  private fun predicate(pred: QPredicate, params: MutableMap<String, Any>): Condition {
+    var sPrefix = MAIN
+    var sName = "_null_"
+    for (qDeref in pred.path) {
+      if (qDeref.table.props.containsKey(qDeref.name)) {
+        sName = qDeref.name
+        break
+      }
 
-    //mapper.params[subQuery] = predicate.param
+      val dRef = qDeref.table.oneToOne[qDeref.name]
+      if (dRef != null) {
+        qDeref.table.directJoin(dRef, sPrefix)
+        sPrefix = qDeref.name
+      }
 
-    val path = field(name(prefix, subQuery))
+      // TODO: support for one-to-many and many-to-many
+    }
+
+    val path = field(name(sPrefix, sName))
     val value = if (pred.param.type == ParamType.PARAM) param(pred.param.value as String) else pred.param.value
 
     return when(pred.comp) {

@@ -1,9 +1,6 @@
 package dr.schema.tabular
 
-import dr.schema.SEntity
-import dr.schema.SField
-import dr.schema.SRelation
-import dr.schema.Schema
+import dr.schema.*
 
 const val TRAITS = "&"
 const val ID = "@id"
@@ -79,7 +76,7 @@ sealed class TProperty {
     when(this) {
       is TID -> ID
       is TType -> TYPE
-      is TEmbedded -> "$TRAITS${trait.name}@${rel.name}"
+      is TEmbedded -> if (rel.type == RelationType.LINK && rel.isCollection) "$TRAITS${trait.name}" else "$TRAITS${trait.name}@${rel.name}"
       is TField -> field.name
     }
   }

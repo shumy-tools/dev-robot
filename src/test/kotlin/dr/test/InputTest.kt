@@ -8,49 +8,6 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-private val time = LocalTime.of(10, 30, 20)
-private val date = LocalDate.of(2020, 1, 25)
-private val datetime = LocalDateTime.of(date, time)
-private val fixedTimestamp = LocalDateTime.of(1918, 1, 10, 12, 35, 18)
-
-@Trait
-data class Trace(val value: String)
-
-@Master
-data class A(
-  val oneText: String,
-  val twoInt: Int,
-  val threeLong: Long,
-  val fourFloat: Float,
-  val fiveDouble: Double,
-  val sixBoolean: Boolean,
-  val sevenTime: LocalTime,
-  val eightDate: LocalDate,
-  val nineDateTime: LocalDateTime
-) {
-  val timestamp = fixedTimestamp
-}
-
-@Master
-data class B(
-  val oneText: String,
-  @Open @Create val twoEntity: C,
-  @Open @Link(C::class) val threeEntity: RefID,
-  @Open @Link(C::class, Trace::class) val fourEntity: Traits
-)
-
-@Master
-data class B1(
-  val oneText: String,
-  @Open @Link(C::class) val twoEntity: List<RefID>,
-  @Open @Link(C::class, Trace::class) val threeEntity: List<Traits>
-)
-
-@Detail
-data class C(val oneText: String)
-
-private val schema = SParser.parse(A::class, B::class, B1::class)
-
 private fun Instructions.process(): List<Instruction> {
   var idSeq = 9L;
   this.exec {
@@ -66,6 +23,8 @@ private fun Instructions.process(): List<Instruction> {
 
   return this.all
 }
+
+private val schema = SParser.parse(A::class, B::class, B1::class)
 
 class InputTest {
   private val ip = InputProcessor(schema)

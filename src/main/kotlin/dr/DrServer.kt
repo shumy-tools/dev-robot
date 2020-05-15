@@ -70,10 +70,12 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
   }
 
   fun use(useFn: dr.ctx.Context.() -> Unit) {
+    val instructions = Instructions()
     dr.ctx.Context.session = Session(this)
-    dr.ctx.Context.instructions = Instructions()
+    dr.ctx.Context.instructions = instructions
       dr.ctx.Context.useFn()
-      adaptor.commit(dr.ctx.Context.instructions)
+      if (instructions.all.isNotEmpty())
+        adaptor.commit(instructions)
     dr.ctx.Context.clear()
   }
 
