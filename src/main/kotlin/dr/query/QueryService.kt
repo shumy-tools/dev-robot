@@ -113,21 +113,13 @@ private class DrQueryListener(private val tables: Tables): QueryBaseListener() {
     val limit = qline.limit()?.let {
       if (isDirectRef)
         throw Exception("Direct references don't support 'limit'! Use it on the top entity.")
-
-      val limit = it.INT().text.toInt()
-      if (limit < 1)
-        throw Exception("Limit must be > 0")
-      limit
+      processLimitOrPage(it.intOrParam())
     }
 
     val page = qline.page()?.let {
       if (isDirectRef)
         throw Exception("Direct references don't support 'page'! Use it on the top entity.")
-
-      val page = it.INT().text.toInt()
-      if (page < 1)
-        throw Exception("Page must be > 0")
-      page
+      processLimitOrPage(it.intOrParam())
     }
 
     // process filter paths
@@ -137,6 +129,20 @@ private class DrQueryListener(private val tables: Tables): QueryBaseListener() {
 
     val select = QSelect(hasAll, fields, relations)
     return QRelation(prefix.last(), this, filter, limit, page, select)
+  }
+
+  private fun STable.processLimitOrPage(lpCtx: QueryParser.IntOrParamContext): QParam {
+    return if (lpCtx.INT() != null) {
+      val value = lpCtx.INT().text.toInt()
+      if (value < 1)
+        throw Exception("'limit' and 'page' must be > 0")
+      QParam(ParamType.INT, value)
+    } else {
+      val value = lpCtx.PARAM().text.substring(1)
+      val qParam = QParam(ParamType.LP_PARAM, value)
+      parameters.add(Parameter(this, "@lp", CompType.EQUAL, qParam))
+      qParam
+    }
   }
 
   private fun STable.processRelations(prefix: List<String>, relations: List<QueryParser.RelationContext>): List<QRelation> {

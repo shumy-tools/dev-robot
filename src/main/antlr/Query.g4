@@ -28,11 +28,13 @@ qline: filter? (limit page?)? select ;
 
         value: TEXT | INT | FLOAT | BOOL | TIME | DATE | DATETIME | PARAM ;
 
-        list: '[' value+ ']';
+        list: '[' value (',' value)* ']';
 
-  limit: 'limit' INT ;
+  limit: 'limit' intOrParam ;
 
-  page: 'page' INT;
+  page: 'page' intOrParam ;
+
+    intOrParam: (INT | PARAM) ;
 
   select: '{' fields (',' relation)* '}' ;
 

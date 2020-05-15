@@ -126,8 +126,19 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     }
 
     when {
-      qTree.page != null -> { addLimit(qTree.limit); addOffset((qTree.page - 1) * qTree.limit!!) }
-      qTree.limit != null -> addLimit(qTree.limit)
+      qTree.page != null -> {
+        val limit = (if (qTree.limit!!.type == ParamType.INT) qTree.limit.value else mParams.remove(qTree.limit.value as String)) as Int
+        val page = (if (qTree.page!!.type == ParamType.INT) qTree.page.value else mParams.remove(qTree.page.value as String)) as Int
+
+        addLimit(limit);
+        addOffset((page - 1) * limit)
+      }
+
+      qTree.limit != null -> {
+        val limit = (if (qTree.limit!!.type == ParamType.INT) qTree.limit.value else mParams.remove(qTree.limit.value as String)) as Int
+        addLimit(limit)
+      }
+
       else -> Unit
     }
   }

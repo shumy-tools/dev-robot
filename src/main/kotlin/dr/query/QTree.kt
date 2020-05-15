@@ -1,6 +1,5 @@
 package dr.query
 
-import dr.schema.SEntity
 import dr.schema.tabular.STable
 
 enum class SortType {
@@ -23,7 +22,7 @@ enum class DerefType {
 enum class ParamType {
   TEXT, INT, FLOAT, BOOL,
   TIME, DATE, DATETIME,
-  LIST, PARAM
+  LIST, PARAM, LP_PARAM
 }
 
 // ----------- query structure -----------
@@ -31,8 +30,8 @@ data class QTree(
   val table: STable,
 
   val filter: QExpression?,
-  val limit: Int?,
-  val page: Int?,
+  val limit: QParam?,
+  val page: QParam?,
   val select: QSelect
 ) {
   constructor(table: STable, rel: QRelation): this(table, rel.filter, rel.limit, rel.page, rel.select)
@@ -83,8 +82,8 @@ data class QTree(
       val ref: STable,
 
       val filter: QExpression?,
-      val limit: Int?,
-      val page: Int?,
+      val limit: QParam?,
+      val page: QParam?,
       val select: QSelect
     )
 

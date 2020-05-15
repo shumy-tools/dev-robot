@@ -104,15 +104,26 @@ class QueryTest {
         name
       }""").exec()
       assert(res2.rows().toString() == "[{@id=3, name=Maria}, {@id=4, name=Jose}]")
+
+      val res3 = query("""dr.test.User limit ?lmt page ?pgt {
+        name
+      }""").exec("lmt" to 2, "pgt" to 3)
+      println(res3.rows())
+      assert(res3.rows().toString() == "[{@id=5, name=Arnaldo}]")
     }
   }
 
   @Test fun testSimpleInQuery() {
     server.use {
-      val res = query("""dr.test.User | name in ?names | {
+      val res1 = query("""dr.test.User | name in ?names | {
         name, email
       }""").exec("names" to listOf("Alex", "Arnaldo"))
-      assert(res.rows().toString() == "[{@id=1, name=Alex, email=mail@pt}, {@id=5, name=Arnaldo, email=mail@com}]")
+      assert(res1.rows().toString() == "[{@id=1, name=Alex, email=mail@pt}, {@id=5, name=Arnaldo, email=mail@com}]")
+
+      val res2 = query("""dr.test.User | name in ["Alex", "Arnaldo"] | {
+        name, email
+      }""").exec()
+      assert(res2.rows().toString() == "[{@id=1, name=Alex, email=mail@pt}, {@id=5, name=Arnaldo, email=mail@com}]")
     }
   }
 

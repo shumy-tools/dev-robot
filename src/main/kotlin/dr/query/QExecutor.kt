@@ -15,22 +15,34 @@ class Parameter(val table: STable, val field: String, val comp: CompType, val pa
 
 class QueryExecutorWithValidator(private val native: IQueryExecutor, parameters: List<Parameter>): IQueryExecutor {
   private val args: List<Parameter> = parameters.filter { it.param.type == ParamType.PARAM }
+  private val lpArgs: List<Parameter> = parameters.filter { it.param.type == ParamType.LP_PARAM }
 
   init {
     // pre-check literal parameters
-    parameters.filter { it.param.type != ParamType.PARAM }.forEach {
+    parameters.filter { it.param.type != ParamType.PARAM && it.param.type != ParamType.LP_PARAM }.forEach {
       if (!check(it.table, it.field, it.comp, it.param.value))
         throw Exception("Invalid predicate '${it.table.name}.${it.field} ${it.comp} ${it.param.value.javaClass.kotlin.qualifiedName}'")
     }
   }
 
   override fun exec(params: Map<String, Any>): IResult {
+    lpArgs.forEach {
+      val name = it.param.value as String
+      val value = params[name] ?: throw Exception("Expected input value for: '$name'")
+
+      if (value is Int) {
+        if (value < 1)
+          throw Exception("'limit' and 'page' must be > 0")
+      } else
+        throw Exception("Invalid type '${value.javaClass.kotlin.simpleName}' for parameter '$name'")
+    }
+
     args.forEach {
       val name = it.param.value as String
       val value = params[name] ?: throw Exception("Expected input value for: '$name'")
 
       if (!check(it.table, it.field, it.comp, value))
-        throw Exception("Invalid predicate '${it.table.name}.${it.field} ${it.comp} ${value.javaClass.kotlin.qualifiedName}' for parameter '$name'")
+        throw Exception("Invalid predicate '${it.table.name}.${it.field} ${it.comp} ${value.javaClass.kotlin.simpleName}' for parameter '$name'")
     }
 
     return native.exec(params)
