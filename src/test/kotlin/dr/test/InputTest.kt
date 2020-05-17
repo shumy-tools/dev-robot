@@ -96,8 +96,8 @@ class InputTest {
     assert(allInst[0].toString() == "Insert(CREATE) - {table=dr.test.B1, data={oneText=oneB1}}")
     assert(allInst[1].toString() == "Insert(LINK) - {table=dr.test.B1-twoEntity, refs={@ref-to-dr.test.C=1, @inv-to-dr.test.B1=10}}")
     assert(allInst[2].toString() == "Insert(LINK) - {table=dr.test.B1-twoEntity, refs={@ref-to-dr.test.C=2, @inv-to-dr.test.B1=10}}")
-    assert(allInst[3].toString() == "Insert(LINK) - {table=dr.test.B1-threeEntity, data={&dr.test.Trace@threeEntity=Trace(value=trace1)}, refs={@ref-to-dr.test.C=100, @inv-to-dr.test.B1=10}}")
-    assert(allInst[4].toString() == "Insert(LINK) - {table=dr.test.B1-threeEntity, data={&dr.test.Trace@threeEntity=Trace(value=trace2)}, refs={@ref-to-dr.test.C=200, @inv-to-dr.test.B1=10}}")
+    assert(allInst[3].toString() == "Insert(LINK) - {table=dr.test.B1-threeEntity, data={&dr.test.Trace=Trace(value=trace1)}, refs={@ref-to-dr.test.C=100, @inv-to-dr.test.B1=10}}")
+    assert(allInst[4].toString() == "Insert(LINK) - {table=dr.test.B1-threeEntity, data={&dr.test.Trace=Trace(value=trace2)}, refs={@ref-to-dr.test.C=200, @inv-to-dr.test.B1=10}}")
   }
 
   @Test fun testLinkRelations() {

@@ -161,11 +161,17 @@ class QueryTest {
       }""").exec()
       assert(res1.rows().toString() == "[{@id=2, name=Pedro, roles=[{@id=2, roles={@id=1, name=admin}}, {@id=3, roles={@id=2, name=oper}}, {@id=4, roles={@id=3, name=other}}]}]")
 
-      val res2 = query("""dr.test.User | address.location == "Aradas" | {
+      val res2 = query("""dr.test.User | address.location == "Gloria" | {
+        name, 
+        roles | name == "admin" | { name }
+      }""").exec()
+      assert(res2.rows().toString() == "[{@id=2, name=Pedro, roles=[{@id=2, roles={@id=1, name=admin}}]}]")
+
+      val res3 = query("""dr.test.User | address.location == "Aradas" | {
         name, 
         roles { &dr.test.Trace, name, ord }
       }""").exec()
-      assert(res2.rows().toString() == "[{@id=4, name=Jose, roles=[{@id=6, &dr.test.Trace=Trace(value=Jose-oper-trait), roles={@id=3, name=other, ord=3}}]}]")
+      assert(res3.rows().toString() == "[{@id=4, name=Jose, roles=[{@id=6, &dr.test.Trace=Trace(value=Jose-oper-trait), roles={@id=3, name=other, ord=3}}]}]")
     }
   }
 }

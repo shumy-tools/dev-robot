@@ -87,19 +87,16 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     // compile many-to-many relations
     val manyToMany = qTree.table.dbManyToMany(qTree.select)
     for ((qRel, iRef) in manyToMany) {
-      println(qRel)
+      val fp = qRel.select.fields.partition { it.name.startsWith(TRAITS) }
 
       // simulate one-to-many via @A.id <-- @AX.inv (one-to-one AX.@ref --> B.@id)
-      val refFields = qRel.select.fields.filter { iRef.second.fields[it.name] != null }
-      val refSelect = QSelect(qRel.select.hasAll, refFields, emptyList())
-      val refRel = qRel.select.relations.plus(QRelation(qRel.name, qRel.ref, qRel.filter/* TODO: only refTable filter */, null, null, refSelect))
+      val refSelect = QSelect(qRel.select.hasAll, fp.second, emptyList())
+      val refRels = qRel.select.relations.plus(QRelation(qRel.name, qRel.ref, null, null, null, refSelect))
 
       // TODO: include aux-table traits (select and filter)
       val auxTable = tables.get(iRef.first.sEntity, iRef.first.sEntity.rels[qRel.name])
-      val auxFields = qRel.select.fields.filter { auxTable.props[it.name] != null }
-      val auxSelect = QSelect(qRel.select.hasAll, auxFields, refRel)
-      val auxTree = QTree(auxTable, null/* TODO: filter */, qRel.limit, qRel.page, auxSelect)
-
+      val auxSelect = QSelect(qRel.select.hasAll, fp.first, refRels)
+      val auxTree = QTree(auxTable, qRel.filter, qRel.limit, qRel.page, auxSelect)
 
       val subQuery = SQLQueryExecutor(db, tables, auxTree)
       inverted[qRel.name] = Pair(invFn(MAIN), subQuery)
@@ -118,8 +115,8 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
 
   private fun SelectQuery<Record>.buildQueryParts(mParams: MutableMap<String, Any>) {
     addFrom(qTable)
-
     joinTables.values.forEach { addJoin(it.first, it.second) }
+
     if (conditions != null) {
       // needs to rebuild conditions with included values when "IN" clause is present!
       if (hasInClause.get()) addConditions(qTree.table.expression(qTree.filter!!, params = mParams)) else addConditions(conditions)
@@ -128,14 +125,14 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     when {
       qTree.page != null -> {
         val limit = (if (qTree.limit!!.type == ParamType.INT) qTree.limit.value else mParams.remove(qTree.limit.value as String)) as Int
-        val page = (if (qTree.page!!.type == ParamType.INT) qTree.page.value else mParams.remove(qTree.page.value as String)) as Int
+        val page = (if (qTree.page.type == ParamType.INT) qTree.page.value else mParams.remove(qTree.page.value as String)) as Int
 
         addLimit(limit);
         addOffset((page - 1) * limit)
       }
 
       qTree.limit != null -> {
-        val limit = (if (qTree.limit!!.type == ParamType.INT) qTree.limit.value else mParams.remove(qTree.limit.value as String)) as Int
+        val limit = (if (qTree.limit.type == ParamType.INT) qTree.limit.value else mParams.remove(qTree.limit.value as String)) as Int
         addLimit(limit)
       }
 
@@ -189,8 +186,8 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun predicate(pred: QPredicate, params: MutableMap<String, Any>): Condition {
-    var sPrefix = MAIN
+  private fun STable.predicate(pred: QPredicate, params: MutableMap<String, Any>): Condition {
+    var sPrefix = sRelation?.name ?: MAIN // detect if it's an auxTree
     var sName = "_null_"
     for (qDeref in pred.path) {
       if (qDeref.table.props.containsKey(qDeref.name)) {
