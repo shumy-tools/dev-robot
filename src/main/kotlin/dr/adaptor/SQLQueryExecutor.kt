@@ -37,8 +37,6 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     if (fk != null) {
       query.addSelect(fk)
       query.addConditions((fk as Field<Any>).`in`(topIds))
-
-      // TODO: add refTable conditions?
     }
 
     // process results
@@ -81,7 +79,6 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
 
       val subQuery = SQLQueryExecutor(db, tables, subTree)
       inverted[qRel.name] = Pair(iRef.fn(refTable, MAIN), subQuery)
-      // TODO: process one-to-many with traits?
     }
 
     // compile many-to-many relations
@@ -93,7 +90,6 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
       val refSelect = QSelect(qRel.select.hasAll, fp.second, emptyList())
       val refRels = qRel.select.relations.plus(QRelation(qRel.name, qRel.ref, null, null, null, refSelect))
 
-      // TODO: include aux-table traits (select and filter)
       val auxTable = tables.get(iRef.first.sEntity, iRef.first.sEntity.rels[qRel.name])
       val auxSelect = QSelect(qRel.select.hasAll, fp.first, refRels)
       val auxTree = QTree(auxTable, qRel.filter, qRel.limit, qRel.page, auxSelect)
@@ -189,19 +185,19 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   private fun STable.predicate(pred: QPredicate, params: MutableMap<String, Any>): Condition {
     var sPrefix = sRelation?.name ?: MAIN // detect if it's an auxTree
     var sName = "_null_"
-    for (qDeref in pred.path) {
-      if (qDeref.table.props.containsKey(qDeref.name)) {
-        sName = qDeref.name
-        break
-      }
+    loop@ for (qDeref in pred.path) {
+      when (qDeref.deref) {
+        DerefType.ONE -> if (qDeref.table.props.containsKey(qDeref.name)) {
+          sName = qDeref.name
+          break@loop
+        } else {
+          val dRef = qDeref.table.oneToOne.getValue(qDeref.name)
+          qDeref.table.directJoin(dRef, sPrefix)
+          sPrefix = qDeref.name
+        }
 
-      val dRef = qDeref.table.oneToOne[qDeref.name]
-      if (dRef != null) {
-        qDeref.table.directJoin(dRef, sPrefix)
-        sPrefix = qDeref.name
+        DerefType.MANY -> TODO() // TODO: support for DerefType.MANY ?
       }
-
-      // TODO: support for one-to-many and many-to-many
     }
 
     val path = field(name(sPrefix, sName))

@@ -145,11 +145,22 @@ class QueryTest {
 
   @Test fun testOneToManyQuery() {
     server.use {
-      val res = query("""dr.test.User | address.location == "Aradas" | {
+      val res1 = query("""dr.test.User | address.location == "Aradas" | {
         name, 
         settings { * }
       }""").exec()
-      assert(res.rows().toString() == "[{@id=4, name=Jose, settings=[{@id=7, key=Jose-set1, value=Jose-v1}, {@id=8, key=Jose-set2, value=Jose-v2}]}]")
+      assert(res1.rows().toString() == "[{@id=4, name=Jose, settings=[{@id=7, key=Jose-set1, value=Jose-v1}, {@id=8, key=Jose-set2, value=Jose-v2}]}]")
+
+      val res2 = query("""dr.test.User | address.location == "Aradas" | {
+        name, 
+        settings | key == "Jose-set2" | { * }
+      }""").exec()
+      assert(res2.rows().toString() == "[{@id=4, name=Jose, settings=[{@id=8, key=Jose-set2, value=Jose-v2}]}]")
+
+      /*val res3 = query("""dr.test.User | settings.value == "Jose-v2" | {
+        name
+      }""").exec()
+      assert(res3.rows().toString() == "[{@id=4, name=Jose, settings=[{@id=8, key=Jose-set2, value=Jose-v2}]}]")*/
     }
   }
 

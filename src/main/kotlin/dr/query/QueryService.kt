@@ -220,43 +220,41 @@ private class DrQueryListener(private val tables: Tables): QueryBaseListener() {
   }
 
   private fun STable.processPredicate(prefix: List<String>, predicate: QueryParser.PredicateContext): QPredicate {
+    var lTable = this
+
     // process head
-    val path = predicate.path().ID().text
-    val full = accessed.addField(prefix, path)
-    val qDerefHead = QDeref(this, DerefType.ONE, path)
+    var nextPath = predicate.path().ID().first().text
+    var nextFull = accessed.addField(prefix, nextPath)
 
-    // process tail
-    val fullPath = predicate.path().next()
-    val qDerefList = if (fullPath.isNotEmpty()) {
-      var nextPath = path
-      var nextFull = full
-      var lTable = this
-      var lRelation = lTable.sEntity.rels[path] ?: throw Exception("Invalid relation path '$name.$path'")
-
-      val qDerefTail = fullPath.mapIndexed { index, nxt ->
-        val drType = derefType(nxt.deref().text)
-        checkDeref(drType, lTable, nextPath, lRelation)
-
-        // process next path
-        nextPath = nxt.ID().text
-        nextFull = accessed.addRelation(nextFull, nextPath)
-
-        lTable = tables.get(lRelation.ref)
-        if (index != fullPath.size - 1) {
-          lRelation = lTable.sEntity.rels[nextPath] ?: throw Exception("Invalid relation path '$name.$nextPath'")
-        }
-
-        QDeref(lTable, drType, nextPath)
-      }
-
-      listOf(qDerefHead).plus(qDerefTail)
-    } else {
-      listOf(qDerefHead)
+    val drTypeHead = if (sEntity.fields.containsKey(nextPath)) DerefType.ONE else {
+      val sRelation = sEntity.rels[nextPath] ?: throw Exception("Invalid path '$name.$nextPath'")
+      if (sRelation.isCollection) DerefType.MANY else DerefType.ONE
     }
 
-    // TODO: update qDerefList with advanced paths? ex: address.{ name == "Paris" } or roles..{ name == "admin" }
+    val qDerefHead = QDeref(this, drTypeHead, nextPath)
+
+    // process tail
+    val fullPath = predicate.path().ID().drop(1)
+    val qDerefTail = fullPath.mapIndexed { index, nxt ->
+      val lRelation = lTable.sEntity.rels[nextPath] ?: throw Exception("Invalid relation path '$name.$nextPath'")
+      val drTypeTail = if (lRelation.isCollection) DerefType.MANY else DerefType.ONE
+
+      // process next path
+      nextPath = nxt.text
+      nextFull = accessed.addRelation(nextFull, nextPath)
+
+      lTable = tables.get(lRelation.ref)
+      if (index != fullPath.size - 1) {
+        lTable.sEntity.rels[nextPath] ?: throw Exception("Invalid relation path '$name.$nextPath'")
+      }
+
+      QDeref(lTable, drTypeTail, nextPath)
+    }
+
+    // TODO: update qDerefList with advanced paths? ex: address.{ name == "Paris" }
 
     // process comparator and parameter
+    val qDerefList = listOf(qDerefHead).plus(qDerefTail)
     val qDeref = qDerefList.last()
     val compType = compType(predicate.comp().text)
     val qParam = transformParam(predicate.param())
@@ -333,12 +331,4 @@ private fun transformValue(value: QueryParser.ValueContext) = when {
   value.DATETIME() != null -> QParam(ParamType.DATETIME, LocalDateTime.parse(value.DATETIME().text.substring(1)))
   value.PARAM() != null -> QParam(ParamType.PARAM, value.PARAM().text.substring(1))
   else -> throw Exception("Unrecognized parameter type!")
-}
-
-private fun checkDeref(drType: DerefType, sTable: STable, path: String, sRelation: SRelation) {
-  if (drType == DerefType.ONE && sRelation.isCollection)
-    throw Exception("Invalid relation path '${sTable.name}.${path}.'. Expected one-to-many relation!")
-
-  if (drType == DerefType.MANY && !sRelation.isCollection)
-    throw Exception("Invalid relation path '${sTable.name}.${path}..' Expected one-to-one relation!")
 }

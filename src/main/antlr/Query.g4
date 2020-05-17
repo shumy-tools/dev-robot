@@ -16,11 +16,7 @@ qline: filter? (limit page?)? select ;
 
     predicate: path comp param ;
 
-      path: ID next* ;
-
-        next: deref ID ;
-
-          deref: ('.' | '..') ;
+      path: ID ('.' ID)* ;
 
       comp: ('==' | '!=' | '>' | '<' | '>=' | '<=' | 'in') ;
 
