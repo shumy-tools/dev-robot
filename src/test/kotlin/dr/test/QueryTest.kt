@@ -93,6 +93,20 @@ class QueryTest {
     }
   }
 
+  @Test fun testSortByQuery() {
+    server.use {
+      val res1 = query("""dr.test.User {
+        (asc 1) name
+      }""").exec()
+      assert(res1.rows().toString() == "[{@id=1, name=Alex}, {@id=5, name=Arnaldo}, {@id=4, name=Jose}, {@id=3, name=Maria}, {@id=2, name=Pedro}]")
+
+      val res2 = query("""dr.test.User {
+        (dsc 1) name
+      }""").exec()
+      assert(res2.rows().toString() == "[{@id=2, name=Pedro}, {@id=3, name=Maria}, {@id=4, name=Jose}, {@id=5, name=Arnaldo}, {@id=1, name=Alex}]")
+    }
+  }
+
   @Test fun tesLimitAndPageQuery() {
     server.use {
       val res1 = query("""dr.test.User | email == "mail@pt" | limit 2 page 1 {

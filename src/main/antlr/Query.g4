@@ -40,7 +40,7 @@ qline: filter? (limit page?)? select ;
 
         name: ID | TRAIT ;
 
-        order: ('asc' | 'desc') ;
+        order: ('asc' | 'dsc') ;
 
     relation: ID qline ;
 

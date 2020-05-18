@@ -14,6 +14,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   private val qTable = table(qTree.table.sqlName()).asTable(MAIN)
 
   private val joinFields = mutableListOf<Field<Any>>()
+  private val sortFields = mutableListOf<SortField<Any>>()
   private val joinTables = mutableMapOf<String, Pair<Table<*>, Condition>>()
 
   private var hasInClause = AtomicBoolean(false)
@@ -31,25 +32,25 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   @Suppress("UNCHECKED_CAST")
   fun subExec(params: Map<String, Any>, fk: Field<Long>? = null, topIds: Select<*>? = null): IResult {
     val mParams = params.toMutableMap()
-    val ids = buildQueryIds(params.toMutableMap())
-    val query = buildQuery(mParams)
+    val idsQuery = buildQueryIds(params.toMutableMap())
+    val mainQuery = buildQuery(mParams)
 
     if (fk != null) {
-      query.addSelect(fk)
-      query.addConditions((fk as Field<Any>).`in`(topIds))
+      mainQuery.addSelect(fk)
+      mainQuery.addConditions((fk as Field<Any>).`in`(topIds))
     }
 
     // process results
     val result = SQLResult(tables)
 
     // add main result
-    println(query.sql)
-    mParams.forEach { query.bind(it.key, it.value) }
-    query.fetch().forEach { result.process(it, fk) }
+    println(mainQuery.sql)
+    mParams.forEach { mainQuery.bind(it.key, it.value) }
+    mainQuery.fetch().forEach { result.process(it, fk) }
 
     // add one-to-many and many-to-many results
     inverted.forEach {
-      val subResult = it.value.second.subExec(params, it.value.first, ids) as SQLResult
+      val subResult = it.value.second.subExec(params, it.value.first, idsQuery) as SQLResult
       result.rows.keys.forEach { pk ->
         val fkKeys = subResult.fkKeys[pk] // join results via "pk <-- fk"
         fkKeys?.forEach { subID ->
@@ -106,6 +107,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
 
   private fun buildQuery(mParams: MutableMap<String, Any>) = db.selectQuery().apply {
     addSelect(joinFields)
+    addOrderBy(sortFields)
     buildQueryParts(mParams)
   }
 
@@ -123,7 +125,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
         val limit = (if (qTree.limit!!.type == ParamType.INT) qTree.limit.value else mParams.remove(qTree.limit.value as String)) as Int
         val page = (if (qTree.page.type == ParamType.INT) qTree.page.value else mParams.remove(qTree.page.value as String)) as Int
 
-        addLimit(limit);
+        addLimit(limit)
         addOffset((page - 1) * limit)
       }
 
@@ -143,6 +145,12 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
 
     val fields = if (prefix == MAIN) dbFields(selection, prefix) else dbFields(selection, prefix).map { it.`as`("$alias.${it.name}") }
     joinFields.addAll(fields)
+
+    val orderBy = selection.fields.filter { it.sort != SortType.NONE }.sortedBy { it.order }.map {
+      val field = it.fn(prefix)
+      if (it.sort == SortType.ASC) field.asc() else field.desc()
+    }
+    sortFields.addAll(orderBy)
 
     val refs = dbOneToOne(selection)
     for (qRel in refs.keys) {
