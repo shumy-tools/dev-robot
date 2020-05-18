@@ -158,7 +158,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     }
 
     // add @super fields
-    val dSuperRef = selection.relations.find { it.name == SUPER }
+    val dSuperRef = selection.superRef
     if (dSuperRef != null) {
       val dRefTable = tables.get(superRef!!.refEntity)
       dRefTable.joinFields(dSuperRef.select, dSuperRef.name, "$alias.${dSuperRef.name}")
@@ -173,13 +173,8 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     }
 
     // one-to-one A.@super --> B.@id
-    val dSuperRef = selection.relations.find { it.name == SUPER }
-    if (dSuperRef != null) {
-      val dRef = superRef!!
-      val rTable = table(dRef.refEntity.sqlName()).asTable(SUPER)
-      val rField = dRef.fn(this, prefix)
-      val rId = idFn(SUPER)
-      joinTables[rTable.name] = (rTable to rField.eq(rId))
+    if (selection.superRef != null) {
+      superJoin(prefix)
     }
 
     for (qRel in refs.keys) {
@@ -187,10 +182,18 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     }
   }
 
-  private fun STable.directJoin(dRef: TDirectRef, prefix: String = MAIN) {
+  private fun STable.directJoin(dRef: TDirectRef, prefix: String) {
     val rTable = table(dRef.rel.ref.sqlName()).asTable(dRef.rel.name)
     val rField = dRef.fn(this, prefix)
     val rId = idFn(dRef.rel.name)
+    joinTables[rTable.name] = (rTable to rField.eq(rId))
+  }
+
+  private fun STable.superJoin(prefix: String) {
+    val dRef = superRef!!
+    val rTable = table(dRef.refEntity.sqlName()).asTable(SUPER)
+    val rField = dRef.fn(this, prefix)
+    val rId = idFn(SUPER)
     joinTables[rTable.name] = (rTable to rField.eq(rId))
   }
 
@@ -215,8 +218,13 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
         DerefType.FIELD -> sName = qDeref.name
 
         DerefType.ONE -> {
-          val dRef = qDeref.table.oneToOne.getValue(qDeref.name)
-          qDeref.table.directJoin(dRef, sPrefix)
+          if (qDeref.name == SUPER) {
+            qDeref.table.superJoin(sPrefix)
+          } else {
+            val dRef = qDeref.table.oneToOne.getValue(qDeref.name)
+            qDeref.table.directJoin(dRef, sPrefix)
+          }
+
           sPrefix = qDeref.name
         }
 

@@ -84,6 +84,7 @@ val server = DrServer(schema, adaptor, TestAuthorizer()).also {
 
     create(Pack(SuperUser("Bruno"), AdminUser("BrunoAdminProp")))
     create(Pack(SuperUser("Mario"), OperUser("MarioOperProp")))
+    create(Pack(SuperUser("Alberto"), OperUser("AlbertoOperProp")))
   }
 }
 
@@ -239,6 +240,11 @@ class QueryTest {
         adminProp, @super { * }
       }""").exec()
       assert(res2.rows().toString() == "[{@id=1, adminProp=BrunoAdminProp, @super={@id=1, alias=Bruno, @type=dr.test.AdminUser}}]")
+
+      val res3 = query("""dr.test.OperUser | @super.alias == "Alberto" | {
+        operProp
+      }""").exec()
+      assert(res3.rows().toString() == "[{@id=2, operProp=AlbertoOperProp}]")
     }
   }
 }

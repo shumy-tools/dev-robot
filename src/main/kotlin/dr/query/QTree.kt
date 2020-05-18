@@ -1,6 +1,7 @@
 package dr.query
 
 import dr.schema.tabular.STable
+import dr.schema.tabular.SUPER
 
 enum class SortType {
   NONE, ASC, DSC
@@ -67,7 +68,9 @@ data class QTree(
     val hasAll: Boolean,
     val fields: List<QField>,
     val relations: List<QRelation>
-  )
+  ) {
+    val superRef = relations.find { it.name == SUPER }
+  }
 
     data class QField(
       val name: String,
