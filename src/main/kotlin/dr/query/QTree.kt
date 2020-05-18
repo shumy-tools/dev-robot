@@ -15,7 +15,7 @@ enum class CompType {
 }
 
 enum class DerefType {
-  ONE, MANY
+  FIELD, ONE, MANY
 }
 
 // This enum must contain all options from dr.schema.FieldType

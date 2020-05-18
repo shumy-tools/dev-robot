@@ -185,12 +185,11 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   private fun STable.predicate(pred: QPredicate, params: MutableMap<String, Any>): Condition {
     var sPrefix = sRelation?.name ?: MAIN // detect if it's an auxTree
     var sName = "_null_"
-    loop@ for (qDeref in pred.path) {
+    for (qDeref in pred.path) {
       when (qDeref.deref) {
-        DerefType.ONE -> if (qDeref.table.props.containsKey(qDeref.name)) {
-          sName = qDeref.name
-          break@loop
-        } else {
+        DerefType.FIELD -> sName = qDeref.name
+
+        DerefType.ONE -> {
           val dRef = qDeref.table.oneToOne.getValue(qDeref.name)
           qDeref.table.directJoin(dRef, sPrefix)
           sPrefix = qDeref.name
