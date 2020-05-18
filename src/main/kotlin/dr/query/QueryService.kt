@@ -224,8 +224,14 @@ private class DrQueryListener(private val tables: Tables): QueryBaseListener() {
       val nextPath = it.text
       nextFull = accessed.addRelation(nextFull, nextPath)
 
+      qDerefList.lastOrNull()?.let { last ->
+        // After a field there are no relations!
+        if (last.deref == DerefType.FIELD)
+          throw Exception("Invalid path '${lTable.name}.${last.name}.$nextPath'")
+      }
+
       val (drType, lRelation) = if (lTable.sEntity.fields.containsKey(nextPath)) Pair(DerefType.FIELD, null) else {
-        val sRelation = lTable.sEntity.rels[nextPath] ?: throw Exception("Invalid path '$name.$nextPath'")
+        val sRelation = lTable.sEntity.rels[nextPath] ?: throw Exception("Invalid path '${lTable.name}.$nextPath'")
         if (sRelation.isCollection) Pair(DerefType.MANY, sRelation) else Pair(DerefType.ONE, sRelation)
       }
 
@@ -236,21 +242,24 @@ private class DrQueryListener(private val tables: Tables): QueryBaseListener() {
     // TODO: support for advanced path-filters? ex: address.| country == "Portugal" and city == "Aveiro" |
 
     // process comparator and parameter
-    val qDeref = qDerefList.last()
+    val qDerefField = qDerefList.last()
+    if (qDerefField.deref != DerefType.FIELD)
+      throw Exception("Invalid field '${qDerefField.table.name}.${qDerefField.name}'. A path must always end in a field!")
+
     val compType = compType(predicate.comp().text)
     val qParam = transformParam(predicate.param())
 
-    if (qDeref.table.sEntity.fields[qDeref.name] == null) {
-      val rel = qDeref.table.sEntity.rels[qDeref.name]
+    if (qDerefField.table.sEntity.fields[qDerefField.name] == null) {
+      val rel = qDerefField.table.sEntity.rels[qDerefField.name]
       val completeError = if (rel != null) {
         val oneOf = rel.ref.fields.map { it.key }.plus(rel.ref.rels.map { it.key })
         " However, a relation with that name exists. Please complete the path with one of $oneOf"
       } else ""
 
-      throw Exception("Invalid relation path '${qDeref.table.sEntity.name}.${qDeref.name}'!$completeError")
+      throw Exception("Invalid relation path '${qDerefField.table.name}.${qDerefField.name}'!$completeError")
     }
 
-    parameters.add(Parameter(qDeref.table, qDeref.name, compType, qParam))
+    parameters.add(Parameter(qDerefField.table, qDerefField.name, compType, qParam))
 
     return QPredicate(qDerefList, compType, qParam)
   }

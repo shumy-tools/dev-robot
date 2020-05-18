@@ -185,7 +185,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   private fun STable.predicate(pred: QPredicate, params: MutableMap<String, Any>): Condition {
     var sPrefix = sRelation?.name ?: MAIN // detect if it's an auxTree
     var sName = "_null_"
-    for (qDeref in pred.path) {
+    for ((i, qDeref) in pred.path.withIndex()) {
       when (qDeref.deref) {
         DerefType.FIELD -> sName = qDeref.name
 
@@ -195,7 +195,28 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
           sPrefix = qDeref.name
         }
 
-        DerefType.MANY -> TODO() // TODO: support for DerefType.MANY ?
+        DerefType.MANY -> {
+          qDeref.table.oneToMany[qDeref.name]?.let {
+            val refTable = tables.get(it.rel.ref)
+            val inPredicate = QPredicate(pred.path.drop(i + 1), pred.comp, pred.param)
+            val inSelect = db.select(it.fn(it.refTable))
+              .from(table(refTable.sqlName()).`as`(MAIN))
+              .where(refTable.predicate(inPredicate, params))
+            return idFn(sPrefix).`in`(inSelect)
+          }
+
+          qDeref.table.manyToMany[qDeref.name]?.let {
+            val auxTable = it.first
+            val refTable = tables.get(it.second)
+
+            val inPredicate = QPredicate(pred.path.drop(i + 1), pred.comp, pred.param)
+            val inSelect = db.select(invFn(MAIN))
+              .from(table(auxTable.sqlName()).`as`(MAIN))
+              .join(table(refTable.sqlName()).`as`(qDeref.name)).on(refFn(MAIN).eq(idFn(qDeref.name)))
+              .where(auxTable.predicate(inPredicate, params))
+            return idFn(sPrefix).`in`(inSelect)
+          }
+        }
       }
     }
 

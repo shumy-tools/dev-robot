@@ -61,12 +61,12 @@ fun idFn(prefix: String? = null): Field<Long> = if (prefix != null) {
   DSL.field(DSL.name(ID), java.lang.Long::class.java) as Field<Long>
 }
 
-/*@Suppress("UNCHECKED_CAST")
+@Suppress("UNCHECKED_CAST")
 fun refFn(prefix: String? = null): Field<Long> = if (prefix != null) {
   DSL.field(DSL.name(prefix, REF), java.lang.Long::class.java) as Field<Long>
 } else {
   DSL.field(DSL.name(REF), java.lang.Long::class.java) as Field<Long>
-}*/
+}
 
 @Suppress("UNCHECKED_CAST")
 fun invFn(prefix: String? = null): Field<Long> = if (prefix != null) {

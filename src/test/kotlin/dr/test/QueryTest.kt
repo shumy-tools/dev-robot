@@ -157,10 +157,10 @@ class QueryTest {
       }""").exec()
       assert(res2.rows().toString() == "[{@id=4, name=Jose, settings=[{@id=8, key=Jose-set2, value=Jose-v2}]}]")
 
-      /*val res3 = query("""dr.test.User | settings.value == "Jose-v2" | {
+      val res3 = query("""dr.test.User | settings.value == "Jose-v2" | {
         name
       }""").exec()
-      assert(res3.rows().toString() == "[{@id=4, name=Jose, settings=[{@id=8, key=Jose-set2, value=Jose-v2}]}]")*/
+      assert(res3.rows().toString() == "[{@id=4, name=Jose}]")
     }
   }
 
@@ -183,6 +183,11 @@ class QueryTest {
         roles { &dr.test.Trace, name, ord }
       }""").exec()
       assert(res3.rows().toString() == "[{@id=4, name=Jose, roles=[{@id=6, &dr.test.Trace=Trace(value=Jose-oper-trait), roles={@id=3, name=other, ord=3}}]}]")
+
+      val res4 = query("""dr.test.User | roles.name == "admin" | {
+        name
+      }""").exec()
+      assert(res4.rows().toString() == "[{@id=1, name=Alex}, {@id=2, name=Pedro}, {@id=5, name=Arnaldo}]")
     }
   }
 }
