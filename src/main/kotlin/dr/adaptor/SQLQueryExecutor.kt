@@ -196,9 +196,10 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
         }
 
         DerefType.MANY -> {
+          val inPredicate = QPredicate(pred.path.drop(i + 1), pred.comp, pred.param)
+
           qDeref.table.oneToMany[qDeref.name]?.let {
             val refTable = tables.get(it.rel.ref)
-            val inPredicate = QPredicate(pred.path.drop(i + 1), pred.comp, pred.param)
             val inSelect = db.select(it.fn(it.refTable))
               .from(table(refTable.sqlName()).`as`(MAIN))
               .where(refTable.predicate(inPredicate, params))
@@ -208,8 +209,6 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
           qDeref.table.manyToMany[qDeref.name]?.let {
             val auxTable = it.first
             val refTable = tables.get(it.second)
-
-            val inPredicate = QPredicate(pred.path.drop(i + 1), pred.comp, pred.param)
             val inSelect = db.select(invFn(MAIN))
               .from(table(auxTable.sqlName()).`as`(MAIN))
               .join(table(refTable.sqlName()).`as`(qDeref.name)).on(refFn(MAIN).eq(idFn(qDeref.name)))

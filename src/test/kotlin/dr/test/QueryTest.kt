@@ -161,6 +161,16 @@ class QueryTest {
         name
       }""").exec()
       assert(res3.rows().toString() == "[{@id=4, name=Jose}]")
+
+      val res4 = query("""dr.test.User | settings.value in ["Jose-v2", "Arnaldo-v2"] | {
+        name
+      }""").exec()
+      assert(res4.rows().toString() == "[{@id=4, name=Jose}, {@id=5, name=Arnaldo}]")
+
+      val res5 = query("""dr.test.User | settings.value in ?values | {
+        name
+      }""").exec("values" to listOf("Jose-v2", "Arnaldo-v2"))
+      assert(res5.rows().toString() == "[{@id=4, name=Jose}, {@id=5, name=Arnaldo}]")
     }
   }
 
@@ -188,6 +198,16 @@ class QueryTest {
         name
       }""").exec()
       assert(res4.rows().toString() == "[{@id=1, name=Alex}, {@id=2, name=Pedro}, {@id=5, name=Arnaldo}]")
+
+      val res5 = query("""dr.test.User | roles.name in ["admin", "oper"] | {
+        name
+      }""").exec()
+      assert(res5.rows().toString() == "[{@id=1, name=Alex}, {@id=2, name=Pedro}, {@id=3, name=Maria}, {@id=5, name=Arnaldo}]")
+
+      val res6 = query("""dr.test.User | roles.name in ?values | {
+        name
+      }""").exec("values" to listOf("admin", "oper"))
+      assert(res6.rows().toString() == "[{@id=1, name=Alex}, {@id=2, name=Pedro}, {@id=3, name=Maria}, {@id=5, name=Arnaldo}]")
     }
   }
 }
