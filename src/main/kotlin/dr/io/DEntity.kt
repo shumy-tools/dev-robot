@@ -14,6 +14,8 @@ class DEntity(
 ) {
   private val sv = mutableMapOf<String, Any>() // TYPE, STATE, SUPER
 
+  val unpack: Pair<DEntity, List<DEntity>>
+
   init {
     if (mEntity == null && cEntity == null)
       throw Exception("Both values null! - (mEntity and cEntity)")
@@ -21,22 +23,12 @@ class DEntity(
     if (mEntity != null && cEntity != null)
       throw Exception("Both values non-null! - (mEntity and cEntity)")
 
-    // call @LateInit
+    // call @LateInit if exists
     if (cEntity != null)
       schema.initFun?.call(cEntity)
 
-    // TODO: unpack here and invoke @LateInit functions down the chain!
-
-    if (cEntity != null && schema.machine != null) {
-      sv[STATE] = schema.machine.states.first()
-    }
-  }
-
-  val name: String
-    get() = schema.name
-
-  val unpack: Pair<DEntity, List<DEntity>> by lazy {
-    if (cEntity != null && cEntity is Pack<*>) {
+    // unpack
+    unpack = if (cEntity != null && cEntity is Pack<*>) {
       val dHead = DEntity(schema, cEntity = cEntity.head)
 
       var topEntity = dHead
@@ -57,17 +49,14 @@ class DEntity(
     } else {
       Pair(this, emptyList())
     }
+
+    if (cEntity != null && schema.machine != null) {
+      sv[STATE] = schema.machine.states.first()
+    }
   }
 
-  fun checkFields(): Map<String, List<String>> {
-    val all = linkedMapOf<String, List<String>>()
-
-    val (head, tail) = this.unpack
-    head.allFields.forEach { val res = it.check(); if (res.isNotEmpty()) all[it.name] = res }
-    tail.forEach { ent -> ent.allFields.forEach { val res = it.check(); if (res.isNotEmpty()) all[it.name] = res } }
-
-    return all
-  }
+  val name: String
+    get() = schema.name
 
   val superRef: DEntity?
     get() = sv[SUPER] as DEntity?
@@ -115,6 +104,16 @@ class DEntity(
     schema.allLinkedCollections.mapNotNull {
       contains(it.key) { DLinkedCollection(it.value, this) }
     }
+  }
+
+  fun checkFields(): Map<String, List<String>> {
+    val all = linkedMapOf<String, List<String>>()
+
+    val (head, tail) = this.unpack
+    head.allFields.forEach { val res = it.check(); if (res.isNotEmpty()) all[it.name] = res }
+    tail.forEach { ent -> ent.allFields.forEach { val res = it.check(); if (res.isNotEmpty()) all[it.name] = res } }
+
+    return all
   }
 
   fun toMap(): Map<String, Any?> {
