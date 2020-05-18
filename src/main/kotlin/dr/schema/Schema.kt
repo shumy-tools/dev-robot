@@ -229,7 +229,7 @@ class Schema {
       var isUnique: Boolean = false
         internal set
 
-      fun getValue(instance: Any): Any? = this.property?.get(instance)
+      fun getValue(instance: Any): Any? = property?.get(instance)
     }
 
       class SField (

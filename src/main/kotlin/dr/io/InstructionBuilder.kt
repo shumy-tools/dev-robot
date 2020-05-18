@@ -45,13 +45,9 @@ class InstructionBuilder(private val tables: Tables) {
     allInst.addAll(bottomInclude)
 
     // create extended entities if exist
-    var topEntity = head.schema
     var topInst = rootInst
     for (item in tail) {
-      if (!topEntity.isSealed)
-        throw Exception("Not a top @Sealed entity! - (${topEntity.name})")
-
-      topInst.putData(TType, topEntity.name)
+      val topEntity = item.superRef!!.schema
       topInst = Insert(tables.get(item.schema), CREATE).apply {
         putRef(TSuperRef(topEntity), topInst)
         val (subTopInclude, subBottomInclude) = processUnpackedEntity(item, this)
@@ -59,8 +55,6 @@ class InstructionBuilder(private val tables: Tables) {
         allInst.add(this)
         allInst.addAll(subBottomInclude)
       }
-
-      topEntity = item.schema
 
       // TODO: add output values?
     }

@@ -2,6 +2,7 @@ package dr.test
 
 import dr.DrServer
 import dr.adaptor.SQLAdaptor
+import dr.schema.Pack
 import dr.schema.SParser
 import dr.schema.Traits
 import dr.spi.IAuthorizer
@@ -12,7 +13,7 @@ class TestAuthorizer: IAuthorizer {
   override fun read(access: IReadAccess) = true
 }
 
-private val schema = SParser.parse(Country::class, User::class, Role::class)
+private val schema = SParser.parse(Country::class, User::class, Role::class, SuperUser::class)
 private val adaptor = SQLAdaptor(schema, "jdbc:h2:mem:testdb").also {
   it.createSchema()
 }
@@ -80,6 +81,8 @@ val server = DrServer(schema, adaptor, TestAuthorizer()).also {
         Traits(adminID, Trace("Arnaldo-admin-trait"))
       )
     ))
+
+    create(Pack(SuperUser("Bruno"), AdminUser("BrunoAdminProp")))
   }
 }
 

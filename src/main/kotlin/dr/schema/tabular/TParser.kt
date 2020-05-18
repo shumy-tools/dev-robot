@@ -49,7 +49,8 @@ class TParser(private val schema: Schema) {
       } else {
         // A ref_<rel> --> B
         oRef.ref.getOrCreateTable()
-        topTable.addRef(TDirectRef(oRef.ref, oRef))
+        val dRef = if (oRef.name == SUPER) TSuperRef(oRef.ref) else TDirectRef(oRef.ref, oRef)
+        topTable.addRef(dRef)
       }
     }
 

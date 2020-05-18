@@ -60,8 +60,6 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
       }
     }
 
-    // TODO: add TSuperRef results
-
     return result
   }
 
@@ -164,6 +162,8 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     for (dRef in refs.values) {
       directJoin(dRef, prefix)
     }
+
+    // TODO: add TSuperRef results
 
     for (qRel in refs.keys) {
       qRel.ref.joinTables(qRel.select, qRel.name)

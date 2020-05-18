@@ -13,19 +13,16 @@ class InputProcessor(private val schema: Schema) {
 
   fun create(type: SEntity, json: String) = create(type.clazz, json)
 
-  fun create(value: Any): DEntity {
-    val name = value.javaClass.kotlin.qualifiedName
-    val sEntity = schema.masters[name] ?: throw Exception("Master entity nof found! - ($name)")
-
-    return DEntity(sEntity, cEntity = value)
+  fun create(type: KClass<out Any>, json: String): DEntity {
+    val value = mapper.readValue(json, type.java)
+    return create(value)
   }
 
-  fun create(type: KClass<out Any>, json: String): DEntity {
-    val sEntity = schema.find(type)
-    if (sEntity.type != EntityType.MASTER)
-      throw Exception("Creation is only valid for master entities! - (${sEntity.name})")
+  fun create(value: Any): DEntity {
+    val head = if (value is Pack<*>) value.head else value
+    val name = head.javaClass.kotlin.qualifiedName
+    val sEntity = schema.masters[name] ?: throw Exception("Master entity nof found! - ($name)")
 
-    val value = mapper.readValue(json, type.java)
     return DEntity(sEntity, cEntity = value)
   }
 

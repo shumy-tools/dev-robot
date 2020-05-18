@@ -68,7 +68,7 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
       throw Exception("Reserved class name: 'super'! - ($name)")
 
     if (this.isOpen || this.isSealed)
-      throw Exception("Class inheritance is done via @Extend. Remove open or sealed keywords. - ($name)")
+      throw Exception("Class inheritance is done via @Sealed. Remove open or sealed keywords. - ($name)")
 
     val type = this.getEntityType() ?: throw Exception("Required annotation, one of (Master, Detail, Trait)! - ($name)")
 

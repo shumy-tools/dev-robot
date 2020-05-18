@@ -4,12 +4,16 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.annotation.JsonTypeName
 import dr.schema.*
 import dr.schema.tabular.STATE
+import dr.schema.tabular.SUPER
+import dr.schema.tabular.TYPE
 
 class DEntity(
   val schema: SEntity,
   private val mEntity: Map<String, Any?>? = null,
   private val cEntity: Any? = null    // may be Pack<Any>
 ) {
+  private val sv = mutableMapOf<String, Any>() // TYPE, STATE, SUPER
+
   init {
     if (mEntity == null && cEntity == null)
       throw Exception("Both values null! - (mEntity and cEntity)")
@@ -20,23 +24,36 @@ class DEntity(
     // call @LateInit
     if (cEntity != null)
       schema.initFun?.call(cEntity)
+
+    // TODO: unpack here and invoke @LateInit functions down the chain!
+
+    if (cEntity != null && schema.machine != null) {
+      sv[STATE] = schema.machine.states.first()
+    }
   }
 
   val name: String
     get() = schema.name
 
-  val isCreate: Boolean
-    get() = cEntity != null
-
   val unpack: Pair<DEntity, List<DEntity>> by lazy {
     if (cEntity != null && cEntity is Pack<*>) {
-      schema.checkInclusion("sealed", schema.sealed.keys, cEntity.tail)
-      val dTail: List<DEntity> = cEntity.tail.map {
-        val sEntity = schema.sealed.getValue(it.javaClass.canonicalName)
-        DEntity(sEntity, cEntity = it)
+      val dHead = DEntity(schema, cEntity = cEntity.head)
+
+      var topEntity = dHead
+      val dTail: List<DEntity> = cEntity.tail.map { nxt ->
+        if (!topEntity.schema.isSealed)
+          throw Exception("Not a top @Sealed entity! - (${topEntity.name})")
+
+        val sType = nxt.javaClass.canonicalName
+        val sEntity = topEntity.schema.sealed[sType] ?: throw Exception("SubEntity '$sType' is not part of ${topEntity.name}!")
+        DEntity(sEntity, cEntity = nxt).also {
+          topEntity.sv[TYPE] = it.name
+          it.sv[SUPER] = topEntity
+          topEntity = it
+        }
       }
 
-      Pair(DEntity(schema, cEntity = cEntity.head), dTail)
+      Pair(dHead, dTail)
     } else {
       Pair(this, emptyList())
     }
@@ -52,6 +69,9 @@ class DEntity(
     return all
   }
 
+  val superRef: DEntity?
+    get() = sv[SUPER] as DEntity?
+
   val allFields: List<DField> by lazy {
     if (cEntity is Pack<*>)
       throw Exception("Cannot get field from a Pack<*>, unpack first.")
@@ -65,7 +85,7 @@ class DEntity(
     if (cEntity is Pack<*>)
       throw Exception("Cannot get reference from a Pack<*>, unpack first.")
 
-    schema.allOwnedReferences.mapNotNull {
+    schema.allOwnedReferences.filter { it.key != SUPER }.mapNotNull {
       contains(it.key) { DOwnedReference(it.value, this) }
     }
   }
@@ -108,7 +128,11 @@ class DEntity(
   }
 
   internal fun getFieldValue(field: SField): Any? {
-    return if (mEntity != null) mEntity[field.name] else field.getValue(cEntity!!)
+    return if (mEntity != null) mEntity[field.name] else when (field.name) {
+      TYPE -> sv[TYPE]
+      STATE -> sv[STATE]
+      else -> field.getValue(cEntity!!)
+    }
   }
 
   internal fun getOwnedRelationValue(rel: SRelation): Any? {
@@ -151,13 +175,7 @@ sealed class Data
       get() = schema.name
 
     val value: Any? by lazy {
-      val value = entity.getFieldValue(schema) ?: when(name) {
-        //TYPE -> // TODO: how to set this value onCreate?
-        //SUPER -> // TODO: how to set this value onCreate?
-        STATE -> if (entity.isCreate) entity.schema.machine!!.states.first() else null
-        else -> null
-      }
-
+      val value = entity.getFieldValue(schema)
       val checks = entity.schema.checkFieldConstraints(schema, value)
       if (checks.isNotEmpty())
         throw Exception("Constraint check failed '${checks.first()}'! - (${entity.schema.name}, ${schema.name})")

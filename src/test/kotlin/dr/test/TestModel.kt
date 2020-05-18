@@ -47,7 +47,7 @@ data class B1(
 @Detail
 data class C(val oneText: String)
 
-/* -------------------------------Query Model------------------------------- */
+/* -------------------------------Simple Query Model------------------------------- */
 @Master
 data class Country(val name: String)
 
@@ -80,4 +80,20 @@ data class User(
 data class Role(
   val name: String,
   val ord: Int
+)
+
+/* -------------------------------Hierarchy Query Model------------------------------- */
+@Master @Sealed(AdminUser::class, OperUser::class)
+data class SuperUser(
+  @Unique val alias: String
+)
+
+@Detail
+data class AdminUser(
+  val adminProp: String
+)
+
+@Detail
+data class OperUser(
+  val operProp: String
 )
