@@ -144,15 +144,24 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     val fields = if (prefix == MAIN) dbFields(selection, prefix) else dbFields(selection, prefix).map { it.`as`("$alias.${it.name}") }
     joinFields.addAll(fields)
 
+    // order fields
     val orderBy = selection.fields.filter { it.sort != SortType.NONE }.sortedBy { it.order }.map {
       val field = it.fn(prefix)
       if (it.sort == SortType.ASC) field.asc() else field.desc()
     }
     sortFields.addAll(orderBy)
 
+    // add direct-ref fields
     val refs = dbOneToOne(selection)
     for (qRel in refs.keys) {
       qRel.ref.joinFields(qRel.select, qRel.name, "$alias.${qRel.name}")
+    }
+
+    // add @super fields
+    val dSuperRef = selection.relations.find { it.name == SUPER }
+    if (dSuperRef != null) {
+      val dRefTable = tables.get(superRef!!.refEntity)
+      dRefTable.joinFields(dSuperRef.select, dSuperRef.name, "$alias.${dSuperRef.name}")
     }
   }
 
@@ -163,7 +172,15 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
       directJoin(dRef, prefix)
     }
 
-    // TODO: add TSuperRef results
+    // one-to-one A.@super --> B.@id
+    val dSuperRef = selection.relations.find { it.name == SUPER }
+    if (dSuperRef != null) {
+      val dRef = superRef!!
+      val rTable = table(dRef.refEntity.sqlName()).asTable(SUPER)
+      val rField = dRef.fn(this, prefix)
+      val rId = idFn(SUPER)
+      joinTables[rTable.name] = (rTable to rField.eq(rId))
+    }
 
     for (qRel in refs.keys) {
       qRel.ref.joinTables(qRel.select, qRel.name)

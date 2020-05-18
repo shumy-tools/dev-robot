@@ -74,7 +74,7 @@ class DEntity(
     if (cEntity is Pack<*>)
       throw Exception("Cannot get reference from a Pack<*>, unpack first.")
 
-    schema.allOwnedReferences.filter { it.key != SUPER }.mapNotNull {
+    schema.allOwnedReferences.mapNotNull {
       contains(it.key) { DOwnedReference(it.value, this) }
     }
   }

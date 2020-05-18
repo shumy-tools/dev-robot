@@ -83,6 +83,7 @@ val server = DrServer(schema, adaptor, TestAuthorizer()).also {
     ))
 
     create(Pack(SuperUser("Bruno"), AdminUser("BrunoAdminProp")))
+    create(Pack(SuperUser("Mario"), OperUser("MarioOperProp")))
   }
 }
 
@@ -125,7 +126,6 @@ class QueryTest {
       val res3 = query("""dr.test.User limit ?lmt page ?pgt {
         name
       }""").exec("lmt" to 2, "pgt" to 3)
-      println(res3.rows())
       assert(res3.rows().toString() == "[{@id=5, name=Arnaldo}]")
     }
   }
@@ -225,6 +225,20 @@ class QueryTest {
         name
       }""").exec("values" to listOf("admin", "oper"))
       assert(res6.rows().toString() == "[{@id=1, name=Alex}, {@id=2, name=Pedro}, {@id=3, name=Maria}, {@id=5, name=Arnaldo}]")
+    }
+  }
+
+  @Test fun testSealedQuery() {
+    server.use {
+      val res1 = query("""dr.test.SuperUser | alias == "Mario" | {
+        alias, @type
+      }""").exec()
+      assert(res1.rows().toString() == "[{@id=2, alias=Mario, @type=dr.test.OperUser}]")
+
+      val res2 = query("""dr.test.AdminUser {
+        adminProp, @super { * }
+      }""").exec()
+      assert(res2.rows().toString() == "[{@id=1, adminProp=BrunoAdminProp, @super={@id=1, alias=Bruno, @type=dr.test.AdminUser}}]")
     }
   }
 }

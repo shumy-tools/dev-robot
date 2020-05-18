@@ -36,6 +36,9 @@ data class STable(val sEntity: SEntity, val sRelation: SRelation? = null) {
   val props: Map<String, TProperty> = linkedMapOf()
   val refs: List<TRef> = mutableListOf()
 
+  var superRef: TSuperRef? = null
+    internal set
+
   val oneToOne: Map<String, TDirectRef> = linkedMapOf()
   val oneToMany: Map<String, TInverseRef> = linkedMapOf()
   val manyToMany: Map<String, Pair<STable, SEntity>> = linkedMapOf()
@@ -48,6 +51,8 @@ data class STable(val sEntity: SEntity, val sRelation: SRelation? = null) {
     (refs as MutableList<TRef>).add(ref)
     if (ref is TDirectRef) {
       (oneToOne as LinkedHashMap<String, TDirectRef>)[ref.rel.name] = ref
+    } else if (ref is TSuperRef) {
+      superRef = ref
     }
   }
 
