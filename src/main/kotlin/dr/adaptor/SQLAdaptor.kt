@@ -61,7 +61,13 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
         val rName = ref.fn(tlb)
         dbTable = dbTable.column(rName, SQLDataType.BIGINT) // TODO: is nullable?
 
-        if (ref.isUnique) constraints.add(unique(rName))
+        // add unique only to direct references
+        when (ref) {
+          is TSuperRef -> constraints.add(unique(rName))
+          is TDirectRef -> constraints.add(unique(rName))
+          is TInverseRef -> Unit
+        }
+
         val fk = foreignKey(rName).references(table(ref.refTable.sqlName()))
         constraints.add(fk)
       }
@@ -86,14 +92,14 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
       val tx = using(conf)
 
       instructions.exec { inst ->
+        val dataFields = inst.data.values
+        val dataRefs = inst.resolvedRefs.values
         val tableName = inst.table.sqlName()
+
         when (inst) {
           is Insert -> {
             val fields = inst.data.keys.map { it.fn() }
             val refs = inst.resolvedRefs.keys.map { it.fn(inst.table) }
-
-            val dataFields = inst.data.values
-            val dataRefs = inst.resolvedRefs.values
 
             val insert = tx.insertInto(table(tableName), fields.plus(refs))
               .values(dataFields.plus(dataRefs))
@@ -133,7 +139,7 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
             inst.resolvedRefs.forEach { dbUpdate = dbUpdate.set(it.key.fn(inst.table), it.value) }
             val update = dbUpdate.where(idFn().eq(inst.id))
 
-            println("  ${update.sql}")
+            println("  ${update.sql}; ${dataFields.plus(dataRefs)} - @id=${inst.id}")
             val affectedRows = update.execute()
             if (affectedRows == 0)
               throw Exception("Instruction failed, no rows affected!")

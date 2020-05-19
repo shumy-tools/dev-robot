@@ -39,7 +39,9 @@ data class BCols(
   val bcolsText: String,
   @Create val ccolDetail: List<CColDetail>,
   @Link(CMaster::class) val ccol: List<RefID>,
-  @Link(CMaster::class, Trace::class) val ccolTraits: List<Traits>
+  @Link(CMaster::class, Trace::class) val ccolTraits: List<Traits>,
+
+  @Unique @Link(CMaster::class) val ccolUnique: List<RefID>
 )
 
 @Detail

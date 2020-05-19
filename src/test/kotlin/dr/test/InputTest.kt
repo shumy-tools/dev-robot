@@ -174,11 +174,12 @@ class InputTest {
       "ccolTraits":[
         {"id":${ids[2]},"traits":[{"@type":"dr.test.Trace","value":"trace1"}]},
         {"id":${ids[3]},"traits":[{"@type":"dr.test.Trace","value":"trace2"}]}
-      ]
+      ],
+      "ccolUnique":[${ids[0]}, ${ids[1]}]
     }"""
     val cInst = server.create(BCols::class, cJson)
     val id = cInst.root.refID.id!!
-    assert(cInst.all.size == 7)
+    assert(cInst.all.size == 9)
     assert(cInst.all[0].toString() == "Insert(CREATE) - {table=dr.test.BCols, data={bcolsText=value1}}")
     assert(cInst.all[1].toString() == "Insert(ADD) - {table=dr.test.CColDetail, data={ccolDetailText=value2}, refs={@inv-to-dr.test.BCols-ccolDetail=$id}}")
     assert(cInst.all[2].toString() == "Insert(ADD) - {table=dr.test.CColDetail, data={ccolDetailText=value3}, refs={@inv-to-dr.test.BCols-ccolDetail=$id}}")
@@ -186,6 +187,8 @@ class InputTest {
     assert(cInst.all[4].toString() == "Insert(LINK) - {table=dr.test.BCols-ccol, refs={@ref-to-dr.test.CMaster=${ids[1]}, @inv-to-dr.test.BCols=$id}}")
     assert(cInst.all[5].toString() == "Insert(LINK) - {table=dr.test.BCols-ccolTraits, data={&dr.test.Trace=Trace(value=trace1)}, refs={@ref-to-dr.test.CMaster=${ids[2]}, @inv-to-dr.test.BCols=$id}}")
     assert(cInst.all[6].toString() == "Insert(LINK) - {table=dr.test.BCols-ccolTraits, data={&dr.test.Trace=Trace(value=trace2)}, refs={@ref-to-dr.test.CMaster=${ids[3]}, @inv-to-dr.test.BCols=$id}}")
+    assert(cInst.all[7].toString() == "Update(LINK) - {table=dr.test.CMaster, id=${ids[0]}, refs={@inv-to-dr.test.BCols-ccolUnique=$id}}")
+    assert(cInst.all[8].toString() == "Update(LINK) - {table=dr.test.CMaster, id=${ids[1]}, refs={@inv-to-dr.test.BCols-ccolUnique=$id}}")
 
     val uJson1 = """{
       "bcolsText":"u-value1",
@@ -203,10 +206,14 @@ class InputTest {
           {"id":${ids[1]},"traits":[{"@type":"dr.test.Trace","value":"u-trace1"}]},
           {"id":${ids[0]},"traits":[{"@type":"dr.test.Trace","value":"u-trace2"}]}
         ]
+      },
+      "ccolUnique":{
+        "@type":"many-links",
+        "refs":[${ids[3]}, ${ids[2]}]
       }
     }"""
     val uInst1 = server.update(BCols::class, id, uJson1)
-    assert(uInst1.all.size == 7)
+    assert(uInst1.all.size == 9)
     assert(uInst1.all[0].toString() == "Update(UPDATE) - {table=dr.test.BCols, id=1, data={bcolsText=u-value1}}")
     assert(uInst1.all[1].toString() == "Insert(ADD) - {table=dr.test.CColDetail, data={ccolDetailText=u-value2}, refs={@inv-to-dr.test.BCols-ccolDetail=$id}}")
     assert(uInst1.all[2].toString() == "Insert(ADD) - {table=dr.test.CColDetail, data={ccolDetailText=u-value3}, refs={@inv-to-dr.test.BCols-ccolDetail=$id}}")
@@ -214,6 +221,8 @@ class InputTest {
     assert(uInst1.all[4].toString() == "Insert(LINK) - {table=dr.test.BCols-ccol, refs={@ref-to-dr.test.CMaster=${ids[2]}, @inv-to-dr.test.BCols=$id}}")
     assert(uInst1.all[5].toString() == "Insert(LINK) - {table=dr.test.BCols-ccolTraits, data={&dr.test.Trace=Trace(value=u-trace1)}, refs={@ref-to-dr.test.CMaster=${ids[1]}, @inv-to-dr.test.BCols=$id}}")
     assert(uInst1.all[6].toString() == "Insert(LINK) - {table=dr.test.BCols-ccolTraits, data={&dr.test.Trace=Trace(value=u-trace2)}, refs={@ref-to-dr.test.CMaster=${ids[0]}, @inv-to-dr.test.BCols=$id}}")
+    assert(uInst1.all[7].toString() == "Update(LINK) - {table=dr.test.CMaster, id=${ids[3]}, refs={@inv-to-dr.test.BCols-ccolUnique=$id}}")
+    assert(uInst1.all[8].toString() == "Update(LINK) - {table=dr.test.CMaster, id=${ids[2]}, refs={@inv-to-dr.test.BCols-ccolUnique=$id}}")
     assert(cInst.all[1].refID.id != uInst1.all[1].refID.id) // confirm that it's a new owned instance and not an update of the old one
     assert(cInst.all[2].refID.id != uInst1.all[2].refID.id) // confirm that it's a new owned instance and not an update of the old one
 
@@ -225,13 +234,18 @@ class InputTest {
       "ccolTraits":{
         "@type":"one-link-traits",
         "ref":{"id":${ids[4]},"traits":[{"@type":"dr.test.Trace","value":"u-trace3"}]}
+      },
+      "ccolUnique":{
+        "@type":"one-link",
+        "ref":${ids[4]}
       }
     }"""
     val uInst2 = server.update(BCols::class, id, uJson2)
-    assert(uInst2.all.size == 3)
+    assert(uInst2.all.size == 4)
     assert(uInst2.all[0].toString() == "Update(UPDATE) - {table=dr.test.BCols, id=$id}")
     assert(uInst2.all[1].toString() == "Insert(LINK) - {table=dr.test.BCols-ccol, refs={@ref-to-dr.test.CMaster=${ids[4]}, @inv-to-dr.test.BCols=$id}}")
     assert(uInst2.all[2].toString() == "Insert(LINK) - {table=dr.test.BCols-ccolTraits, data={&dr.test.Trace=Trace(value=u-trace3)}, refs={@ref-to-dr.test.CMaster=${ids[4]}, @inv-to-dr.test.BCols=$id}}")
+    assert(uInst2.all[3].toString() == "Update(LINK) - {table=dr.test.CMaster, id=${ids[4]}, refs={@inv-to-dr.test.BCols-ccolUnique=$id}}")
 
     val uJson3 = """{
       "ccol":{
@@ -241,14 +255,19 @@ class InputTest {
       "ccolTraits":{
         "@type":"many-unlink",
         "refs":[${ids[0]}, ${ids[1]}]
+      },
+      "ccolUnique":{
+        "@type":"one-unlink",
+        "ref":${ids[2]}
       }
     }"""
     val uInst3 = server.update(BCols::class, id, uJson3)
-    assert(uInst3.all.size == 4)
+    assert(uInst3.all.size == 5)
     assert(uInst3.all[0].toString() == "Update(UPDATE) - {table=dr.test.BCols, id=$id}")
     assert(uInst3.all[1].toString() == "Delete(UNLINK) - {table=dr.test.BCols-ccol, refs={@ref-to-dr.test.CMaster=${ids[0]}, @inv-to-dr.test.BCols=$id}}")
     assert(uInst3.all[2].toString() == "Delete(UNLINK) - {table=dr.test.BCols-ccolTraits, refs={@ref-to-dr.test.CMaster=${ids[0]}, @inv-to-dr.test.BCols=$id}}")
     assert(uInst3.all[3].toString() == "Delete(UNLINK) - {table=dr.test.BCols-ccolTraits, refs={@ref-to-dr.test.CMaster=${ids[1]}, @inv-to-dr.test.BCols=$id}}")
+    assert(uInst3.all[4].toString() == "Update(UNLINK) - {table=dr.test.CMaster, id=8, refs={@inv-to-dr.test.BCols-ccolUnique=null}}")
   }
 
   @Test fun testSealed() {
