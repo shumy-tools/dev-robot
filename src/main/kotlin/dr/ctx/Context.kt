@@ -6,6 +6,7 @@ import dr.io.Instructions
 import dr.schema.RefID
 import dr.schema.SEntity
 import dr.spi.IQueryExecutor
+import dr.spi.IReadAccess
 
 object Context {
   private val tSession = ThreadLocal<Session>()
@@ -42,8 +43,10 @@ object Context {
     instructions.include(more)
   }
 
-  fun query(query: String): IQueryExecutor {
-    return session.server.qService.compile(query).first
+  fun query(query: String, access: ((IReadAccess) -> Unit)? = null): IQueryExecutor {
+    val qReady = session.server.qService.compile(query)
+    access?.invoke(qReady.second)
+    return qReady.first
   }
 }
 

@@ -1,6 +1,5 @@
 package dr.query
 
-import dr.schema.SRelation
 import dr.schema.tabular.STable
 import dr.schema.tabular.TRAITS
 import dr.schema.tabular.Tables
@@ -17,7 +16,6 @@ import java.time.LocalTime
 
 /* ------------------------- api -------------------------*/
 class QueryService(private val tables: Tables, private val adaptor: IAdaptor) {
-
   fun compile(query: String): Pair<IQueryExecutor, IReadAccess> {
     val lexer = QueryLexer(CharStreams.fromString(query))
     val tokens = CommonTokenStream(lexer)
@@ -28,8 +26,6 @@ class QueryService(private val tables: Tables, private val adaptor: IAdaptor) {
     val listener = DrQueryListener(tables)
 
     walker.walk(listener, tree)
-    //println("tokens: ${tokens.tokens.map { it.text }}")
-
     if (listener.errors.isNotEmpty())
       throw Exception("Failed to compile query! ${listener.errors}")
 
@@ -40,43 +36,23 @@ class QueryService(private val tables: Tables, private val adaptor: IAdaptor) {
 
 /* ------------------------- helpers -------------------------*/
 private class AccessedPaths: IReadAccess {
-  private val paths = mutableMapOf<String, Any>()
-
-  override fun entity() = this.paths.keys.first()
-
-  @Suppress("UNCHECKED_CAST")
-  override fun paths(): Map<String, Any> {
-    val name = entity()
-    return this.paths[name] as Map<String, Any>
-  }
-
-  fun addField(prefix: List<String>, path: String): List<String> {
-    val full = prefix.plus(path)
-    addFull(full, true)
-    return full
-  }
-
-  fun addRelation(prefix: List<String>, path: String): List<String> {
-    val full = prefix.plus(path)
-    addFull(full, false)
-    return full
-  }
+  override lateinit var entity: String
+  override val paths = mutableMapOf<String, Any>()
 
   @Suppress("UNCHECKED_CAST")
-  private fun addFull(full: List<String>, withIgnore: Boolean) {
-    var map = this.paths
-    var last = map
+  fun addPath(prefix: List<String>, path: String): List<String> {
+    var map = paths
+    val full = prefix.plus(path)
     for (key in full) {
-      last = map
+      if (map.containsKey("*")) break
       map = map.getOrPut(key) { mutableMapOf<String, Any>() } as MutableMap<String, Any>
     }
 
-    if (withIgnore && full.last() != "*" && last.containsKey("*"))
-      last.remove(full.last())
+    return full
   }
 
   override fun toString(): String {
-    return "Accessed(entity=${this.entity()}, paths=${this.paths()})"
+    return "Accessed(entity=$entity, paths=$paths)"
   }
 }
 
@@ -92,7 +68,8 @@ private class DrQueryListener(private val tables: Tables): QueryBaseListener() {
     val eText = ctx.entity().text
     val sTable = tables.get(eText)
 
-    val rel = sTable.processQLine(listOf(eText), ctx.qline())
+    accessed.entity = eText
+    val rel = sTable.processQLine(listOf(), ctx.qline())
     this.compiled = QTree(sTable, rel)
   }
 
@@ -124,8 +101,9 @@ private class DrQueryListener(private val tables: Tables): QueryBaseListener() {
     if (isDirectRef && filter != null)
       throw Exception("Direct references don't support 'filter'! Use it on the top entity.")
 
-    val select = QSelect(hasAll, fields, relations)
-    return QRelation(prefix.last(), this, filter, limit, page, select)
+    val qName = if (prefix.isEmpty()) accessed.entity else prefix.last()
+    val qSelect = QSelect(hasAll, fields, relations)
+    return QRelation(qName, this, filter, limit, page, qSelect)
   }
 
   private fun STable.processLimitOrPage(lpCtx: QueryParser.IntOrParamContext): QParam {
@@ -147,7 +125,7 @@ private class DrQueryListener(private val tables: Tables): QueryBaseListener() {
 
     return relations.map {
       val path = it.ID().text
-      val full = accessed.addRelation(prefix, path)
+      val full = accessed.addPath(prefix, path)
       exists(present, full)
 
       val rel = sEntity.rels[path] ?: throw Exception("Invalid relation path '$name.$path'")
@@ -159,13 +137,13 @@ private class DrQueryListener(private val tables: Tables): QueryBaseListener() {
     val present = mutableSetOf<String>()
 
     return if (fields.ALL() != null) {
-      val path = accessed.addField(prefix, fields.ALL().text)
+      val path = accessed.addPath(prefix, fields.ALL().text)
       exists(present, path)
       Pair(true, listOf())
     } else {
       Pair(false, fields.field().map {
         val path = it.name().text
-        val full = accessed.addField(prefix, path)
+        val full = accessed.addPath(prefix, path)
         exists(present, full)
 
         val jType = sEntity.fields[path]?.jType ?: if (path.startsWith(TRAITS)) {
@@ -222,7 +200,7 @@ private class DrQueryListener(private val tables: Tables): QueryBaseListener() {
     val qDerefList = mutableListOf<QDeref>()
     predicate.path().ID().forEach {
       val nextPath = it.text
-      nextFull = accessed.addRelation(nextFull, nextPath)
+      nextFull = accessed.addPath(nextFull, nextPath)
 
       qDerefList.lastOrNull()?.let { last ->
         // After a field there are no relations!
@@ -299,12 +277,6 @@ private fun compType(comp: String) = when (comp) {
   else -> throw Exception("Unrecognized comparator! Use ('==', '!=', '>', '<', '>=', '<=', 'in')")
 }
 
-private fun derefType(deref: String) = when (deref) {
-  "." -> DerefType.ONE
-  ".." -> DerefType.MANY
-  else -> throw Exception("Unrecognized deref operator! Use ('.', '..')")
-}
-
 private fun transformParam(param: QueryParser.ParamContext) = when {
   param.value() != null -> transformValue(param.value())
   param.list() != null -> QParam(ParamType.LIST, param.list().value().map { transformValue(it).value })
@@ -315,7 +287,7 @@ private fun transformValue(value: QueryParser.ValueContext) = when {
   value.TEXT() != null -> QParam(ParamType.TEXT, value.TEXT().text.substring(1, value.TEXT().text.length-1))
   value.INT() != null -> QParam(ParamType.INT, value.INT().text.toInt())
   value.FLOAT() != null -> QParam(ParamType.FLOAT, value.FLOAT().text.toFloat())
-  value.BOOL() != null -> QParam(ParamType.BOOL, value.BOOL().text.toBoolean())
+  value.BOOL() != null -> QParam(ParamType.BOOL, value.BOOL().text!!.toBoolean())
   value.TIME() != null -> QParam(ParamType.TIME, LocalTime.parse(value.TIME().text.substring(1)))
   value.DATE() != null -> QParam(ParamType.DATE, LocalDate.parse(value.DATE().text.substring(1)))
   value.DATETIME() != null -> QParam(ParamType.DATETIME, LocalDateTime.parse(value.DATETIME().text.substring(1)))

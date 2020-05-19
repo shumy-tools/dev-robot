@@ -19,8 +19,7 @@ import java.sql.SQLException
 import java.sql.Statement
 
 class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
-  private val tables: Tables = TParser(schema).transform()
-  override fun tables(): Tables = tables
+  override val tables: Tables = TParser(schema).transform()
 
   private val ds = HikariDataSource().also {
     it.jdbcUrl = url

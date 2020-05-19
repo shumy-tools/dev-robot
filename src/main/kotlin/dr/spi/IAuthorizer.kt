@@ -5,6 +5,6 @@ interface IAuthorizer {
 }
 
 interface IReadAccess {
-  fun entity(): String
-  fun paths(): Map<String, Any>
+  val entity: String
+  val paths: Map<String, Any>
 }

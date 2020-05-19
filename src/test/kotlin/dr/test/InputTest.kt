@@ -1,12 +1,9 @@
 package dr.test
 
 import dr.io.*
-import dr.schema.*
+import dr.schema.SParser
 import dr.schema.tabular.TParser
 import org.junit.Test
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
 
 private fun Instructions.process(): List<Instruction> {
   var idSeq = 9L;
@@ -100,7 +97,7 @@ class InputTest {
     assert(allInst[4].toString() == "Insert(LINK) - {table=dr.test.B1-threeEntity, data={&dr.test.Trace=Trace(value=trace2)}, refs={@ref-to-dr.test.C=200, @inv-to-dr.test.B1=10}}")
   }
 
-  @Test fun testLinkRelations() {
+  @Test fun testUpdateLinkRelations() {
     val json = """{
       "twoEntity":{
         "oneText":"oneC"
@@ -126,7 +123,7 @@ class InputTest {
     assert(allInst[1].toString() == "Update(UPDATE) - {table=dr.test.B, id=20, data={&dr.test.Trace@fourEntity=Trace(value=traceUpdate)}, refs={@ref-to-dr.test.B-threeEntity=100, @ref-to-dr.test.B-fourEntity=200, @ref-to-dr.test.B-twoEntity=10}}")
   }
 
-  @Test fun testUnlinkRelations() {
+  @Test fun testUpdateUnlinkRelations() {
     val json = """{
       "twoEntity":{
         "@type":"one-unlink",

@@ -5,7 +5,7 @@ import dr.io.Instructions
 import dr.schema.tabular.Tables
 
 interface IAdaptor {
-  fun tables(): Tables
+  val tables: Tables
   fun commit(instructions: Instructions)
   fun compile(query: QTree): IQueryExecutor
 }
@@ -18,8 +18,8 @@ interface IQueryExecutor {
 typealias QRow = Map<String, Any?>
 
 interface IResult {
-  fun <T: Any> get(name: String): T
+  val rows: List<QRow>
 
+  fun <T: Any> get(name: String): T
   fun row(id: Long): QRow?
-  fun rows(): List<QRow>
 }

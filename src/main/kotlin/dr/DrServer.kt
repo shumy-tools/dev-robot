@@ -22,8 +22,8 @@ import java.util.*
 
 class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAuthorizer? = null) {
   internal val processor = InputProcessor(schema)
-  internal val translator = InstructionBuilder(adaptor.tables())
-  internal val qService = QueryService(adaptor.tables(), adaptor)
+  internal val translator = InstructionBuilder(adaptor.tables)
+  internal val qService = QueryService(adaptor.tables, adaptor)
 
   private val machines: Map<SEntity, Machine<*, *>>
   private val queries = mutableMapOf<String, Pair<IQueryExecutor, IReadAccess>>()
@@ -189,7 +189,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
           val res = query.exec()
           mutableMapOf<String, Any>("@type" to "ok").apply {
-            val data = res.rows()
+            val data = res.rows
             this["count"] = data.size
             this["data"] = data
           }
@@ -210,7 +210,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
           val params = JsonParser.readParams(ctx.body())
           val res = query.exec(params)
           mutableMapOf<String, Any>("@type" to "ok").apply {
-            this["data"] = res.rows()
+            this["data"] = res.rows
           }
         }
 

@@ -51,10 +51,10 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     // add one-to-many and many-to-many results
     inverted.forEach {
       val subResult = it.value.second.subExec(params, it.value.first, idsQuery) as SQLResult
-      result.rows.keys.forEach { pk ->
+      result.rowsWithIds.keys.forEach { pk ->
         val fkKeys = subResult.fkKeys[pk] // join results via "pk <-- fk"
         fkKeys?.forEach { subID ->
-          val line = subResult.rows[subID]!!
+          val line = subResult.rowsWithIds[subID]!!
           result.addTo(pk, it.key, line)
         }
       }
@@ -278,12 +278,13 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
 
 /* ------------------------- helpers -------------------------*/
 class SQLResult(private val tables: Tables): IResult {
-  internal val rows = linkedMapOf<Long, LinkedHashMap<String, Any?>>()
+  internal val rowsWithIds = linkedMapOf<Long, LinkedHashMap<String, Any?>>()
   internal val fkKeys = linkedMapOf<Long, MutableList<Long>>()
 
-  override fun row(id: Long) = rows[id]
+  override val rows
+    get() = rowsWithIds.values.toList()
 
-  override fun rows() = rows.values.toList()
+  override fun row(id: Long) = rowsWithIds[id]
 
   override fun <T : Any> get(name: String): T {
     TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
@@ -291,7 +292,7 @@ class SQLResult(private val tables: Tables): IResult {
 
   @Suppress("UNCHECKED_CAST")
   fun addTo(pk: Long, name: String, row: QRow) {
-    val main = rows.getValue(pk)
+    val main = rowsWithIds.getValue(pk)
     val list = main.getOrPut(name) { mutableListOf<QRow>() } as MutableList<QRow>
     list.add(row)
   }
@@ -300,7 +301,7 @@ class SQLResult(private val tables: Tables): IResult {
     val fieldID = record.fields().find { it.name == ID }!!
     val rowID = (fieldID.getValue(record) as Long?)!!
     val row = linkedMapOf<String, Any?>()
-    rows[rowID] = row
+    rowsWithIds[rowID] = row
 
     record.fields().forEach {
       val value = it.getValue(record)
