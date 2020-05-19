@@ -37,7 +37,7 @@ object Context {
 
   fun update(id: Long, type: SEntity, data: Map<String, Any?>) {
     val server = session.server
-    val entity = server.processor.update(type, data)
+    val entity = server.processor.update(type, id, data)
 
     val more = server.translator.update(id, entity)
     instructions.include(more)

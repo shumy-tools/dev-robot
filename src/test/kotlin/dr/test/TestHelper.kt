@@ -3,7 +3,12 @@ package dr.test
 import dr.io.*
 import kotlin.reflect.KClass
 import dr.schema.ActionType.*
+import dr.spi.IAuthorizer
+import dr.spi.IReadAccess
 
+class TestAuthorizer: IAuthorizer {
+  override fun read(access: IReadAccess) = true
+}
 
 fun Instruction.isCreate(clazz: KClass<out Any>, data: Map<String, Any>, refs: Map<String, Any> = emptyMap()) {
   val insert = this as Insert

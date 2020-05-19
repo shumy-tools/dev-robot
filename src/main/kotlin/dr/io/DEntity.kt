@@ -23,9 +23,14 @@ class DEntity(
     if (mEntity != null && cEntity != null)
       throw Exception("Both values non-null! - (mEntity and cEntity)")
 
-    // call @LateInit if exists
-    if (cEntity != null)
+    if (cEntity != null) {
+      // call @LateInit if exists
       schema.initFun?.call(cEntity)
+
+      // set initial machine state
+      if (schema.machine != null)
+        sv[STATE] = schema.machine.states.first()
+    }
 
     // unpack
     unpack = if (cEntity != null && cEntity is Pack<*>) {
@@ -48,10 +53,6 @@ class DEntity(
       Pair(dHead, dTail)
     } else {
       Pair(this, emptyList())
-    }
-
-    if (cEntity != null && schema.machine != null) {
-      sv[STATE] = schema.machine.states.first()
     }
   }
 

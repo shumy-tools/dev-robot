@@ -5,7 +5,6 @@ import dr.schema.ActionType.*
 import dr.schema.tabular.*
 
 class InstructionBuilder(private val tables: Tables) {
-
   fun create(data: DEntity): Instructions {
     val (head, tail) = data.unpack
     val rootInst = Insert(tables.get(head.schema), CREATE)

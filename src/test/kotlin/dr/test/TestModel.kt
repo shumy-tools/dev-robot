@@ -5,12 +5,9 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-
-private val time = LocalTime.of(10, 30, 20)
-private val date = LocalDate.of(2020, 1, 25)
-private val datetime = LocalDateTime.of(date, time)
 private val fixedTimestamp = LocalDateTime.of(1918, 1, 10, 12, 35, 18)
 
+/* -------------------------------Simple Input Model------------------------------- */
 @Trait
 data class Trace(val value: String)
 
@@ -30,22 +27,29 @@ data class A(
 }
 
 @Master
-data class B(
-  val oneText: String,
-  @Open @Create val twoEntity: C,
-  @Open @Link(C::class) val threeEntity: RefID,
-  @Open @Link(C::class, Trace::class) val fourEntity: Traits
+data class BRefs(
+  val brefsText: String,
+  @Create val crefDetail: CRefDetail,
+  @Link(CMaster::class) val cref: RefID,
+  @Link(CMaster::class, Trace::class) val crefTraits: Traits
 )
 
 @Master
-data class B1(
-  val oneText: String,
-  @Open @Link(C::class) val twoEntity: List<RefID>,
-  @Open @Link(C::class, Trace::class) val threeEntity: List<Traits>
+data class BCols(
+  val bcolsText: String,
+  @Create val ccolDetail: List<CColDetail>,
+  @Link(CMaster::class) val ccol: List<RefID>,
+  @Link(CMaster::class, Trace::class) val ccolTraits: List<Traits>
 )
 
 @Detail
-data class C(val oneText: String)
+data class CRefDetail(val crefDetailText: String)
+
+@Detail
+data class CColDetail(val ccolDetailText: String)
+
+@Master
+data class CMaster(val cmasterText: String)
 
 /* -------------------------------Simple Query Model------------------------------- */
 @Master

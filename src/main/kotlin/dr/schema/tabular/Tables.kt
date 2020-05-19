@@ -120,7 +120,7 @@ sealed class TRef {
 
   override fun toString() = when(this) {
     is TSuperRef -> SUPER
-    is TDirectRef -> if (!includeRelName) "$REF-to-${refEntity.name}" else "$REF-to-${refEntity.name}-${rel.name}"
+    is TDirectRef -> if (!includeRelName) "$REF-to-${rel.ref.name}" else "$REF-to-${rel.ref.name}-${rel.name}"
     is TInverseRef -> if (!includeRelName) "$INV-to-${refEntity.name}" else "$INV-to-${refEntity.name}-${rel.name}"
   }
 }

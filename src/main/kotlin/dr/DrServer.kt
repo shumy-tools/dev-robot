@@ -6,6 +6,7 @@ import dr.io.InstructionBuilder
 import dr.io.Instructions
 import dr.io.JsonParser
 import dr.query.QueryService
+import dr.schema.Pack
 import dr.schema.SEntity
 import dr.schema.Schema
 import dr.spi.IAdaptor
@@ -21,7 +22,7 @@ import java.security.MessageDigest
 import java.util.*
 
 class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAuthorizer? = null) {
-  internal val processor = InputProcessor(schema)
+  internal val processor: InputProcessor
   internal val translator = InstructionBuilder(adaptor.tables)
   internal val qService = QueryService(adaptor.tables, adaptor)
 
@@ -37,6 +38,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
         instance
       }.toMap()
     dr.ctx.Context.clear()
+    processor = InputProcessor(schema, machines)
   }
 
   fun start(port: Int) {
@@ -92,7 +94,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
       val entity = ctx.pathParam("entity")
 
       val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
-      val dEntity = processor.update(sEntity, ctx.body())
+      val dEntity = processor.update(sEntity, 0L, ctx.body())
 
       mapOf("@type" to "ok").plus(dEntity.checkFields())
     } catch (ex: Exception) {
@@ -109,13 +111,15 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
       // TODO: check access control
 
-      val sEntity = schema.masters[entity] ?: throw Exception("Master entity not found! - ($entity)")
-      val dEntity = processor.create(sEntity, ctx.body())
+      val dEntity = if (entity == Pack::class.qualifiedName) {
+        processor.create(Pack::class, ctx.body())
+      } else {
+        val sEntity = schema.masters[entity] ?: throw Exception("Master entity not found! - ($entity)")
+        processor.create(sEntity, ctx.body())
+      }
 
       val instructions = translator.create(dEntity)
       dr.ctx.Context.instructions = instructions
-
-      machines[sEntity]?.let { it.onCreate(dEntity) }
       adaptor.commit(instructions)
 
       mapOf("@type" to "ok").plus(instructions.output)
@@ -135,12 +139,10 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
       // TODO: check access control
 
       val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
-      val dEntity = processor.update(sEntity, ctx.body())
+      val dEntity = processor.update(sEntity, id, ctx.body())
 
       val instructions = translator.update(id, dEntity)
       dr.ctx.Context.instructions = instructions
-
-      machines[sEntity]?.let { it.onUpdate(id, dEntity) }
       adaptor.commit(instructions)
 
       mapOf("@type" to "ok").plus(instructions.output)
@@ -164,7 +166,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
       val machine = machines[sEntity] ?: throw Exception("Entity doesn't have a state machine! - ($entity)")
       val evtClass = machine.sMachine.events[evtType] ?: throw Exception("Event ype not found! - ($entity, $evtType)")
 
-      val event = JsonParser.read(ctx.body(), evtClass)
+      val event = JsonParser.readJson(ctx.body(), evtClass)
       machine.onEvent(id, event)
 
       mapOf("@type" to "ok")
@@ -207,7 +209,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
           val (query, access) = queries[exec] ?: throw Exception("Compiled query not found! - ($exec)")
           // TODO: check access control from query.accessed
 
-          val params = JsonParser.readParams(ctx.body())
+          val params = JsonParser.readMap(ctx.body())
           val res = query.exec(params)
           mutableMapOf<String, Any>("@type" to "ok").apply {
             this["data"] = res.rows

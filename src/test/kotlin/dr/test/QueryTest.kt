@@ -5,20 +5,14 @@ import dr.adaptor.SQLAdaptor
 import dr.schema.Pack
 import dr.schema.SParser
 import dr.schema.Traits
-import dr.spi.IAuthorizer
-import dr.spi.IReadAccess
 import org.junit.Test
-
-class TestAuthorizer: IAuthorizer {
-  override fun read(access: IReadAccess) = true
-}
 
 private val schema = SParser.parse(Country::class, User::class, Role::class, SuperUser::class)
 private val adaptor = SQLAdaptor(schema, "jdbc:h2:mem:testdb").also {
   it.createSchema()
 }
 
-val server = DrServer(schema, adaptor, TestAuthorizer()).also {
+private val server = DrServer(schema, adaptor, TestAuthorizer()).also {
   it.use {
     val portugalID = create(Country("Portugal"))
     val franceID = create(Country("France"))

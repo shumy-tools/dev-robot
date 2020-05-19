@@ -22,19 +22,9 @@ class Instructions(val all: MutableList<Instruction> = mutableListOf()) {
       inst.action.entity.schema.fireListeners(EventType.CHECKED, inst)
     */
 
-    val ids = mutableMapOf<Instruction, RefID>()
-
-    val head = all.first()
-    if (head.unresolvedRefs.isNotEmpty())
-      throw Exception("First instruction must have all references already resolved! - (Code bug, please report the issue)")
-
-    val firstId = eFun(head)
-    ids[head] = RefID(firstId)
-    if (head is Insert)
-      head.setId(firstId)
-
     // execute and resolve children references
-    for (inst in all.drop(1)) {
+    val ids = mutableMapOf<Instruction, RefID>()
+    for (inst in all) {
       inst.unresolvedRefs.forEach { (tRef, refInst) ->
         val refID = ids[refInst] ?: throw Exception("ID not found for reference! - (${inst.table}, $tRef)")
         inst.putResolvedRef(tRef, refID)
@@ -42,6 +32,12 @@ class Instructions(val all: MutableList<Instruction> = mutableListOf()) {
 
       // remove all resolved references
       (inst.unresolvedRefs as LinkedHashMap<TRef, Instruction>).clear()
+
+      // ignore empty updates
+      if (inst is Update && inst.data.isEmpty() && inst.resolvedRefs.isEmpty()) {
+        ids[inst] = RefID(inst.id)
+        continue
+      }
 
       val id = eFun(inst)
       ids[inst] = RefID(id)

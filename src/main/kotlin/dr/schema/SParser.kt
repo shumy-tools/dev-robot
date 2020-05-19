@@ -109,7 +109,7 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
     sEntity.addProperty(ID, SField(ID, null, FieldType.LONG, emptySet(), false))
 
     // process ordered inputs
-    for (param in this.primaryConstructor!!.parameters) {
+    for (param in primaryConstructor!!.parameters) {
       val prop  = allProps[param.name]!!
       if (prop is KMutableProperty1<*, *>)
         throw Exception("All primary-constructor properties must be immutable! - (${sEntity.name}, ${prop.name})")

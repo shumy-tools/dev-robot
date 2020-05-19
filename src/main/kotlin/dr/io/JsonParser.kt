@@ -1,14 +1,17 @@
 package dr.io
 
 import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.core.TreeNode
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlin.reflect.KClass
+import kotlin.reflect.full.primaryConstructor
 
 object JsonParser {
-  val mapper: ObjectMapper = jacksonObjectMapper()
+  private val mapper: ObjectMapper = jacksonObjectMapper()
     .registerModule(JavaTimeModule())
     .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
     .setSerializationInclusion(JsonInclude.Include.NON_NULL)
@@ -24,16 +27,12 @@ object JsonParser {
     )
   }
 
-  fun write(value: Any): String {
-    return mapper.writeValueAsString(value)
-  }
+  fun write(value: Any): String = mapper.writeValueAsString(value)
 
-  fun <T: Any> read(json: String, type: KClass<out T>): T {
-    return mapper.readValue(json, type.java)
-  }
+  fun readTree(json: String): JsonNode = mapper.readTree(json)
+  fun <T: Any> readNode(node: TreeNode, type: KClass<out T>): T = mapper.treeToValue(node, type.java)
+  fun <T: Any> readJson(json: String, type: KClass<out T>): T = mapper.readValue(json, type.java)
 
   @Suppress("UNCHECKED_CAST")
-  fun readParams(json: String): Map<String, Any> {
-    return mapper.readValue(json, Map::class.java) as Map<String, Any>
-  }
+  fun readMap(json: String): Map<String, Any> = mapper.readValue(json, Map::class.java) as Map<String, Any>
 }
