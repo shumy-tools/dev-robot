@@ -183,16 +183,13 @@ class InputTest {
 
     val uJson2 = """{
       "crefDetail":{
-        "@type":"one-rmv",
-        "ref":0
+        "@type":"one-rmv"
       },
       "cref":{
-        "@type":"one-unlink",
-        "ref":0
+        "@type":"one-unlink"
       },
       "crefTraits":{
-        "@type":"one-unlink",
-        "ref":0
+        "@type":"one-unlink"
       }
     }"""
     val uInst2 = server.update(BRefs::class, id, uJson2)
