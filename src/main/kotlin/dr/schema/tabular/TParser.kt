@@ -43,7 +43,7 @@ class TParser(private val schema: Schema) {
 
     // --------------------------------- allOwnedReferences ----------------------------------
     for (oRef in allOwnedReferences.values) {
-      if (oRef.isUnique || oRef.ref.type == EntityType.TRAIT) {
+      if (oRef.ref.type == EntityType.TRAIT) {
         // A {<rel>: <fields>}
         topTable.addProperty(TEmbedded(oRef, oRef.ref))
       } else {

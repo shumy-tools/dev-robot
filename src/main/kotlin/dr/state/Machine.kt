@@ -12,16 +12,6 @@ import kotlin.reflect.KClass
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.createInstance
 
-fun buildMachine(sEntity: SEntity): Machine<*, *> {
-  val sMachine = sEntity.machine!!
-  val instance = sMachine.clazz.createInstance()
-
-  instance.sMachine = sMachine
-  instance.stateQuery = Context.query("${sEntity.name} | $ID == ?id | { $STATE }")
-
-  return instance
-}
-
 open class Machine<S: Enum<*>, E: Any> {
   val user: User
     get() = Context.session.user

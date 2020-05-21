@@ -114,7 +114,7 @@ sealed class TRef {
     when (this) {
       is TSuperRef -> true
       is TDirectRef -> rel.isUnique
-      is TInverseRef -> rel.isUnique
+      is TInverseRef -> false
     }
   }
 

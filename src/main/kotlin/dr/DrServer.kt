@@ -9,17 +9,19 @@ import dr.query.QueryService
 import dr.schema.Pack
 import dr.schema.SEntity
 import dr.schema.Schema
+import dr.schema.tabular.ID
+import dr.schema.tabular.STATE
 import dr.spi.IAdaptor
 import dr.spi.IAuthorizer
 import dr.spi.IQueryExecutor
 import dr.spi.IReadAccess
 import dr.state.Machine
-import dr.state.buildMachine
 import io.javalin.Javalin
 import io.javalin.apibuilder.ApiBuilder.*
 import io.javalin.http.Context
 import java.security.MessageDigest
 import java.util.*
+import kotlin.reflect.full.createInstance
 
 class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAuthorizer? = null) {
   internal val processor: InputProcessor
@@ -31,13 +33,12 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
   init {
     println("----Checking State Machines----")
-    dr.ctx.Context.session = Session(this)
-      machines = schema.masters.filter { it.value.machine != null }.map {
-        val instance = it.value to buildMachine(it.value)
-        println("    ${it.value.machine!!.name} - OK")
-        instance
-      }.toMap()
-    dr.ctx.Context.clear()
+    machines = schema.masters.filter { it.value.machine != null }.map {
+      val instance = it.value to buildMachine(it.value)
+      println("    ${it.value.machine!!.name} - OK")
+      instance
+    }.toMap()
+
     processor = InputProcessor(schema, machines)
   }
 
@@ -51,7 +52,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
       val user = dr.base.User("admin", "admin@mail.com", listOf(1L))
 
       println("before - /api/*")
-      dr.ctx.Context.session = Session(this, user)
+      dr.ctx.Context.session = Session(processor, translator, qService, user)
     }
 
     app.before("/api/*") { dr.ctx.Context.clear() }
@@ -73,12 +74,22 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
   fun use(useFn: dr.ctx.Context.() -> Unit) {
     val instructions = Instructions()
-    dr.ctx.Context.session = Session(this)
+    dr.ctx.Context.session = Session(processor, translator, qService)
     dr.ctx.Context.instructions = instructions
       dr.ctx.Context.useFn()
       if (instructions.all.isNotEmpty())
         adaptor.commit(instructions)
     dr.ctx.Context.clear()
+  }
+
+  private fun buildMachine(sEntity: SEntity): Machine<*, *> {
+    val sMachine = sEntity.machine!!
+    val instance = sMachine.clazz.createInstance()
+
+    instance.sMachine = sMachine
+    instance.stateQuery = qService.compile("${sEntity.name} | $ID == ?id | { $STATE }").first
+
+    return instance
   }
 
   private fun schema(ctx: Context) {

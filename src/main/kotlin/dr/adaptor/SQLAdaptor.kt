@@ -61,12 +61,8 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
         val rName = ref.fn(tlb)
         dbTable = dbTable.column(rName, SQLDataType.BIGINT) // TODO: is nullable?
 
-        // add unique only to direct references
-        when (ref) {
-          is TSuperRef -> constraints.add(unique(rName))
-          is TDirectRef -> constraints.add(unique(rName))
-          is TInverseRef -> Unit
-        }
+        if (ref.isUnique)
+          constraints.add(unique(rName))
 
         val fk = foreignKey(rName).references(table(ref.refTable.sqlName()))
         constraints.add(fk)
@@ -135,8 +131,15 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
 
           is Update -> {
             var dbUpdate = tx.update(table(tableName)) as UpdateSetMoreStep<*>
-            inst.data.forEach { dbUpdate = dbUpdate.set(it.key.fn(), it.value) }
+
+            inst.data.forEach {
+              // TODO: parse Trait class directly instead of a map?
+              val cValue = if (it.key is TEmbedded && it.value != null) JsonParser.write(it.value!!) else it.value
+              dbUpdate = dbUpdate.set(it.key.fn(), cValue)
+            }
+
             inst.resolvedRefs.forEach { dbUpdate = dbUpdate.set(it.key.fn(inst.table), it.value) }
+
             val update = dbUpdate.where(idFn().eq(inst.id))
 
             println("  ${update.sql}; ${dataFields.plus(dataRefs)} - @id=${inst.id}")
@@ -148,7 +151,15 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
           }
 
           is Delete -> {
-            // TODO: disable stuff?
+            val delConditions = inst.resolvedRefs.map { it.key.fn(inst.table).eq(it.value) }
+            delConditions.drop(1).fold(delConditions.first()) { acc, nxt -> acc.and(nxt) }
+            val dbDelete = tx.delete(table(tableName)).where(delConditions)
+
+            println("  ${dbDelete.sql}; $dataRefs")
+            val affectedRows = dbDelete.execute()
+            if (affectedRows == 0)
+              throw Exception("Instruction failed, no rows affected!")
+
             0L
           }
         }

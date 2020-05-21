@@ -1,38 +1,48 @@
 package dr.test
 
 import dr.adaptor.SQLAdaptor
+import dr.ctx.Session
 import dr.io.InputProcessor
 import dr.io.InstructionBuilder
 import dr.io.Instructions
+import dr.query.QueryService
 import dr.schema.Pack
 import dr.schema.SParser
 import dr.schema.tabular.TParser
+import dr.spi.QRow
+import org.junit.FixMethodOrder
 import org.junit.Test
 import kotlin.reflect.KClass
 
 private val schema = SParser.parse(A::class, BRefs::class, BCols::class, CMaster::class, SuperUser::class)
-private val adaptor = SQLAdaptor(schema, "jdbc:h2:mem:testdb").also {
+private val adaptor = SQLAdaptor(schema, "jdbc:h2:mem:InputTest").also {
   it.createSchema()
 }
 
 class TestServer {
-  private val ip = InputProcessor(schema, emptyMap())
-  private val trans = InstructionBuilder(TParser(schema).transform())
+  private val processor = InputProcessor(schema, emptyMap())
+  private val translator = InstructionBuilder(TParser(schema).transform())
+  private val qService = QueryService(adaptor.tables, adaptor)
 
   fun create(type: KClass<out Any>, json: String): Instructions {
-    val entity = ip.create(type, json)
-    val instructions = trans.create(entity)
+    val entity = processor.create(type, json)
+    val instructions = translator.create(entity)
     dr.ctx.Context.instructions = instructions
     adaptor.commit(instructions)
     return instructions
   }
 
   fun update(type: KClass<out Any>, id: Long, json: String): Instructions {
-    val entity = ip.update(type, id, json)
-    val instructions = trans.update(id, entity)
+    val entity = processor.update(type, id, json)
+    val instructions = translator.update(id, entity)
     dr.ctx.Context.instructions = instructions
     adaptor.commit(instructions)
     return instructions
+  }
+
+  fun query(query: String): List<QRow> {
+    dr.ctx.Context.session = Session(processor, translator, qService)
+    return dr.ctx.Context.query(query).exec().rows
   }
 }
 
@@ -82,7 +92,14 @@ private fun createCMasters(): List<Long> {
   return listOf(id1, id2, id3, id4, id5)
 }
 
+private val ids = createCMasters()
+
+@FixMethodOrder
 class InputTest {
+  @Test fun testDBState() {
+    assert(server.query("dr.test.CMaster { * }").toString() == "[{@id=1, cmasterText=value1}, {@id=2, cmasterText=value2}, {@id=3, cmasterText=value3}, {@id=4, cmasterText=value4}, {@id=5, cmasterText=value5}]")
+  }
+
   @Test fun testFieldTypes() {
     val cJson = """{
       "oneText":"one",
@@ -98,6 +115,7 @@ class InputTest {
     val cInst = server.create(A::class, cJson)
     assert(cInst.all.size == 1)
     assert(cInst.all[0].toString() == "Insert(CREATE) - {table=dr.test.A, data={oneText=one, twoInt=2, threeLong=3, fourFloat=4.0, fiveDouble=5.0, sixBoolean=true, sevenTime=10:30:20, eightDate=2020-01-25, nineDateTime=2020-01-25T10:30:20, timestamp=1918-01-10T12:35:18}}")
+    assert(server.query("dr.test.A { * }").toString() == "[{@id=1, oneText=one, twoInt=2, threeLong=3, fourFloat=4.0, fiveDouble=5.0, sixBoolean=true, sevenTime=10:30:20, eightDate=2020-01-25, nineDateTime=2020-01-25T10:30:20, timestamp=1918-01-10T12:35:18}]")
 
     val uJson = """{
       "oneText":"u-one",
@@ -113,11 +131,10 @@ class InputTest {
     val uInst = server.update(A::class, cInst.root.refID.id!!, uJson)
     assert(uInst.all.size == 1)
     assert(uInst.all[0].toString() == "Update(UPDATE) - {table=dr.test.A, id=${cInst.root.refID.id}, data={oneText=u-one, twoInt=20, threeLong=30, fourFloat=40.0, fiveDouble=50.0, sixBoolean=false, sevenTime=10:40:25, eightDate=2019-02-12, nineDateTime=2018-03-10T10:45:35}}")
+    assert(server.query("dr.test.A { * }").toString() == "[{@id=1, oneText=u-one, twoInt=20, threeLong=30, fourFloat=40.0, fiveDouble=50.0, sixBoolean=false, sevenTime=10:40:25, eightDate=2019-02-12, nineDateTime=2018-03-10T10:45:35, timestamp=1918-01-10T12:35:18}]")
   }
 
   @Test fun testReferences() {
-    val ids = createCMasters()
-
     val cJson = """{
       "brefsText":"value1",
       "crefDetail":{
@@ -134,6 +151,8 @@ class InputTest {
     assert(cInst.all.size == 2)
     assert(cInst.all[0].toString() == "Insert(ADD) - {table=dr.test.CRefDetail, data={crefDetailText=value2}}")
     assert(cInst.all[1].toString() == "Insert(CREATE) - {table=dr.test.BRefs, data={brefsText=value1, &dr.test.Trace@crefTraits=Trace(value=traceValue)}, refs={@ref-to-dr.test.CMaster-cref=${ids[0]}, @ref-to-dr.test.CMaster-crefTraits=${ids[1]}, @ref-to-dr.test.CRefDetail-crefDetail=${cInst.all[0].refID.id}}}")
+    assert(server.query("dr.test.CRefDetail { * }").toString() == "[{@id=1, crefDetailText=value2}]")
+    assert(server.query("dr.test.BRefs { *, crefDetail { * }, cref { * }, crefTraits { * }}").toString() == "[{@id=1, brefsText=value1, &dr.test.Trace@crefTraits=Trace(value=traceValue), crefDetail={@id=1, crefDetailText=value2}, cref={@id=${ids[0]}, cmasterText=value1}, crefTraits={@id=${ids[1]}, cmasterText=value2}}]")
 
     val uJson1 = """{
       "brefsText":"u-value1",
@@ -157,13 +176,15 @@ class InputTest {
     assert(uInst1.all[0].toString() == "Insert(ADD) - {table=dr.test.CRefDetail, data={crefDetailText=u-value2}}")
     assert(uInst1.all[1].toString() == "Update(UPDATE) - {table=dr.test.BRefs, id=$id, data={brefsText=u-value1, &dr.test.Trace@crefTraits=Trace(value=traceUpdate)}, refs={@ref-to-dr.test.CMaster-cref=${ids[2]}, @ref-to-dr.test.CMaster-crefTraits=${ids[3]}, @ref-to-dr.test.CRefDetail-crefDetail=${uInst1.all[0].refID.id}}}")
     assert(cInst.all[0].refID.id != uInst1.all[0].refID.id) // confirm that it's a new owned instance and not an update of the old one
+    // TODO: @id=1 is orphan. How to handle orphan entities? Probably should update instead of add?
+    assert(server.query("dr.test.CRefDetail { * }").toString() == "[{@id=1, crefDetailText=value2}, {@id=2, crefDetailText=u-value2}]")
+    assert(server.query("dr.test.BRefs { *, crefDetail { * }, cref { * }, crefTraits { * }}").toString() == "[{@id=1, brefsText=u-value1, &dr.test.Trace@crefTraits=Trace(value=traceUpdate), crefDetail={@id=2, crefDetailText=u-value2}, cref={@id=${ids[2]}, cmasterText=value3}, crefTraits={@id=${ids[3]}, cmasterText=value4}}]")
+
 
     // TODO: test unlink of optional refs?
   }
 
   @Test fun testCollections() {
-    val ids = createCMasters()
-
     val cJson = """{
       "bcolsText":"value1",
       "ccolDetail":[
@@ -189,6 +210,8 @@ class InputTest {
     assert(cInst.all[6].toString() == "Insert(LINK) - {table=dr.test.BCols-ccolTraits, data={&dr.test.Trace=Trace(value=trace2)}, refs={@ref-to-dr.test.CMaster=${ids[3]}, @inv-to-dr.test.BCols=$id}}")
     assert(cInst.all[7].toString() == "Update(LINK) - {table=dr.test.CMaster, id=${ids[0]}, refs={@inv-to-dr.test.BCols-ccolUnique=$id}}")
     assert(cInst.all[8].toString() == "Update(LINK) - {table=dr.test.CMaster, id=${ids[1]}, refs={@inv-to-dr.test.BCols-ccolUnique=$id}}")
+    assert(server.query("dr.test.CColDetail { * }").toString() == "[{@id=1, ccolDetailText=value2}, {@id=2, ccolDetailText=value3}]")
+    assert(server.query("dr.test.BCols { *, ccolDetail { * }, ccol { * }, ccolTraits { * }, ccolUnique { * } }").toString() == "[{@id=1, bcolsText=value1, ccolDetail=[{@id=1, ccolDetailText=value2}, {@id=2, ccolDetailText=value3}], ccolUnique=[{@id=${ids[0]}, cmasterText=value1}, {@id=${ids[1]}, cmasterText=value2}], ccol=[{@id=1, ccol={@id=${ids[0]}, cmasterText=value1}}, {@id=2, ccol={@id=${ids[1]}, cmasterText=value2}}], ccolTraits=[{@id=1, &dr.test.Trace=Trace(value=trace1), ccolTraits={@id=${ids[2]}, cmasterText=value3}}, {@id=2, &dr.test.Trace=Trace(value=trace2), ccolTraits={@id=${ids[3]}, cmasterText=value4}}]}]")
 
     val uJson1 = """{
       "bcolsText":"u-value1",
@@ -225,6 +248,9 @@ class InputTest {
     assert(uInst1.all[8].toString() == "Update(LINK) - {table=dr.test.CMaster, id=${ids[2]}, refs={@inv-to-dr.test.BCols-ccolUnique=$id}}")
     assert(cInst.all[1].refID.id != uInst1.all[1].refID.id) // confirm that it's a new owned instance and not an update of the old one
     assert(cInst.all[2].refID.id != uInst1.all[2].refID.id) // confirm that it's a new owned instance and not an update of the old one
+    // TODO: How to remove from owned collection?
+    assert(server.query("dr.test.CColDetail { * }").toString() == "[{@id=1, ccolDetailText=value2}, {@id=2, ccolDetailText=value3}, {@id=3, ccolDetailText=u-value2}, {@id=4, ccolDetailText=u-value3}]")
+    assert(server.query("dr.test.BCols { *, ccolDetail { * }, ccol { * }, ccolTraits { * }, ccolUnique { * } }").toString() == "[{@id=1, bcolsText=u-value1, ccolDetail=[{@id=1, ccolDetailText=value2}, {@id=2, ccolDetailText=value3}, {@id=3, ccolDetailText=u-value2}, {@id=4, ccolDetailText=u-value3}], ccolUnique=[{@id=${ids[0]}, cmasterText=value1}, {@id=${ids[1]}, cmasterText=value2}, {@id=${ids[2]}, cmasterText=value3}, {@id=${ids[3]}, cmasterText=value4}], ccol=[{@id=1, ccol={@id=${ids[0]}, cmasterText=value1}}, {@id=2, ccol={@id=${ids[1]}, cmasterText=value2}}, {@id=3, ccol={@id=${ids[3]}, cmasterText=value4}}, {@id=4, ccol={@id=${ids[2]}, cmasterText=value3}}], ccolTraits=[{@id=1, &dr.test.Trace=Trace(value=trace1), ccolTraits={@id=${ids[2]}, cmasterText=value3}}, {@id=2, &dr.test.Trace=Trace(value=trace2), ccolTraits={@id=${ids[3]}, cmasterText=value4}}, {@id=3, &dr.test.Trace=Trace(value=u-trace1), ccolTraits={@id=${ids[1]}, cmasterText=value2}}, {@id=4, &dr.test.Trace=Trace(value=u-trace2), ccolTraits={@id=${ids[0]}, cmasterText=value1}}]}]")
 
     val uJson2 = """{
       "ccol":{
@@ -246,6 +272,7 @@ class InputTest {
     assert(uInst2.all[1].toString() == "Insert(LINK) - {table=dr.test.BCols-ccol, refs={@ref-to-dr.test.CMaster=${ids[4]}, @inv-to-dr.test.BCols=$id}}")
     assert(uInst2.all[2].toString() == "Insert(LINK) - {table=dr.test.BCols-ccolTraits, data={&dr.test.Trace=Trace(value=u-trace3)}, refs={@ref-to-dr.test.CMaster=${ids[4]}, @inv-to-dr.test.BCols=$id}}")
     assert(uInst2.all[3].toString() == "Update(LINK) - {table=dr.test.CMaster, id=${ids[4]}, refs={@inv-to-dr.test.BCols-ccolUnique=$id}}")
+    assert(server.query("dr.test.BCols { *, ccolDetail { * }, ccol { * }, ccolTraits { * }, ccolUnique { * } }").toString() == "[{@id=1, bcolsText=u-value1, ccolDetail=[{@id=1, ccolDetailText=value2}, {@id=2, ccolDetailText=value3}, {@id=3, ccolDetailText=u-value2}, {@id=4, ccolDetailText=u-value3}], ccolUnique=[{@id=${ids[0]}, cmasterText=value1}, {@id=${ids[1]}, cmasterText=value2}, {@id=${ids[2]}, cmasterText=value3}, {@id=${ids[3]}, cmasterText=value4}, {@id=${ids[4]}, cmasterText=value5}], ccol=[{@id=1, ccol={@id=${ids[0]}, cmasterText=value1}}, {@id=2, ccol={@id=${ids[1]}, cmasterText=value2}}, {@id=3, ccol={@id=${ids[3]}, cmasterText=value4}}, {@id=4, ccol={@id=${ids[2]}, cmasterText=value3}}, {@id=5, ccol={@id=${ids[4]}, cmasterText=value5}}], ccolTraits=[{@id=1, &dr.test.Trace=Trace(value=trace1), ccolTraits={@id=${ids[2]}, cmasterText=value3}}, {@id=2, &dr.test.Trace=Trace(value=trace2), ccolTraits={@id=${ids[3]}, cmasterText=value4}}, {@id=3, &dr.test.Trace=Trace(value=u-trace1), ccolTraits={@id=${ids[1]}, cmasterText=value2}}, {@id=4, &dr.test.Trace=Trace(value=u-trace2), ccolTraits={@id=${ids[0]}, cmasterText=value1}}, {@id=5, &dr.test.Trace=Trace(value=u-trace3), ccolTraits={@id=${ids[4]}, cmasterText=value5}}]}]")
 
     val uJson3 = """{
       "ccol":{
@@ -267,7 +294,8 @@ class InputTest {
     assert(uInst3.all[1].toString() == "Delete(UNLINK) - {table=dr.test.BCols-ccol, refs={@ref-to-dr.test.CMaster=${ids[0]}, @inv-to-dr.test.BCols=$id}}")
     assert(uInst3.all[2].toString() == "Delete(UNLINK) - {table=dr.test.BCols-ccolTraits, refs={@ref-to-dr.test.CMaster=${ids[0]}, @inv-to-dr.test.BCols=$id}}")
     assert(uInst3.all[3].toString() == "Delete(UNLINK) - {table=dr.test.BCols-ccolTraits, refs={@ref-to-dr.test.CMaster=${ids[1]}, @inv-to-dr.test.BCols=$id}}")
-    assert(uInst3.all[4].toString() == "Update(UNLINK) - {table=dr.test.CMaster, id=8, refs={@inv-to-dr.test.BCols-ccolUnique=null}}")
+    assert(uInst3.all[4].toString() == "Update(UNLINK) - {table=dr.test.CMaster, id=${ids[2]}, refs={@inv-to-dr.test.BCols-ccolUnique=null}}")
+    assert(server.query("dr.test.BCols { *, ccolDetail { * }, ccol { * }, ccolTraits { * }, ccolUnique { * } }").toString() == "[{@id=1, bcolsText=u-value1, ccolDetail=[{@id=1, ccolDetailText=value2}, {@id=2, ccolDetailText=value3}, {@id=3, ccolDetailText=u-value2}, {@id=4, ccolDetailText=u-value3}], ccolUnique=[{@id=${ids[0]}, cmasterText=value1}, {@id=${ids[1]}, cmasterText=value2}, {@id=${ids[3]}, cmasterText=value4}, {@id=${ids[4]}, cmasterText=value5}], ccol=[{@id=2, ccol={@id=${ids[1]}, cmasterText=value2}}, {@id=3, ccol={@id=${ids[3]}, cmasterText=value4}}, {@id=4, ccol={@id=${ids[2]}, cmasterText=value3}}, {@id=5, ccol={@id=${ids[4]}, cmasterText=value5}}], ccolTraits=[{@id=1, &dr.test.Trace=Trace(value=trace1), ccolTraits={@id=${ids[2]}, cmasterText=value3}}, {@id=2, &dr.test.Trace=Trace(value=trace2), ccolTraits={@id=${ids[3]}, cmasterText=value4}}, {@id=5, &dr.test.Trace=Trace(value=u-trace3), ccolTraits={@id=${ids[4]}, cmasterText=value5}}]}]")
   }
 
   @Test fun testSealed() {
@@ -285,6 +313,9 @@ class InputTest {
     assert(cInst.all.size == 2)
     assert(cInst.all[0].toString() == "Insert(CREATE) - {table=dr.test.SuperUser, data={alias=Alex, @type=dr.test.AdminUser}}")
     assert(cInst.all[1].toString() == "Insert(CREATE) - {table=dr.test.AdminUser, data={adminProp=AlexAdminProp}, refs={@super=$id}}")
+    assert(server.query("dr.test.SuperUser { * }").toString() == "[{@id=1, alias=Alex, @type=dr.test.AdminUser}]")
+    assert(server.query("dr.test.AdminUser { * }").toString() == "[{@id=1, adminProp=AlexAdminProp}]")
+
 
     /*val uJson = """{
       "head":{"@type":"dr.test.SuperUser","alias":"Mario"},

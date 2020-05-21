@@ -45,7 +45,7 @@ qline: filter? (limit page?)? select ;
     relation: ID qline ;
 
 ALL: '*' ;
-NAME: [A-Z] ID ;
+NAME: [A-Z][A-Za-z0-9_]* ;
 ID: [_@]?[a-z][A-Za-z0-9_]* ;
 TRAIT: [&] (ID '.')* NAME;
 

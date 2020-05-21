@@ -1,8 +1,10 @@
 package dr.ctx
 
-import dr.DrServer
 import dr.base.User
+import dr.io.InputProcessor
+import dr.io.InstructionBuilder
 import dr.io.Instructions
+import dr.query.QueryService
 import dr.schema.RefID
 import dr.schema.SEntity
 import dr.spi.IQueryExecutor
@@ -26,29 +28,27 @@ object Context {
   }
 
   fun create(data: Any): RefID {
-    val server = session.server
-    val entity = server.processor.create(data)
+    val entity = session.processor.create(data)
 
-    val more = server.translator.create(entity)
+    val more = session.translator.create(entity)
     instructions.include(more)
 
     return more.root.refID
   }
 
   fun update(id: Long, type: SEntity, data: Map<String, Any?>) {
-    val server = session.server
-    val entity = server.processor.update(type, id, data)
+    val entity = session.processor.update(type, id, data)
 
-    val more = server.translator.update(id, entity)
+    val more = session.translator.update(id, entity)
     instructions.include(more)
   }
 
   fun query(query: String, access: ((IReadAccess) -> Unit)? = null): IQueryExecutor {
-    val qReady = session.server.qService.compile(query)
+    val qReady = session.qService.compile(query)
     access?.invoke(qReady.second)
     return qReady.first
   }
 }
 
 val ANONYMOUS = User("anonymous", "no-email", emptyList())
-class Session(val server: DrServer, val user: User = ANONYMOUS)
+class Session(val processor: InputProcessor, val translator: InstructionBuilder, val qService: QueryService, val user: User = ANONYMOUS)

@@ -8,7 +8,7 @@ import dr.schema.Traits
 import org.junit.Test
 
 private val schema = SParser.parse(Country::class, User::class, Role::class, SuperUser::class)
-private val adaptor = SQLAdaptor(schema, "jdbc:h2:mem:testdb").also {
+private val adaptor = SQLAdaptor(schema, "jdbc:h2:mem:QueryTest").also {
   it.createSchema()
 }
 

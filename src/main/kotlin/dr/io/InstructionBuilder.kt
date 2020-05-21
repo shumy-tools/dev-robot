@@ -72,7 +72,7 @@ class InstructionBuilder(private val tables: Tables) {
 
     // --------------------------------- allOwnedReferences ----------------------------------
     for (oRef in entity.allOwnedReferences.filter { it.name != SUPER }) {
-      if (oRef.schema.isUnique || oRef.schema.ref.type == EntityType.TRAIT) {
+      if (oRef.schema.ref.type == EntityType.TRAIT) {
         // A {<rel>: <fields>}
         val rOutput = topInst.include(entity.allFields, oRef.schema)
         topInst.putAllOutput(rOutput)
