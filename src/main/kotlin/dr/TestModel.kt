@@ -20,7 +20,7 @@ data class EmbeddedAddress(val country: String, val city: String)
 @Master
 class OwnedUserType (
   val boss: String,
-  @Create val user: Pack<UserType>
+  @Own val user: Pack<UserType>
 ) {
   lateinit var inputOrDerived: String
 
@@ -44,11 +44,11 @@ class UserType(
   @Detail
   class Customer(
     val discount: Float,
-    @Create val address: EmbeddedAddress
+    @Own val address: EmbeddedAddress
   )
 
   @Detail
-  class Supplier(@Create val organization: Organization)
+  class Supplier(@Own val organization: Organization)
 
 @Detail
 class Organization(val name: String, val address: String)
@@ -68,8 +68,8 @@ data class Trace2(val date: LocalDateTime)
 
 @Trait
 data class UserMarket(
-  @Create val trace: Trace,         // Trace.date overrides UserMarket.date
-  @Link(User::class) val boss: RefID
+        @Own val trace: Trace,         // Trace.date overrides UserMarket.date
+        @Link(User::class) val boss: RefID
 ) {
   val date: LocalDateTime = LocalDateTime.now()
 }
@@ -79,17 +79,17 @@ data class Market(val name: String)
 
 @Master @StateMachine(UserMachine::class)
 data class User(
-  @Unique val name: String,
+        @Unique val name: String,
 
-  @Checks(EmailCheck::class) val email: String,
+        @Checks(EmailCheck::class) val email: String,
 
-  @Create val address: List<Address>,
+        @Own val address: List<Address>,
 
   //@Create val address: Address,
 
   //@Link(Market::class, traits = [UserMarket::class]) val market: Traits,
 
-  @Link(Role::class, traits = [Trace::class]) val roles: List<Traits>
+        @Link(Role::class, traits = [Trace::class]) val roles: List<Traits>
   //@Link(Role::class) val roles: List<RefID>
 ) {
   val timestamp = LocalDateTime.now()
@@ -163,7 +163,7 @@ data class Auction(
   val name: String,
 
   @Link(AuctionItem::class) val items: List<RefID>,
-  @Create val bids: List<Bid>
+  @Own val bids: List<Bid>
 ) {
   val timestamp = LocalDateTime.now()
 }
@@ -178,13 +178,13 @@ data class AuctionItem(
 
 @Detail
 data class Bid(
-  val price: Float,
-  val boxes: Int,
-  val comments: String? = null,
+        val price: Float,
+        val boxes: Int,
+        val comments: String? = null,
 
-  @Create val detail: BidDetail,
-  @Link(User::class) val from: RefID,
-  @Link(AuctionItem::class) val item: RefID
+        @Own val detail: BidDetail,
+        @Link(User::class) val from: RefID,
+        @Link(AuctionItem::class) val item: RefID
 ) {
   val timestamp = LocalDateTime.now()
 }

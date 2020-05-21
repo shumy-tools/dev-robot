@@ -43,11 +43,15 @@ annotation class Unique
 
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.RUNTIME)
+annotation class Optional
+
+@Target(AnnotationTarget.PROPERTY)
+@Retention(AnnotationRetention.RUNTIME)
 annotation class Open
 
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Create
+annotation class Own
 
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.RUNTIME)
@@ -73,7 +77,7 @@ enum class EntityType {
 }
 
 enum class RelationType {
-  CREATE, LINK
+  OWN, LINK
 }
 
 /* ------------------------- structures -------------------------*/
@@ -151,7 +155,7 @@ class Schema {
       get() = clazz.qualifiedName!!
 
     val allOwnedReferences: Map<String, SRelation> by lazy {
-      rels.filter { it.value.type == RelationType.CREATE && !it.value.isCollection }
+      rels.filter { it.value.type == RelationType.OWN && !it.value.isCollection }
     }
 
     val allLinkedReferences: Map<String, SRelation> by lazy {
@@ -159,7 +163,7 @@ class Schema {
     }
 
     val allOwnedCollections: Map<String, SRelation> by lazy {
-      rels.filter { it.value.type == RelationType.CREATE && it.value.isCollection }
+      rels.filter { it.value.type == RelationType.OWN && it.value.isCollection }
     }
 
     val allLinkedCollections: Map<String, SRelation> by lazy {
@@ -287,7 +291,7 @@ class Schema {
           if(!simple) map["unique"] = isUnique
           map["many"] = isCollection
           if (traits.isNotEmpty()) map["traits"] = traits.map { it.key to it.key }.toMap()
-          map["ref"] = if (type == RelationType.CREATE) ref.toMap(simple) else ref.name
+          map["ref"] = if (type == RelationType.OWN) ref.toMap(simple) else ref.name
 
           return map
         }

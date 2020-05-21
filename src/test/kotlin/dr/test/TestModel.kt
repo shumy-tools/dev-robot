@@ -28,16 +28,16 @@ data class A(
 
 @Master
 data class BRefs(
-  val brefsText: String,
-  @Create val crefDetail: CRefDetail,
-  @Link(CMaster::class) val cref: RefID,
-  @Link(CMaster::class, Trace::class) val crefTraits: Traits
+  val brefsText: String?,
+  @Own val crefDetail: CRefDetail?,
+  @Optional @Link(CMaster::class) val cref: RefID,
+  @Optional @Link(CMaster::class, Trace::class) val crefTraits: Traits
 )
 
 @Master
 data class BCols(
   val bcolsText: String,
-  @Create val ccolDetail: List<CColDetail>,
+  @Own val ccolDetail: List<CColDetail>,
   @Link(CMaster::class) val ccol: List<RefID>,
   @Link(CMaster::class, Trace::class) val ccolTraits: List<Traits>,
 
@@ -74,9 +74,9 @@ data class Setting(
 data class User(
   @Unique val name: String,
   val email: String,
-  @Create val address: Address,
+  @Own val address: Address,
 
-  @Create val settings: List<Setting>,
+  @Own val settings: List<Setting>,
   @Link(Role::class, traits = [Trace::class]) val roles: List<Traits>
 ) {
   val timestamp = fixedTimestamp

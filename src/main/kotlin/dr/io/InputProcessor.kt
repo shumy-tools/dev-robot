@@ -1,5 +1,6 @@
 package dr.io
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ArrayNode
 import dr.schema.*
 import dr.state.Machine
@@ -8,6 +9,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import kotlin.reflect.KClass
 import kotlin.reflect.full.isSubclassOf
+import kotlin.reflect.full.primaryConstructor
 
 class InputProcessor(private val schema: Schema, private val machines: Map<SEntity, Machine<*, *>>) {
   fun create(type: SEntity, json: String) = create(type.clazz, json)
@@ -59,9 +61,32 @@ class InputProcessor(private val schema: Schema, private val machines: Map<SEnti
         }
 
         is SRelation -> when (sFieldOrRelation.type) {
-          RelationType.CREATE -> {
+          RelationType.OWN -> {
+            val nType = vNode["@type"]?.asText() ?: throw Exception("'@type' field not found for '$nName'!")
             val cType = if (sFieldOrRelation.ref.isSealed) Pack::class else schema.findClass(sFieldOrRelation.ref.name)
-            if (!sFieldOrRelation.isCollection) JsonParser.readNode(vNode, cType) else (vNode as ArrayNode).map { JsonParser.readNode(it, cType) }
+            when (nType) {
+              "one-add" -> {
+                val vField = OneAdd::class.primaryConstructor!!.parameters.first().name
+                val nValue = vNode[vField] ?: throw Exception("'$vField' field not found for '$nName'!")
+                OneAdd(nValue.convert(cType))
+              }
+              "many-add" -> {
+                val vField = ManyAdd::class.primaryConstructor!!.parameters.first().name
+                val nValue = vNode[vField] ?: throw Exception("'$vField' not found for '$nName'!")
+                ManyAdd((nValue as ArrayNode).map { it.convert(cType) })
+              }
+              "one-rmv" -> {
+                val vField = OneRemove::class.primaryConstructor!!.parameters.first().name
+                val nValue = vNode[vField] ?: throw Exception("'$vField' not found for '$nName'!")
+                OneRemove(JsonParser.readNode(nValue, RefID::class))
+              }
+              "many-rmv" -> {
+                val vField = ManyRemove::class.primaryConstructor!!.parameters.first().name
+                val nValue = vNode[vField] ?: throw Exception("'$vField' not found for '$nName'!")
+                ManyRemove((nValue as ArrayNode).map { JsonParser.readNode(it, RefID::class) })
+              }
+              else -> throw Exception("Unrecognized @type for for '$nName'!")
+            }
           }
           RelationType.LINK -> JsonParser.readNode(vNode, LinkData::class)
         }
@@ -97,11 +122,8 @@ class InputProcessor(private val schema: Schema, private val machines: Map<SEnti
         }
 
         is SRelation -> when (sFieldOrRelation.type) {
-          RelationType.CREATE -> {
-            val cType = if (sFieldOrRelation.ref.isSealed) Pack::class else schema.findClass(sFieldOrRelation.ref.name)
-            value?.let { value.javaClass.kotlin.isSubclassOf(cType) } ?: true
-          }
-          RelationType.LINK -> value?.let { value.javaClass.kotlin.isSubclassOf(LinkData::class) } ?: true
+          RelationType.OWN -> value?.let { value is OwnData } ?: false //TODO: check the DEntity type?
+          RelationType.LINK -> value?.let { value is LinkData } ?: false
         }
       }
 
@@ -112,5 +134,18 @@ class InputProcessor(private val schema: Schema, private val machines: Map<SEnti
     val dEntity = DEntity(type, mEntity = map)
     machines[type]?.onUpdate(id, dEntity)
     return dEntity
+  }
+
+  private fun JsonNode.convert(cType: KClass<out Any>): DEntity {
+    val value = JsonParser.readNode(this, cType)
+
+    val head = if (value is Pack<*>) value.head else value
+    val name = head.javaClass.kotlin.qualifiedName
+    val sEntity = schema.entities[name] ?: throw Exception("Entity nof found! - ($name)")
+
+    if (value !is Pack<*> && sEntity.isSealed)
+      throw Exception("A sealed entity must be created via Pack<*>! - ($name)")
+
+    return DEntity(sEntity, cEntity = value)
   }
 }

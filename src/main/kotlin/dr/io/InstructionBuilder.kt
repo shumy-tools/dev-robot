@@ -72,16 +72,32 @@ class InstructionBuilder(private val tables: Tables) {
 
     // --------------------------------- allOwnedReferences ----------------------------------
     for (oRef in entity.allOwnedReferences.filter { it.name != SUPER }) {
-      if (oRef.schema.ref.type == EntityType.TRAIT) {
-        // A {<rel>: <fields>}
-        val rOutput = topInst.include(entity.allFields, oRef.schema)
-        topInst.putAllOutput(rOutput)
-      } else {
-        // A ref_<rel> --> B
-        val (root, all) = addEntity(oRef.value)
-        topInclude.addAll(all)
-        topInst.putRef(TDirectRef(entity.schema, oRef.schema), root)
-        topInst.putOutput(oRef.name, root.output)
+      when (val rValue = oRef.value) {
+        is OneAdd -> if (oRef.schema.ref.type == EntityType.TRAIT) {
+          // A {<rel>: <fields>}
+          // TODO: not tested
+          val rOutput = topInst.include(rValue.value.allFields, oRef.schema)
+          topInst.putAllOutput(rOutput)
+        } else {
+          // A ref_<rel> --> B
+          val (root, all) = addEntity(rValue.value)
+          topInclude.addAll(all)
+          topInst.putRef(TDirectRef(entity.schema, oRef.schema), root)
+          topInst.putOutput(oRef.name, root.output)
+        }
+
+        is OneRemove -> if (oRef.schema.ref.type == EntityType.TRAIT) {
+          // A {<rel>: <fields>}
+          // TODO: not tested
+          topInst.with(TEmbedded(oRef.schema, oRef.schema.ref)) {
+            oRef.schema.ref.fields.values.forEach { sField ->
+              topInst.putData(TField(sField), null)
+            }
+          }
+        } else {
+          // A ref_<rel> --> B
+          topInst.putResolvedRef(TDirectRef(entity.schema, oRef.schema), RefID(null))
+        }
       }
     }
 
@@ -89,14 +105,32 @@ class InstructionBuilder(private val tables: Tables) {
     for (oCol in entity.allOwnedCollections) {
       // A <-- inv_<A>_<rel> B
       val cOutput = mutableListOf<Map<String, Any?>>()
-      oCol.value.forEach {
-        val (root, all) = addEntity(it)
-        bottomInclude.addAll(all)
-        root.putRef(TInverseRef(entity.schema, oCol.schema), topInst)
-        cOutput.add(root.output)
-      }
-
       topInst.putOutput(oCol.name, cOutput)
+      when (val rValue = oCol.value) {
+        is OneAdd -> {
+          val (root, all) = addEntity(rValue.value)
+          bottomInclude.addAll(all)
+          root.putRef(TInverseRef(entity.schema, oCol.schema), topInst)
+          cOutput.add(root.output)
+        }
+
+        is ManyAdd -> {
+          rValue.values.forEach {
+            val (root, all) = addEntity(it)
+            bottomInclude.addAll(all)
+            root.putRef(TInverseRef(entity.schema, oCol.schema), topInst)
+            cOutput.add(root.output)
+          }
+        }
+
+        is OneRemove -> {
+          // TODO: update root.putResolvedRef(TInverseRef(entity.schema, oCol.schema), RefID(null))
+        }
+
+        is ManyRemove -> {
+          // TODO: update root.putResolvedRef(TInverseRef(entity.schema, oCol.schema), RefID(null))
+        }
+      }
     }
 
     // --------------------------------- allLinkedReferences ----------------------------------
@@ -113,7 +147,6 @@ class InstructionBuilder(private val tables: Tables) {
         is OneUnlink -> {
           topInst.putResolvedRef(TDirectRef(entity.schema, lRef.schema), RefID())
           lRef.schema.traits.values.forEach {
-            // TODO: is this correct (needs test)
             topInst.putData(TEmbedded(lRef.schema, it), null)
           }
         }

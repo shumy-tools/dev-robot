@@ -111,7 +111,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
 
   private fun SelectQuery<Record>.buildQueryParts(mParams: MutableMap<String, Any>) {
     addFrom(qTable)
-    joinTables.values.forEach { addJoin(it.first, it.second) }
+    joinTables.values.forEach { addJoin(it.first, JoinType.LEFT_OUTER_JOIN, it.second) }
 
     if (conditions != null) {
       // needs to rebuild conditions with included values when "IN" clause is present!

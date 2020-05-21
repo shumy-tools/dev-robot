@@ -1,8 +1,7 @@
 package dr.io
 
-import com.fasterxml.jackson.annotation.JsonTypeInfo
-import com.fasterxml.jackson.annotation.JsonTypeName
 import dr.schema.*
+import dr.schema.tabular.ID
 import dr.schema.tabular.STATE
 import dr.schema.tabular.SUPER
 import dr.schema.tabular.TYPE
@@ -117,16 +116,6 @@ class DEntity(
     return all
   }
 
-  fun toMap(): Map<String, Any?> {
-    val map = linkedMapOf<String, Any?>()
-    val (head, tail) = unpack
-
-    map.putAll(entityToMap(head))
-    tail.forEach { map.putAll(entityToMap(it)) }
-
-    return map
-  }
-
   internal fun getFieldValue(field: SField): Any? {
     return if (mEntity != null) mEntity[field.name] else when (field.name) {
       TYPE -> sv[TYPE]
@@ -135,12 +124,12 @@ class DEntity(
     }
   }
 
-  internal fun getOwnedRelationValue(rel: SRelation): Any? {
-    return if (mEntity != null) mEntity[rel.name] else rel.getValue(cEntity!!)
+  internal fun getOwnedRelationValue(rel: SRelation): OwnData {
+    return if (mEntity != null) mEntity[rel.name] as OwnData else rel.ownTranslate()
   }
 
   internal fun getLinkedRelationValue(rel: SRelation): LinkData {
-    return if (mEntity != null) mEntity[rel.name] as LinkData else rel.getValue(cEntity!!).translate()
+    return if (mEntity != null) mEntity[rel.name] as LinkData else rel.linkTranslate()
   }
 
   private fun <T: Any> contains(name: String, exec: () -> T?): T? {
@@ -151,21 +140,22 @@ class DEntity(
     }
   }
 
-  private fun entityToMap(ent: DEntity): Map<String, Any?> {
-    val map = linkedMapOf<String, Any?>()
-    map.putAll(ent.allFields.map{ Pair(it.name, it.value) })
+  @Suppress("UNCHECKED_CAST")
+  private fun SRelation.ownTranslate(): OwnData {
+    val value = getValue(cEntity!!)!!
+    return when (isCollection) {
+      false -> OneAdd(DEntity(ref, cEntity = value))
+      true -> ManyAdd((value as List<Any>).map { DEntity(ref, cEntity = it) })
+    }
+  }
 
-    map.putAll(ent.allOwnedReferences.map { Pair(it.name, it.value.toMap()) })
-    map.putAll(ent.allLinkedReferences.map { Pair(it.name, it.value) })
-
-    map.putAll(ent.allOwnedCollections.map {
-      val cols = it.value.map { item -> Pair(item.name, item.toMap()) }
-      Pair(it.name, cols)
-    })
-
-    map.putAll(ent.allLinkedCollections.map { Pair(it.name, it.value) })
-
-    return map
+  @Suppress("UNCHECKED_CAST")
+  private fun SRelation.linkTranslate(): LinkData {
+    val value = getValue(cEntity!!)!!
+    return when (isCollection) {
+      false -> if (traits.isEmpty()) OneLinkWithoutTraits(value as RefID) else OneLinkWithTraits(value as Traits)
+      true -> if (traits.isEmpty()) ManyLinksWithoutTraits(value as List<RefID>) else ManyLinksWithTraits(value as List<Traits>)
+    }
   }
 }
 
@@ -176,6 +166,9 @@ sealed class Data
 
     val value: Any? by lazy {
       val value = entity.getFieldValue(schema)
+      if (name != ID && value == null && !schema.isOptional)
+        throw Exception("Invalid 'null' value! Field is not optional. - (${entity.name}, $name)")
+
       val checks = entity.schema.checkFieldConstraints(schema, value)
       if (checks.isNotEmpty())
         throw Exception("Constraint check failed '${checks.first()}'! - (${entity.schema.name}, ${schema.name})")
@@ -200,15 +193,19 @@ sealed class Data
     sealed class DReference: DRelation()
 
       class DOwnedReference(override val schema: SRelation, override val entity: DEntity): DReference() {
-        val value: DEntity by lazy {
-          val oneValue = entity.getOwnedRelationValue(schema)
-          DEntity(schema.ref, cEntity = oneValue)
+        val value: OneOwn by lazy {
+          val value = entity.getOwnedRelationValue(schema) as OneOwn
+          if (value is OneRemove && !schema.isOptional)
+            throw Exception("Invalid 'null' value! Owned reference is not optional. - (${entity.name}, $name)")
+          value
         }
       }
 
       class DLinkedReference(override val schema: SRelation, override val entity: DEntity): DReference() {
         val value: OneLink by lazy {
           val value = entity.getLinkedRelationValue(schema)
+          if (value is OneUnlink && !schema.isOptional)
+            throw Exception("Invalid 'null' value! Linked reference is not optional. - (${entity.name}, $name)")
 
           // check existing traits
           if (value is OneLinkWithTraits)
@@ -221,10 +218,8 @@ sealed class Data
     sealed class DCollection: DRelation()
 
       class DOwnedCollection(override val schema: SRelation, override val entity: DEntity): DCollection() {
-        @Suppress("UNCHECKED_CAST")
-        val value: List<DEntity> by lazy {
-          val manyValues = entity.getOwnedRelationValue(schema)
-          (manyValues as Collection<Any>).map { DEntity(schema.ref, cEntity = it) }
+        val value: OwnData by lazy {
+          entity.getOwnedRelationValue(schema)
         }
       }
 
@@ -244,38 +239,6 @@ sealed class Data
         }
       }
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME)
-sealed class LinkData
-
-  sealed class ManyLinks: LinkData()
-
-    @JsonTypeName("many-links")
-    data class ManyLinksWithoutTraits(val refs: Collection<RefID>): ManyLinks() {
-      constructor(vararg refs: RefID): this(refs.toList())
-    }
-
-    @JsonTypeName("many-links-traits")
-    data class ManyLinksWithTraits(val refs: Collection<Traits>): ManyLinks() {
-      constructor(vararg refs: Traits): this(refs.toList())
-    }
-
-    @JsonTypeName("many-unlink")
-    data class ManyUnlink(val refs: Collection<RefID>): ManyLinks() {
-      constructor(vararg refs: RefID): this(refs.toList())
-    }
-
-  sealed class OneLink: LinkData()
-
-    @JsonTypeName("one-link")
-    data class OneLinkWithoutTraits(val ref: RefID): OneLink()
-
-    @JsonTypeName("one-link-traits")
-    data class OneLinkWithTraits(val ref: Traits): OneLink()
-
-    @JsonTypeName("one-unlink")
-    data class OneUnlink(val ref: RefID): OneLink()
-
-
 /* ------------------------- helpers -------------------------*/
 private fun SEntity.checkInclusion(prop: String, expected: Set<String>, inputs: List<Any>) {
   if (expected.size != inputs.size)
@@ -292,21 +255,4 @@ private fun SEntity.checkInclusion(prop: String, expected: Set<String>, inputs: 
 
   if (expected.size != processed.size)
     throw Exception("Invalid number of inputs, expected '${expected.size}' found '${inputs.size}'! - (${this.name}, $prop)")
-}
-
-@Suppress("UNCHECKED_CAST")
-private fun Any?.translate(): LinkData {
-  return when (val data = this!!) {
-    is RefID -> OneLinkWithoutTraits(data)
-    is Traits -> OneLinkWithTraits(data)
-    is Collection<*> -> {
-      if (data.isEmpty()) ManyLinksWithoutTraits() else {
-        if (data.first() is RefID)
-          ManyLinksWithoutTraits(data as Collection<RefID>)
-        else
-          ManyLinksWithTraits(data as Collection<Traits>)
-      }
-    }
-    else -> throw  Exception("Unable to translate link '${data.javaClass.kotlin.qualifiedName}'! - (Code bug, please report the issue)")
-  }
 }

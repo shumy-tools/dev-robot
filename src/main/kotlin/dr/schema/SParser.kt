@@ -48,14 +48,14 @@ private fun KClass<*>.checkEntityNumber(name: String) {
 
 private fun KProperty1<*, *>.checkRelationNumber(name: String) {
   var aNumber = 0
-  if (this.hasAnnotation<Create>())
+  if (this.hasAnnotation<Own>())
     aNumber++
   
   if (this.hasAnnotation<Link>())
     aNumber++
 
   if (aNumber > 1)
-    throw Exception("KProperty with multiple relation types! Select one of (Create, Link). - ($name, ${this.name})")
+    throw Exception("KProperty with multiple relation types! Select one of (Own, Link). - ($name, ${this.name})")
 }
 
 @Suppress("UNCHECKED_CAST")
@@ -142,7 +142,7 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
           throw Exception("A master cannot inherit a sealed class! - (${xEntity.name} -|> ${sEntity.name})")
 
         // sub entities have super reference
-        xEntity.addProperty(SUPER, SRelation(SUPER, null, RelationType.CREATE, sEntity, emptyMap(), false, false, false))
+        xEntity.addProperty(SUPER, SRelation(SUPER, null, RelationType.OWN, sEntity, emptyMap(), false, false, false))
         sEntity.addSealed(xEntity.name, xEntity)
       }
     }
@@ -191,7 +191,7 @@ private fun KClass<*>.processListeners(): Set<SListener> {
     } ?: throw Exception("Listener '${it.qualifiedName}' must inherit from '${EListener::class.qualifiedName}'")
 
     val tRef = sType.arguments.first().type ?: throw Exception("Listener '${it.qualifiedName}' requires generic type!")
-    if (tRef != this.createType())
+    if (tRef != createType())
       throw throw Exception("Listener '${it.qualifiedName}' must inherit from '${EListener::class.qualifiedName}<${this.qualifiedName}>'")
 
     it.constructors.firstOrNull {cst ->
@@ -225,7 +225,7 @@ private fun KClass<*>.processListeners(): Set<SListener> {
 }
 
 private fun KProperty1<Any, *>.processFieldOrRelation(sEntity: SEntity, tmpSchema: TempSchema): SFieldOrRelation {
-  val fieldOrRelation = if (this.hasAnnotation<Create>() || this.hasAnnotation<Link>()) {
+  val fieldOrRelation = if (this.hasAnnotation<Own>() || this.hasAnnotation<Link>()) {
     this.processRelation(sEntity, tmpSchema)
   } else {
     val type = TypeEngine.convert(this.returnType) ?: throw Exception("Unrecognized field type! - (${sEntity.name}, ${this.name})")
@@ -269,21 +269,21 @@ private fun KProperty1<Any, *>.processChecks(): Set<SCheck> {
 private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: TempSchema): SRelation {
   this.checkRelationNumber(sEntity.name)
 
-  val type = this.returnType
-  val isOpen = this.hasAnnotation<Open>()
-  val isOptional = type.isMarkedNullable
+  val type = returnType
+  val isOpen = hasAnnotation<Open>()
+  val isOptional = type.isMarkedNullable || hasAnnotation<Optional>()
 
   val traits = LinkedHashMap<String, SEntity>()
-  val link = this.findAnnotation<Link>()
+  val link = findAnnotation<Link>()
 
   val rType = when {
-    this.hasAnnotation<Create>() -> RelationType.CREATE
+    this.hasAnnotation<Own>() -> RelationType.OWN
     link != null -> {
       for (trait in link.traits)
         traits[trait.qualifiedName!!] = trait.processEntity(tmpSchema)
       RelationType.LINK
     }
-    else -> throw Exception("Required annotation, one of (Create, Link)! - (${sEntity.name}, ${this.name})")
+    else -> throw Exception("Required annotation, one of (Own, Link)! - (${sEntity.name}, ${this.name})")
   }
 
   val (ref, isCollection) = if (type.isSubtypeOf(TypeEngine.LIST) || type.isSubtypeOf(TypeEngine.LIST_TRAITS)) {
@@ -294,9 +294,9 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
       throw Exception("Collections cannot be optional! - (${sEntity.name}, ${this.name})")
 
     val ref = when(rType) {
-      RelationType.CREATE -> {
+      RelationType.OWN -> {
         if (!type.isSubtypeOf(TypeEngine.LIST))
-          throw Exception("Create-collection must be of type List<*>! - (${sEntity.name}, ${this.name})")
+          throw Exception("Own-collection must be of type List<*>! - (${sEntity.name}, ${this.name})")
 
         var tRef = type.arguments.last().type ?: throw Exception("Required generic type! - (${sEntity.name}, ${this.name})")
         val isPack = if (tRef.isSubtypeOf(TypeEngine.PACK)) {
@@ -304,7 +304,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
           true
         } else false
 
-        tRef.processCreateRelation(sEntity, this.name, isPack, tmpSchema)
+        tRef.processOwnRelation(sEntity, this.name, isPack, tmpSchema)
       }
 
       RelationType.LINK -> {
@@ -321,14 +321,14 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
     Pair(ref, true)
   } else {
     val ref = when(rType) {
-      RelationType.CREATE -> {
+      RelationType.OWN -> {
         var tRef = type
         val isPack = if (type.isSubtypeOf(TypeEngine.PACK)) {
           tRef = type.arguments.last().type ?: throw Exception("Required generic type! - (${sEntity.name}, ${this.name})")
           true
         } else false
 
-        tRef.processCreateRelation(sEntity, this.name, isPack, tmpSchema)
+        tRef.processOwnRelation(sEntity, this.name, isPack, tmpSchema)
       }
 
       RelationType.LINK -> {
@@ -349,24 +349,24 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
   if (rType == RelationType.LINK && sEntity.type != EntityType.TRAIT && ref.type == EntityType.TRAIT)
     throw Exception("Cannot link to a trait! Traits do not exist alone. - (${sEntity.name}, ${this.name})")
 
-  if (rType == RelationType.CREATE && ref.type == EntityType.MASTER)
-    throw Exception("Cannot create a master through a relation! - (${sEntity.name}, ${this.name})")
+  if (rType == RelationType.OWN && ref.type == EntityType.MASTER)
+    throw Exception("Cannot own a master through a relation! - (${sEntity.name}, ${this.name})")
 
   return SRelation(name, this, rType, ref, traits, isCollection, isOpen, isOptional)
 }
 
-private fun KType.processCreateRelation(sEntity: SEntity, rel: String, isPack: Boolean, tmpSchema: TempSchema): SEntity {
-  val entity = this.classifier as KClass<*>
+private fun KType.processOwnRelation(sEntity: SEntity, rel: String, isPack: Boolean, tmpSchema: TempSchema): SEntity {
+  val entity = classifier as KClass<*>
   if (tmpSchema.owned.contains(entity.qualifiedName))
     throw Exception("Entity already owned! - (${sEntity.name}, $rel) & (${entity.qualifiedName} owned-by ${tmpSchema.owned[entity.qualifiedName]})")
 
   val eRef = entity.processEntity(tmpSchema, sEntity.name)
 
   if (!isPack && eRef.isSealed)
-    throw Exception("Create of sealed entity must be of type, one of (Set<Pack<*>>, List<Pack<*>>, Pack<*>)! - (${sEntity.name}, $rel)")
+    throw Exception("Own of sealed entity must be of type, one of (Set<Pack<*>>, List<Pack<*>>, Pack<*>)! - (${sEntity.name}, $rel)")
 
   if (isPack && !eRef.isSealed)
-    throw Exception("Create with Pack<*> doesn't correspond to a sealed entity! - (${sEntity.name}, $rel, ${eRef.name})")
+    throw Exception("Own with Pack<*> doesn't correspond to a sealed entity! - (${sEntity.name}, $rel, ${eRef.name})")
 
   return eRef
 }

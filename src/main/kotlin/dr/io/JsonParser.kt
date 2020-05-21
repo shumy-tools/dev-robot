@@ -23,7 +23,11 @@ object JsonParser {
       ManyLinksWithTraits::class.java,
       OneLinkWithTraits::class.java,
       ManyUnlink::class.java,
-      OneUnlink::class.java
+      OneUnlink::class.java,
+      ManyAdd::class.java,
+      OneAdd::class.java,
+      ManyRemove::class.java,
+      OneRemove::class.java
     )
   }
 
