@@ -89,6 +89,13 @@ data class Role(
 )
 
 /* -------------------------------Hierarchy Query Model------------------------------- */
+@Master
+data class RefsToPack(
+  @Own val ownedAdmin: Pack<OwnedSuperUser>?,
+  @Link(SuperUser::class) val admin: RefID,
+  @Link(OperUser::class) val oper: RefID
+)
+
 @Master @Sealed(AdminUser::class, OperUser::class)
 data class SuperUser(
   @Unique val alias: String
@@ -102,4 +109,19 @@ data class AdminUser(
 @Detail
 data class OperUser(
   val operProp: String
+)
+
+@Detail @Sealed(OwnedAdminUser::class, OwnedOperUser::class)
+data class OwnedSuperUser(
+  @Unique val ownedAlias: String
+)
+
+@Detail
+data class OwnedAdminUser(
+  val ownedAdminProp: String
+)
+
+@Detail
+data class OwnedOperUser(
+  val ownedOperProp: String
 )

@@ -14,7 +14,7 @@ import org.junit.FixMethodOrder
 import org.junit.Test
 import kotlin.reflect.KClass
 
-private val schema = SParser.parse(A::class, BRefs::class, BCols::class, CMaster::class, SuperUser::class)
+private val schema = SParser.parse(A::class, BRefs::class, BCols::class, CMaster::class, SuperUser::class, RefsToPack::class)
 private val adaptor = SQLAdaptor(schema, "jdbc:h2:mem:InputTest").also {
   it.createSchema()
 }
@@ -307,7 +307,7 @@ class InputTest {
     assert(server.query("dr.test.BCols { *, ccolDetail { * }, ccol { * }, ccolTraits { * }, ccolUnique { * } }").toString() == "[{@id=1, bcolsText=u-value1, ccolDetail=[{@id=1, ccolDetailText=value2}, {@id=2, ccolDetailText=value3}, {@id=3, ccolDetailText=u-value2}, {@id=4, ccolDetailText=u-value3}, {@id=5, ccolDetailText=u-value4}], ccolUnique=[{@id=${ids[0]}, cmasterText=value1}, {@id=${ids[1]}, cmasterText=value2}, {@id=${ids[2]}, cmasterText=value3}, {@id=${ids[3]}, cmasterText=value4}, {@id=${ids[4]}, cmasterText=value5}], ccol=[{@id=1, ccol={@id=${ids[0]}, cmasterText=value1}}, {@id=2, ccol={@id=${ids[1]}, cmasterText=value2}}, {@id=3, ccol={@id=${ids[3]}, cmasterText=value4}}, {@id=4, ccol={@id=${ids[2]}, cmasterText=value3}}, {@id=5, ccol={@id=${ids[4]}, cmasterText=value5}}], ccolTraits=[{@id=1, &dr.test.Trace=Trace(value=trace1), ccolTraits={@id=${ids[2]}, cmasterText=value3}}, {@id=2, &dr.test.Trace=Trace(value=trace2), ccolTraits={@id=${ids[3]}, cmasterText=value4}}, {@id=3, &dr.test.Trace=Trace(value=u-trace1), ccolTraits={@id=${ids[1]}, cmasterText=value2}}, {@id=4, &dr.test.Trace=Trace(value=u-trace2), ccolTraits={@id=${ids[0]}, cmasterText=value1}}, {@id=5, &dr.test.Trace=Trace(value=u-trace3), ccolTraits={@id=${ids[4]}, cmasterText=value5}}]}]")
 
     val uJson3 = """{
-      "ccolDetail": {
+      "ccolDetail":{
         "@type":"one-rmv",
         "ref":${uInst1.all[1].refID.id}
       },
@@ -371,26 +371,65 @@ class InputTest {
       assert(ex.message == "A sealed entity must be created via Pack<*>! - (dr.test.SuperUser)")
     }
 
-    val cJson = """{
+    val cJson1 = """{
       "head":{"@type":"dr.test.SuperUser","alias":"Alex"},
       "tail":[{"@type":"dr.test.AdminUser","adminProp":"AlexAdminProp"}]
     }"""
-    val cInst = server.create(Pack::class, cJson)
-    val id = cInst.root.refID.id!!
-    assert(cInst.all.size == 2)
-    assert(cInst.all[0].toString() == "Insert(CREATE) - {table=dr.test.SuperUser, data={alias=Alex, @type=dr.test.AdminUser}}")
-    assert(cInst.all[1].toString() == "Insert(CREATE) - {table=dr.test.AdminUser, data={adminProp=AlexAdminProp}, refs={@super=$id}}")
-    assert(server.query("dr.test.SuperUser { * }").toString() == "[{@id=1, alias=Alex, @type=dr.test.AdminUser}]")
-    assert(server.query("dr.test.AdminUser { * }").toString() == "[{@id=1, adminProp=AlexAdminProp}]")
+    val cInst1 = server.create(Pack::class, cJson1)
+    val id1 = cInst1.root.refID.id!!
+    assert(cInst1.all.size == 2)
+    assert(cInst1.all[0].toString() == "Insert(CREATE) - {table=dr.test.SuperUser, data={alias=Alex, @type=dr.test.AdminUser}}")
+    assert(cInst1.all[1].toString() == "Insert(CREATE) - {table=dr.test.AdminUser, data={adminProp=AlexAdminProp}, refs={@super=$id1}}")
+    assert(server.query("dr.test.AdminUser { *, @super { * }}").toString() == "[{@id=1, adminProp=AlexAdminProp, @super={@id=1, alias=Alex, @type=dr.test.AdminUser}}]")
 
-
-    /*val uJson = """{
+    val cJson2 = """{
       "head":{"@type":"dr.test.SuperUser","alias":"Mario"},
-      "tail":[{"@type":"dr.test.AdminUser","adminProp":"MarioAdminProp"}]
+      "tail":[{"@type":"dr.test.OperUser","operProp":"MarioOperProp"}]
     }"""
-    val uInst = server.update(Pack::class, id, uJson)
-    uInst.all.forEach{ println(it) }*/
+    val cInst2 = server.create(Pack::class, cJson2)
+    val id2 = cInst2.root.refID.id!!
+    assert(cInst2.all.size == 2)
+    assert(cInst2.all[0].toString() == "Insert(CREATE) - {table=dr.test.SuperUser, data={alias=Mario, @type=dr.test.OperUser}}")
+    assert(cInst2.all[1].toString() == "Insert(CREATE) - {table=dr.test.OperUser, data={operProp=MarioOperProp}, refs={@super=$id2}}")
+    assert(server.query("dr.test.OperUser { *, @super { * }}").toString() == "[{@id=1, operProp=MarioOperProp, @super={@id=2, alias=Mario, @type=dr.test.OperUser}}]")
 
-    // TODO: test a owned Pack?
+    assert(server.query("dr.test.SuperUser { * }").toString() == "[{@id=1, alias=Alex, @type=dr.test.AdminUser}, {@id=2, alias=Mario, @type=dr.test.OperUser}]")
+
+    val cJson3 = """{
+      "ownedAdmin":{
+        "head":{"@type":"dr.test.OwnedSuperUser","ownedAlias":"Pedro"},
+        "tail":[{"@type":"dr.test.OwnedOperUser","ownedOperProp":"PedroOperProp"}]
+      },
+      "admin":$id1,
+      "oper":${cInst2.all[1].refID.id}
+    }"""
+    val cInst3 = server.create(RefsToPack::class, cJson3)
+    val id3 = cInst3.root.refID.id!!
+    assert(cInst3.all.size == 3)
+    assert(cInst3.all[0].toString() == "Insert(ADD) - {table=dr.test.OwnedSuperUser, data={ownedAlias=Pedro, @type=dr.test.OwnedOperUser}}")
+    assert(cInst3.all[1].toString() == "Insert(CREATE) - {table=dr.test.OwnedOperUser, data={ownedOperProp=PedroOperProp}, refs={@super=1}}")
+    assert(cInst3.all[2].toString() == "Insert(CREATE) - {table=dr.test.RefsToPack, refs={@ref-to-dr.test.SuperUser-admin=$id1, @ref-to-dr.test.OperUser-oper=${cInst2.all[1].refID.id}, @ref-to-dr.test.OwnedSuperUser-ownedAdmin=${cInst3.all[0].refID.id}}}")
+    assert(server.query("dr.test.RefsToPack { @id, ownedAdmin { * }, admin { alias }, oper { operProp, @super { alias } }}").toString() == "[{@id=1, ownedAdmin={@id=1, ownedAlias=Pedro, @type=dr.test.OwnedOperUser}, admin={@id=$id1, alias=Alex}, oper={@id=1, operProp=MarioOperProp, @super={@id=$id2, alias=Mario}}}]")
+
+    val cJson4 = """{
+      "ownedAdmin":null,
+      "admin":$id1,
+      "oper":${cInst2.all[1].refID.id}
+    }"""
+    val cInst4 = server.create(RefsToPack::class, cJson4)
+    val id4 = cInst4.root.refID.id!!
+    assert(cInst4.all.size == 1)
+    assert(cInst4.all[0].toString() == "Insert(CREATE) - {table=dr.test.RefsToPack, refs={@ref-to-dr.test.OwnedSuperUser-ownedAdmin=null, @ref-to-dr.test.SuperUser-admin=$id1, @ref-to-dr.test.OperUser-oper=${cInst2.all[1].refID.id}}}")
+    assert(server.query("dr.test.RefsToPack | @id == $id4 | { @id, ownedAdmin { * } }").toString() == "[{@id=2, ownedAdmin={@id=null, ownedAlias=null, @type=null}}]")
+
+    val uJson = """{
+      "ownedAdmin":{
+        "@type":"one-rmv"
+      }
+    }"""
+    val uInst = server.update(RefsToPack::class, id3, uJson)
+    assert(uInst.all.size == 1)
+    assert(uInst.all[0].toString() == "Update(UPDATE) - {table=dr.test.RefsToPack, id=$id3, refs={@ref-to-dr.test.OwnedSuperUser-ownedAdmin=null}}")
+    assert(server.query("dr.test.RefsToPack | @id == $id3 | { @id, ownedAdmin { * } }").toString() == "[{@id=$id3, ownedAdmin={@id=null, ownedAlias=null, @type=null}}]")
   }
 }

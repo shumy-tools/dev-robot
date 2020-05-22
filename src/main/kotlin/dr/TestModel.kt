@@ -68,8 +68,8 @@ data class Trace2(val date: LocalDateTime)
 
 @Trait
 data class UserMarket(
-        @Own val trace: Trace,         // Trace.date overrides UserMarket.date
-        @Link(User::class) val boss: RefID
+  @Own val trace: Trace,         // Trace.date overrides UserMarket.date
+  @Link(User::class) val boss: RefID
 ) {
   val date: LocalDateTime = LocalDateTime.now()
 }
