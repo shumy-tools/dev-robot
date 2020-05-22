@@ -5,9 +5,9 @@ import dr.schema.ActionType.*
 import dr.schema.tabular.*
 
 class InstructionBuilder(private val tables: Tables) {
-  fun create(data: DEntity): Instructions {
-    val (head, tail) = data.unpack
-    val rootInst = Insert(tables.get(head.schema), CREATE)
+  fun create(entity: DEntity): Instructions {
+    val (head, tail) = entity.unpack
+    val rootInst = Insert(entity.refID, tables.get(head.schema), CREATE)
     val all = processEntity(head, tail, rootInst)
 
     return Instructions(all).apply {
@@ -15,9 +15,9 @@ class InstructionBuilder(private val tables: Tables) {
     }
   }
 
-  fun update(id: Long, data: DEntity): Instructions {
-    val rootInst = Update(tables.get(data.schema), id, UPDATE)
-    val (topInclude, bottomInclude) = processUnpackedEntity(data, rootInst)
+  fun update(entity: DEntity): Instructions {
+    val rootInst = Update(entity.refID, tables.get(entity.schema), UPDATE)
+    val (topInclude, bottomInclude) = processUnpackedEntity(entity, rootInst)
     val all = mutableListOf(*topInclude.toTypedArray()).apply {
       add(rootInst)
       addAll(bottomInclude)
@@ -31,7 +31,7 @@ class InstructionBuilder(private val tables: Tables) {
   /* ------------------------------------------------------------ private ------------------------------------------------------------ */
   private fun addEntity(entity: DEntity): Pair<Insert, List<Instruction>> {
     val (head, tail) = entity.unpack
-    val rootInst = Insert(tables.get(head.schema), ADD)
+    val rootInst = Insert(entity.refID, tables.get(head.schema), ADD)
     return Pair(rootInst, processEntity(head, tail, rootInst))
   }
 
@@ -47,7 +47,7 @@ class InstructionBuilder(private val tables: Tables) {
     var topInst = rootInst
     for (item in tail) {
       val topEntity = item.superRef!!.schema
-      topInst = Insert(tables.get(item.schema), CREATE).apply {
+      topInst = Insert(item.refID, tables.get(item.schema), CREATE).apply {
         putRef(TSuperRef(topEntity), topInst)
         val (subTopInclude, subBottomInclude) = processUnpackedEntity(item, this)
         allInst.addAll(subTopInclude)
@@ -96,7 +96,7 @@ class InstructionBuilder(private val tables: Tables) {
           }
         } else {
           // A ref_<rel> --> B
-          topInst.putResolvedRef(TDirectRef(entity.schema, oRef.schema), RefID(null))
+          topInst.putResolvedRef(TDirectRef(entity.schema, oRef.schema), RefID())
         }
       }
     }
@@ -124,15 +124,15 @@ class InstructionBuilder(private val tables: Tables) {
         }
 
         is OneRemove -> {
-          bottomInclude.add(Update(tables.get(oCol.schema.ref), rValue.ref.id, ActionType.REMOVE).apply {
-            putResolvedRef(TInverseRef(entity.schema, oCol.schema), RefID(null))
+          bottomInclude.add(Update(rValue.ref, tables.get(oCol.schema.ref), ActionType.REMOVE).apply {
+            putResolvedRef(TInverseRef(entity.schema, oCol.schema), RefID())
           })
         }
 
         is ManyRemove -> {
           rValue.refs.forEach {
-            bottomInclude.add(Update(tables.get(oCol.schema.ref), it.id, ActionType.REMOVE).apply {
-              putResolvedRef(TInverseRef(entity.schema, oCol.schema), RefID(null))
+            bottomInclude.add(Update(it, tables.get(oCol.schema.ref), ActionType.REMOVE).apply {
+              putResolvedRef(TInverseRef(entity.schema, oCol.schema), RefID())
             })
           }
         }
@@ -194,12 +194,12 @@ class InstructionBuilder(private val tables: Tables) {
   private fun link(entity: DEntity, sRelation: SRelation, link: RefID, topInst: Instruction): Instruction {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
-      Update(tables.get(sRelation.ref), link.id, LINK).apply {
+      Update(link, tables.get(sRelation.ref), LINK).apply {
         putRef(TInverseRef(entity.schema, sRelation), topInst)
       }
     } else {
       // A <-- [inv ref] --> B
-      Insert(tables.get(entity.schema, sRelation), LINK).apply {
+      Insert(RefID(), tables.get(entity.schema, sRelation), LINK).apply {
         putResolvedRef(TDirectRef(sRelation.ref, sRelation, false), link)
         putRef(TInverseRef(entity.schema, sRelation, false), topInst)
       }
@@ -209,12 +209,12 @@ class InstructionBuilder(private val tables: Tables) {
   private fun unlink(entity: DEntity, sRelation: SRelation, link: RefID, topInst: Instruction): Instruction {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
-      Update(tables.get(sRelation.ref), link.id, UNLINK).apply {
+      Update(link, tables.get(sRelation.ref), UNLINK).apply {
         putResolvedRef(TInverseRef(entity.schema, sRelation), RefID())
       }
     } else {
       // A <-- [inv ref] --> B
-      Delete(tables.get(entity.schema, sRelation), UNLINK).apply {
+      Delete(RefID(), tables.get(entity.schema, sRelation), UNLINK).apply {
         putResolvedRef(TDirectRef(sRelation.ref, sRelation, false), link)
         putRef(TInverseRef(entity.schema, sRelation, false), topInst)
       }

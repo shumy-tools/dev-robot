@@ -17,43 +17,36 @@ class Instructions(val all: MutableList<Instruction> = mutableListOf()) {
   }
 
   fun exec(eFun: (Instruction) -> Long) {
-    // fireCheckedListeners
-    /*for (inst in all)
-      inst.action.entity.schema.fireListeners(EventType.CHECKED, inst)
-    */
-
     // execute and resolve children references
     val ids = mutableMapOf<Instruction, RefID>()
     for (inst in all) {
       inst.unresolvedRefs.forEach { (tRef, refInst) ->
         val refID = ids[refInst] ?: throw Exception("ID not found for reference! - (${inst.table}, $tRef)")
+        if (refID.id == null)
+          throw Exception("ID not found for reference! - (${inst.table}, $tRef)")
+
         inst.putResolvedRef(tRef, refID)
       }
 
       // remove all resolved references
       (inst.unresolvedRefs as LinkedHashMap<TRef, Instruction>).clear()
 
+      ids[inst] = inst.refID
+
       // ignore empty updates
       if (inst is Update && inst.data.isEmpty() && inst.resolvedRefs.isEmpty()) {
-        ids[inst] = RefID(inst.id)
         continue
       }
 
       val id = eFun(inst)
-      ids[inst] = RefID(id)
       if (inst is Insert)
-        inst.setId(id)
+        inst.refID.id = id
     }
-
-    // fireCommittedListeners
-    /*for (inst in all)
-      inst.action.entity.schema.fireListeners(EventType.COMMITTED, inst)
-    */
   }
 }
 
 
-sealed class Instruction {
+sealed class Instruction(val refID: RefID) {
   abstract val table: STable
   abstract val action: ActionType
 
@@ -61,7 +54,6 @@ sealed class Instruction {
   private val _unresolvedRefs = linkedMapOf<TRef, Instruction>()
   private var dataStack = Stack<LinkedHashMap<TProperty, Any?>>()
 
-  val refID = RefID()
   val data = linkedMapOf<TProperty, Any?>()
   val output = linkedMapOf<String, Any?>()
 
@@ -73,9 +65,7 @@ sealed class Instruction {
   val resolvedRefs: Map<TRef, Long?>
     get() = _resolvedRefs.map { it.key to it.value.id }.toMap()
 
-  fun isEmpty(): Boolean = data.isEmpty() && _resolvedRefs.isEmpty() && _unresolvedRefs.isEmpty()
-
-  internal fun tableText() = if (table.sRelation == null) table.sEntity.name else "${table.sEntity.name}-${table.sRelation?.name}"
+  internal fun tableText() = table.name
   internal fun dataText() = if (data.isNotEmpty()) ", data=$data" else ""
   internal fun resolvedRefsText() = if (resolvedRefs.isNotEmpty()) ", refs=$resolvedRefs" else ""
   internal fun unresolvedRefsText() = if (_unresolvedRefs.isNotEmpty()) ", urefs=${_unresolvedRefs.map { (name, inst) -> "$name=${inst.table}:${inst.hashCode()}" }}" else ""
@@ -91,10 +81,10 @@ sealed class Instruction {
     return res
   }
 
-  internal fun setId(id: Long?) {
+  /*internal fun setId(id: Long?) {
     refID.id = id
     putOutput(ID, id)
-  }
+  }*/
 
   internal fun putData(key: TProperty, value: Any?) {
     if(key.name == ID) return // ignore @id as a data value
@@ -123,16 +113,16 @@ sealed class Instruction {
   }
 }
 
-  class Insert(override val table: STable, override val action: ActionType): Instruction() {
-    init { setId(null) } // reserve the first position for @id in the output
+  class Insert(refID: RefID, override val table: STable, override val action: ActionType): Instruction(refID) {
+    init { putOutput(ID, null) } // reserve the first position for @id in the output
     override fun toString() = "Insert($action) - {table=${tableText()}${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
   }
 
-  class Update(override val table: STable, val id: Long?, override val action: ActionType): Instruction() {
-    init { setId(id) }
-    override fun toString() = "Update($action) - {table=${tableText()}, id=$id${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
+  class Update(refID: RefID, override val table: STable, override val action: ActionType): Instruction(refID) {
+    init { putOutput(ID, refID.id) }
+    override fun toString() = "Update($action) - {table=${tableText()}, id=${refID.id}${dataText()}${resolvedRefsText()}${unresolvedRefsText()}}"
   }
 
-  class Delete(override val table: STable, override val action: ActionType): Instruction() {
+  class Delete(refID: RefID, override val table: STable, override val action: ActionType): Instruction(refID) {
     override fun toString() = "Delete($action) - {table=${tableText()}${resolvedRefsText()}${unresolvedRefsText()}}"
   }

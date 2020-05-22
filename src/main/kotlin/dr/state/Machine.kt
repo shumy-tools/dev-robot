@@ -3,27 +3,53 @@ package dr.state
 import dr.base.User
 import dr.ctx.Context
 import dr.io.DEntity
+import dr.io.JsonParser
+import dr.query.QueryService
+import dr.schema.RefID
 import dr.schema.SEntity
 import dr.schema.SMachine
+import dr.schema.Schema
 import dr.schema.tabular.ID
 import dr.schema.tabular.STATE
 import dr.spi.IQueryExecutor
 import kotlin.reflect.KClass
+import kotlin.reflect.KProperty
 import kotlin.reflect.KProperty1
-import kotlin.reflect.full.createInstance
 
-open class Machine<S: Enum<*>, E: Any> {
+class UEntity<T: Any>(val id: Long, val data: MutableMap<String, Any?>) {
+  @Suppress("UNCHECKED_CAST")
+  fun <R: Any?> get(prop: KProperty1<T, R>): R {
+    return data[prop.name] as R
+  }
+
+  fun <R: Any?> set(prop: KProperty1<T, R>, value: R) {
+    data[prop.name] = value
+  }
+
+  override fun toString(): String {
+    return JsonParser.write(data)
+  }
+}
+
+open class Machine<T: Any, S: Enum<*>, E: Any> {
   val user: User
     get() = Context.session.user
 
-  lateinit var sMachine: SMachine
-    internal  set
-
-  lateinit var stateQuery: IQueryExecutor
-    internal  set
+  var onCreate: ((RefID, T) -> Unit)? = null
+  var onUpdate: ((UEntity<T>) -> Unit)? = null
 
   private val enter = hashMapOf<String, EnterActions.() -> Unit>()
   private val events = hashMapOf<KClass<out E>, MutableMap<String, After<out E>>>()
+
+  private lateinit var schema: Schema
+  internal lateinit var sMachine: SMachine
+  private lateinit var stateQuery: IQueryExecutor
+
+  internal fun init(allSchema: Schema, sEntity: SEntity, qService: QueryService) {
+    schema = allSchema
+    sMachine = sEntity.machine!!
+    stateQuery = qService.compile("${sEntity.name} | $ID == ?id | { $STATE }").first
+  }
 
   internal fun include(evtType: KClass<out E>, from: S, after: After<out E>) {
     val state = from.toString()
@@ -35,23 +61,30 @@ open class Machine<S: Enum<*>, E: Any> {
   }
 
   @Suppress("UNCHECKED_CAST")
-  fun onEvent(id: Long, inEvt: Any) {
-    val event = inEvt as E
-    val state = stateQuery.exec("id" to id).get<String>(STATE)
+  internal fun fireEvent(id: Long, inEvt: Any) {
+    Context.refID = RefID(id)
+      val event = inEvt as E
+      val state = stateQuery.exec("id" to id).get<String>(STATE)
 
-    val evtType = event.javaClass.kotlin
-    val states = events[evtType] ?: throw Exception("StateMachine event '$event' not found! - (${this.javaClass.kotlin.qualifiedName})")
-    val then = states[state] ?: throw Exception("StateMachine transit '$event':'$state' not found! - (${this.javaClass.kotlin.qualifiedName})")
-    then.onEvent?.invoke(EventActions(state, event))
+      val states = events.getValue(event.javaClass.kotlin)
+      val then = states[state] ?: throw Exception("StateMachine transit '$event':'$state' not found! - (${javaClass.kotlin.qualifiedName})")
+      then.onEvent?.invoke(EventActions(state, event))
+    Context.refID = RefID()
   }
 
-  fun onCreate(entity: DEntity) {
-    //TODO: how to fire onEnter for the first state?
+  @Suppress("UNCHECKED_CAST")
+  internal fun fireCreate(entity: DEntity) {
+    Context.refID = entity.refID
+      onCreate?.invoke(entity.refID, entity.cEntity as T)
+      val enter = enter.getValue(entity.state)
+      enter.invoke(EnterActions(entity.state))
+    Context.refID = RefID()
   }
 
-  fun onUpdate(id: Long, entity: DEntity) {
-    val state = stateQuery.exec("id" to id).get<String>(STATE)
-    //TODO: what events to fire?
+  internal fun fireUpdate(entity: DEntity) {
+    Context.refID = entity.refID
+      onUpdate?.invoke(UEntity(entity.refID.id!!, entity.mEntity!!))
+    Context.refID = RefID()
   }
 
   inner class History internal constructor(private val state: String, private val evtType: KClass<out E>? = null) {
@@ -72,7 +105,7 @@ open class Machine<S: Enum<*>, E: Any> {
     }
   }
 
-  class For internal constructor(private val state: PropertyState, private val prop: KProperty1<*, *>) {
+  class For internal constructor(private val state: PropertyState, private val prop: KProperty<*>) {
     enum class PropertyState { OPEN, CLOSE }
 
     fun forAll() {
@@ -91,11 +124,11 @@ open class Machine<S: Enum<*>, E: Any> {
   open inner class EnterActions internal constructor(private val state: String, private val evtType: KClass<out E>? = null) {
     val history = History(state, evtType)
 
-    fun <T, R> open(prop: KProperty1<T, R>): For {
+    fun open(prop: KProperty1<T, Any>): For {
       return For(For.PropertyState.OPEN, prop)
     }
 
-    fun <T, R> close(prop: KProperty1<T, R>): For {
+    fun close(prop: KProperty1<T, Any>): For {
       return For(For.PropertyState.CLOSE, prop)
     }
 
@@ -166,7 +199,12 @@ open class Machine<S: Enum<*>, E: Any> {
     return From(state, evtType)
   }
 
-  fun query(query: String): IQueryExecutor {
-    return Context.query(query)
+  fun query(query: String) = Context.query(query)
+
+  fun create(entity: Any) = Context.create(entity)
+
+  fun update(id: Long, type: KClass<out Any>, data: Map<KProperty<Any>, Any?>) {
+    val sEntity = schema.find(type)
+    Context.update(id, sEntity, data)
   }
 }

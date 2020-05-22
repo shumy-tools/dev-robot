@@ -1,89 +1,54 @@
 package dr.test
 
 import dr.adaptor.SQLAdaptor
-import dr.ctx.Session
-import dr.io.InputProcessor
-import dr.io.InstructionBuilder
-import dr.io.Instructions
-import dr.query.QueryService
 import dr.schema.Pack
 import dr.schema.SParser
-import dr.schema.tabular.TParser
-import dr.spi.QRow
 import org.junit.FixMethodOrder
 import org.junit.Test
-import kotlin.reflect.KClass
 
 private val schema = SParser.parse(A::class, BRefs::class, BCols::class, CMaster::class, SuperUser::class, RefsToPack::class)
 private val adaptor = SQLAdaptor(schema, "jdbc:h2:mem:InputTest").also {
   it.createSchema()
 }
 
-class TestServer {
-  private val processor = InputProcessor(schema, emptyMap())
-  private val translator = InstructionBuilder(TParser(schema).transform())
-  private val qService = QueryService(adaptor.tables, adaptor)
-
-  fun create(type: KClass<out Any>, json: String): Instructions {
-    val entity = processor.create(type, json)
-    val instructions = translator.create(entity)
-    dr.ctx.Context.instructions = instructions
-    adaptor.commit(instructions)
-    return instructions
-  }
-
-  fun update(type: KClass<out Any>, id: Long, json: String): Instructions {
-    val entity = processor.update(type, id, json)
-    val instructions = translator.update(id, entity)
-    dr.ctx.Context.instructions = instructions
-    adaptor.commit(instructions)
-    return instructions
-  }
-
-  fun query(query: String): List<QRow> {
-    dr.ctx.Context.session = Session(processor, translator, qService)
-    return dr.ctx.Context.query(query).exec().rows
-  }
-}
-
-private val server = TestServer()
+private val server = TestServer(schema, adaptor)
 
 private fun createCMasters(): List<Long> {
   val cJson1 = """{
-      "cmasterText":"value1"
-    }"""
+    "cmasterText":"value1"
+  }"""
   val cInst1 = server.create(CMaster::class, cJson1)
   val id1 = cInst1.root.refID.id!!
   assert(cInst1.all.size == 1)
   assert(cInst1.all[0].toString() == "Insert(CREATE) - {table=dr.test.CMaster, data={cmasterText=value1}}")
 
   val cJson2 = """{
-      "cmasterText":"value2"
-    }"""
+    "cmasterText":"value2"
+  }"""
   val cInst2 = server.create(CMaster::class, cJson2)
   val id2 = cInst2.root.refID.id!!
   assert(cInst2.all.size == 1)
   assert(cInst2.all[0].toString() == "Insert(CREATE) - {table=dr.test.CMaster, data={cmasterText=value2}}")
 
   val cJson3 = """{
-      "cmasterText":"value3"
-    }"""
+    "cmasterText":"value3"
+  }"""
   val cInst3 = server.create(CMaster::class, cJson3)
   val id3 = cInst3.root.refID.id!!
   assert(cInst3.all.size == 1)
   assert(cInst3.all[0].toString() == "Insert(CREATE) - {table=dr.test.CMaster, data={cmasterText=value3}}")
 
   val cJson4 = """{
-      "cmasterText":"value4"
-    }"""
+    "cmasterText":"value4"
+  }"""
   val cInst4 = server.create(CMaster::class, cJson4)
   val id4 = cInst4.root.refID.id!!
   assert(cInst4.all.size == 1)
   assert(cInst4.all[0].toString() == "Insert(CREATE) - {table=dr.test.CMaster, data={cmasterText=value4}}")
 
   val cJson5 = """{
-      "cmasterText":"value5"
-    }"""
+    "cmasterText":"value5"
+  }"""
   val cInst5 = server.create(CMaster::class, cJson5)
   val id5 = cInst5.root.refID.id!!
   assert(cInst5.all.size == 1)

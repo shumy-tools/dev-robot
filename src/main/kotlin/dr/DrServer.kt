@@ -1,16 +1,11 @@
 package dr
 
 import dr.ctx.Session
-import dr.io.InputProcessor
-import dr.io.InstructionBuilder
-import dr.io.Instructions
-import dr.io.JsonParser
+import dr.io.*
 import dr.query.QueryService
-import dr.schema.Pack
+import dr.schema.RefID
 import dr.schema.SEntity
 import dr.schema.Schema
-import dr.schema.tabular.ID
-import dr.schema.tabular.STATE
 import dr.spi.IAdaptor
 import dr.spi.IAuthorizer
 import dr.spi.IQueryExecutor
@@ -24,22 +19,23 @@ import java.util.*
 import kotlin.reflect.full.createInstance
 
 class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAuthorizer? = null) {
-  internal val processor: InputProcessor
-  internal val translator = InstructionBuilder(adaptor.tables)
-  internal val qService = QueryService(adaptor.tables, adaptor)
-
-  private val machines: Map<SEntity, Machine<*, *>>
   private val queries = mutableMapOf<String, Pair<IQueryExecutor, IReadAccess>>()
+  private val machines = linkedMapOf<SEntity, Machine<*, *, *>>()
+
+  private val processor = InputProcessor(schema)
+  private val translator = InstructionBuilder(adaptor.tables)
+
+  private val iService = InputService(processor, translator, adaptor, machines)
+  private val qService = QueryService(adaptor.tables, adaptor)
 
   init {
     println("----Checking State Machines----")
-    machines = schema.masters.filter { it.value.machine != null }.map {
-      val instance = it.value to buildMachine(it.value)
-      println("    ${it.value.machine!!.name} - OK")
-      instance
-    }.toMap()
-
-    processor = InputProcessor(schema, machines)
+    dr.ctx.Context.session = Session(iService, qService)
+      schema.masters.filter { it.value.machine != null }.forEach {
+        machines[it.value] = buildMachine(it.value)
+        println("    ${it.value.machine!!.name} - OK")
+      }
+    dr.ctx.Context.clear()
   }
 
   fun start(port: Int) {
@@ -49,10 +45,10 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
     app.before("/api/*") { ctx ->
       // TODO: authenticate and set the correct user
-      val user = dr.base.User("admin", "admin@mail.com", listOf(1L))
+      val user = dr.base.User("admin", "admin@mail.com", listOf(RefID(1)))
 
       println("before - /api/*")
-      dr.ctx.Context.session = Session(processor, translator, qService, user)
+      dr.ctx.Context.session = Session(iService, qService, user)
     }
 
     app.before("/api/*") { dr.ctx.Context.clear() }
@@ -73,22 +69,16 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
   }
 
   fun use(useFn: dr.ctx.Context.() -> Unit) {
-    val instructions = Instructions()
-    dr.ctx.Context.session = Session(processor, translator, qService)
-    dr.ctx.Context.instructions = instructions
+    dr.ctx.Context.session = Session(iService, qService)
       dr.ctx.Context.useFn()
-      if (instructions.all.isNotEmpty())
-        adaptor.commit(instructions)
+      if (dr.ctx.Context.instructions.all.isNotEmpty())
+        adaptor.commit(dr.ctx.Context.instructions)
     dr.ctx.Context.clear()
   }
 
-  private fun buildMachine(sEntity: SEntity): Machine<*, *> {
-    val sMachine = sEntity.machine!!
-    val instance = sMachine.clazz.createInstance()
-
-    instance.sMachine = sMachine
-    instance.stateQuery = qService.compile("${sEntity.name} | $ID == ?id | { $STATE }").first
-
+  private fun buildMachine(sEntity: SEntity): Machine<*, *, *> {
+    val instance = sEntity.machine!!.clazz.createInstance()
+    instance.init(schema, sEntity, qService)
     return instance
   }
 
@@ -122,18 +112,9 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
       // TODO: check access control
 
-      val dEntity = if (entity == Pack::class.qualifiedName) {
-        processor.create(Pack::class, ctx.body())
-      } else {
-        val sEntity = schema.masters[entity] ?: throw Exception("Master entity not found! - ($entity)")
-        processor.create(sEntity, ctx.body())
-      }
+      val main = iService.initCreate(entity, ctx.body())
 
-      val instructions = translator.create(dEntity)
-      dr.ctx.Context.instructions = instructions
-      adaptor.commit(instructions)
-
-      mapOf("@type" to "ok").plus(instructions.output)
+      mapOf("@type" to "ok").plus(main.output)
     } catch (ex: Exception) {
       ex.handleError()
     }
@@ -149,14 +130,9 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
       // TODO: check access control
 
-      val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
-      val dEntity = processor.update(sEntity, id, ctx.body())
+      val main = iService.initUpdate(entity, id, ctx.body())
 
-      val instructions = translator.update(id, dEntity)
-      dr.ctx.Context.instructions = instructions
-      adaptor.commit(instructions)
-
-      mapOf("@type" to "ok").plus(instructions.output)
+      mapOf("@type" to "ok").plus(main.output)
     } catch (ex: Exception) {
       ex.handleError()
     }
@@ -173,12 +149,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
       // TODO: check access control
 
-      val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
-      val machine = machines[sEntity] ?: throw Exception("Entity doesn't have a state machine! - ($entity)")
-      val evtClass = machine.sMachine.events[evtType] ?: throw Exception("Event ype not found! - ($entity, $evtType)")
-
-      val event = JsonParser.readJson(ctx.body(), evtClass)
-      machine.onEvent(id, event)
+      iService.initAction(entity, evtType, id, ctx.body())
 
       mapOf("@type" to "ok")
     } catch (ex: Exception) {

@@ -59,7 +59,7 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
 
       for (ref in tlb.refs) {
         val rName = ref.fn(tlb)
-        dbTable = dbTable.column(rName, SQLDataType.BIGINT) // TODO: is nullable?
+        dbTable = dbTable.column(rName, SQLDataType.BIGINT.nullable(ref.isOptional))
 
         if (ref.isUnique)
           constraints.add(unique(rName))
@@ -140,9 +140,9 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
 
             inst.resolvedRefs.forEach { dbUpdate = dbUpdate.set(it.key.fn(inst.table), it.value) }
 
-            val update = dbUpdate.where(idFn().eq(inst.id))
+            val update = dbUpdate.where(idFn().eq(inst.refID.id))
 
-            println("  ${update.sql}; ${dataFields.plus(dataRefs)} - @id=${inst.id}")
+            println("  ${update.sql}; ${dataFields.plus(dataRefs)} - @id=${inst.refID.id}")
             val affectedRows = update.execute()
             if (affectedRows == 0)
               throw Exception("Instruction failed, no rows affected!")

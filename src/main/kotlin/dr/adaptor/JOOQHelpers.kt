@@ -16,7 +16,11 @@ fun SEntity.sqlName() = name.replace('.', '_')
 
 fun STable.sqlName(): String {
   val entity = sEntity.sqlName()
-  return if (sRelation == null) entity else "${entity}__${sRelation.name}"
+  return when {
+    sRelation == null -> entity
+    sRelation.name.startsWith(SPECIAL) -> "${entity}__${sRelation.name.substring(1)}"
+    else -> "${entity}__${sRelation.name}"
+  }
 }
 
 fun STable.refSqlName(tRef: TRef) = when(tRef) {

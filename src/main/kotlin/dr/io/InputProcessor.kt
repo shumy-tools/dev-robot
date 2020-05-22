@@ -4,21 +4,18 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ArrayNode
 import dr.schema.*
 import dr.schema.tabular.TYPE
-import dr.state.Machine
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import kotlin.reflect.KClass
-import kotlin.reflect.full.isSubclassOf
-import kotlin.reflect.full.primaryConstructor
 
-private val nOneAdd = OneAdd::class.primaryConstructor!!.parameters.first().name
-private val nManyAdd = ManyAdd::class.primaryConstructor!!.parameters.first().name
-private val nOneRemove = OneRemove::class.primaryConstructor!!.parameters.first().name
-private val nManyRemove = ManyRemove::class.primaryConstructor!!.parameters.first().name
-private val nOneUnlink = OneUnlink::class.primaryConstructor!!.parameters.first().name
+private val nOneAdd = OneAdd::value.name
+private val nManyAdd = ManyAdd::values.name
+private val nOneRemove = OneRemove::ref.name
+private val nManyRemove = ManyRemove::refs.name
+private val nOneUnlink = OneUnlink::ref.name
 
-class InputProcessor(private val schema: Schema, private val machines: Map<SEntity, Machine<*, *>>) {
+class InputProcessor(val schema: Schema) {
   fun create(type: SEntity, json: String) = create(type.clazz, json)
 
   fun create(type: KClass<out Any>, json: String): DEntity {
@@ -34,9 +31,7 @@ class InputProcessor(private val schema: Schema, private val machines: Map<SEnti
     if (value !is Pack<*> && sEntity.isSealed)
       throw Exception("A sealed entity must be created via Pack<*>! - ($name)")
 
-    val dEntity = DEntity(sEntity, cEntity = value)
-    machines[sEntity]?.onCreate(dEntity) // no need to process Pack.tail (only a master has a state-machine)
-    return dEntity
+    return DEntity(RefID(), sEntity, cEntity = value)
   }
 
   fun update(type: KClass<out Any>, id: Long, json: String) = update(schema.find(type), id, json)
@@ -74,11 +69,11 @@ class InputProcessor(private val schema: Schema, private val machines: Map<SEnti
             when (nType) {
               ONE_ADD -> {
                 val nValue = vNode[nOneAdd] ?: throw Exception("'$nOneAdd' field not found for '$nName'!")
-                OneAdd(nValue.convert(cType))
+                OneAdd(nValue.convert(id, cType))
               }
               MANY_ADD -> {
                 val nValue = vNode[nManyAdd] ?: throw Exception("'$nManyAdd' not found for '$nName'!")
-                ManyAdd((nValue as ArrayNode).map { it.convert(cType) })
+                ManyAdd((nValue as ArrayNode).map { it.convert(id, cType) })
               }
               ONE_RMV -> {
                 val nValue = vNode[nOneRemove]
@@ -101,12 +96,10 @@ class InputProcessor(private val schema: Schema, private val machines: Map<SEnti
       }
     }
 
-    val dEntity = DEntity(type, mEntity = map)
-    machines[type]?.onUpdate(id, dEntity)
-    return dEntity
+    return DEntity(RefID(id), type, mEntity = map)
   }
 
-  fun update(type: SEntity, id: Long, map: Map<String, Any?>): DEntity {
+  fun update(type: SEntity, id: Long, map: MutableMap<String, Any?>): DEntity {
     for (nName in map.keys) {
       val sFieldOrRelation = type.getFieldOrRelation(nName) ?: throw Exception("Property not found! - (${type.name}, ${nName})")
       if (!sFieldOrRelation.isInput)
@@ -139,12 +132,10 @@ class InputProcessor(private val schema: Schema, private val machines: Map<SEnti
         throw Exception("Invalid input type! - (${type.name}, ${nName})")
     }
 
-    val dEntity = DEntity(type, mEntity = map)
-    machines[type]?.onUpdate(id, dEntity)
-    return dEntity
+    return DEntity(RefID(id), type, mEntity = map)
   }
 
-  private fun JsonNode.convert(cType: KClass<out Any>): DEntity {
+  private fun JsonNode.convert(id: Long, cType: KClass<out Any>): DEntity {
     val value = JsonParser.readNode(this, cType)
 
     val head = if (value is Pack<*>) value.head else value
@@ -154,6 +145,6 @@ class InputProcessor(private val schema: Schema, private val machines: Map<SEnti
     if (value !is Pack<*> && sEntity.isSealed)
       throw Exception("A sealed entity must be created via Pack<*>! - ($name)")
 
-    return DEntity(sEntity, cEntity = value)
+    return DEntity(RefID(id), sEntity, cEntity = value)
   }
 }

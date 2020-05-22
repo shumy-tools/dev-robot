@@ -1,56 +1,62 @@
 package dr.test
 
-import dr.io.*
-import kotlin.reflect.KClass
-import dr.schema.ActionType.*
+import dr.ctx.Context
+import dr.ctx.Session
+import dr.io.InputProcessor
+import dr.io.InputService
+import dr.io.InstructionBuilder
+import dr.io.Instructions
+import dr.query.QueryService
+import dr.schema.SEntity
+import dr.schema.Schema
+import dr.spi.IAdaptor
 import dr.spi.IAuthorizer
 import dr.spi.IReadAccess
+import dr.spi.QRow
+import dr.state.Machine
+import kotlin.reflect.KClass
+import kotlin.reflect.full.createInstance
 
 class TestAuthorizer: IAuthorizer {
   override fun read(access: IReadAccess) = true
 }
 
-fun Instruction.isCreate(clazz: KClass<out Any>, data: Map<String, Any>, refs: Map<String, Any> = emptyMap()) {
-  val insert = this as Insert
-  assert(insert.action == CREATE)
-  assert(insert.table.sEntity.name == clazz.qualifiedName)
-  assert(insert.table.sRelation == null)
-  assert(insert.data == data)
-  assert(insert.resolvedRefs == refs)
-}
+class TestServer(private val schema: Schema, adaptor: IAdaptor) {
+  private val machines = linkedMapOf<SEntity, Machine<*, *, *>>()
+  private val processor = InputProcessor(schema)
+  private val translator = InstructionBuilder(adaptor.tables)
 
-fun Instruction.isUpdate(clazz: KClass<out Any>, id: Long, data: Map<String, Any>, refs: Map<String, Any> = emptyMap()) {
-  val update = this as Update
-  assert(update.action == UPDATE)
-  assert(update.id == id)
-  assert(update.table.sEntity.name == clazz.qualifiedName)
-  assert(update.table.sRelation == null)
-  assert(update.data == data)
-  assert(update.resolvedRefs == refs)
-}
+  private val iService = InputService(processor, translator, adaptor, machines)
+  private val qService = QueryService(adaptor.tables, adaptor)
 
-fun Instruction.isAdd(clazz: KClass<out Any>, data: Map<String, Any>, refs: Map<String, Any> = emptyMap()) {
-  val update = this as Insert
-  assert(update.action == ADD)
-  assert(update.table.sEntity.name == clazz.qualifiedName)
-  assert(update.table.sRelation == null)
-  assert(update.data == data)
-  assert(update.resolvedRefs == refs)
-}
+  init {
+    println("----Checking State Machines----")
+    Context.session = Session(iService, qService)
+      schema.masters.filter { it.value.machine != null }.forEach {
+        machines[it.value] = buildMachine(it.value)
+        println("    ${it.value.machine!!.name} - OK")
+      }
+    Context.clear()
+  }
 
-fun Instruction.isLink(clazz: KClass<out Any>, relation: String, data: Map<String, Any>, refs: Map<String, Any> = emptyMap()) {
-  val insert = this as Insert
-  assert(insert.action == LINK)
-  assert(insert.table.sEntity.name == clazz.qualifiedName)
-  assert(insert.table.sRelation?.name == relation)
-  assert(insert.data == data)
-  assert(insert.resolvedRefs == refs)
-}
+  fun create(type: KClass<out Any>, json: String): Instructions {
+    Context.session = Session(iService, qService)
+    return iService.initCreate(type, json)
+  }
 
-fun Instruction.isUnlink(clazz: KClass<out Any>, relation: String, refs: Map<String, Any> = emptyMap()) {
-  val delete = this as Delete
-  assert(delete.action == UNLINK)
-  assert(delete.table.sEntity.name == clazz.qualifiedName)
-  assert(delete.table.sRelation?.name == relation)
-  assert(delete.resolvedRefs == refs)
+  fun update(type: KClass<out Any>, id: Long, json: String): Instructions {
+    Context.session = Session(iService, qService)
+    return iService.initUpdate(type, id, json)
+  }
+
+  fun query(query: String): List<QRow> {
+    Context.session = Session(iService, qService)
+    return Context.query(query).exec().rows
+  }
+
+  private fun buildMachine(sEntity: SEntity): Machine<*, *, *> {
+    val instance = sEntity.machine!!.clazz.createInstance()
+    instance.init(schema, sEntity, qService)
+    return instance
+  }
 }

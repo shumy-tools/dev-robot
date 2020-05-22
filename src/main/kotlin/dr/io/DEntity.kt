@@ -1,17 +1,16 @@
 package dr.io
 
+import dr.base.History
 import dr.schema.*
-import dr.schema.tabular.ID
-import dr.schema.tabular.STATE
-import dr.schema.tabular.SUPER
-import dr.schema.tabular.TYPE
+import dr.schema.tabular.*
 
 class DEntity(
+  val refID: RefID,
   val schema: SEntity,
-  private val mEntity: Map<String, Any?>? = null,
-  private val cEntity: Any? = null    // may be Pack<Any>
+  internal val mEntity: MutableMap<String, Any?>? = null,
+  internal val cEntity: Any? = null    // may be Pack<Any>
 ) {
-  private val sv = mutableMapOf<String, Any>() // TYPE, STATE, SUPER
+  private val sv = mutableMapOf<String, Any>() // TYPE, STATE, HISTORY, SUPER
 
   val unpack: Pair<DEntity, List<DEntity>>
 
@@ -25,15 +24,11 @@ class DEntity(
     if (cEntity != null) {
       // call @LateInit if exists
       schema.initFun?.call(cEntity)
-
-      // set initial machine state
-      if (schema.machine != null)
-        sv[STATE] = schema.machine.states.first()
     }
 
     // unpack
     unpack = if (cEntity != null && cEntity is Pack<*>) {
-      val dHead = DEntity(schema, cEntity = cEntity.head)
+      val dHead = DEntity(RefID(), schema, cEntity = cEntity.head)
 
       var topEntity = dHead
       val dTail: List<DEntity> = cEntity.tail.map { nxt ->
@@ -42,7 +37,7 @@ class DEntity(
 
         val sType = nxt.javaClass.canonicalName
         val sEntity = topEntity.schema.sealed[sType] ?: throw Exception("SubEntity '$sType' is not part of ${topEntity.name}!")
-        DEntity(sEntity, cEntity = nxt).also {
+        DEntity(RefID(), sEntity, cEntity = nxt).also {
           topEntity.sv[TYPE] = it.name
           it.sv[SUPER] = topEntity
           topEntity = it
@@ -58,6 +53,9 @@ class DEntity(
   val name: String
     get() = schema.name
 
+  val state: String
+    get() = sv[STATE] as String
+
   val superRef: DEntity?
     get() = sv[SUPER] as DEntity?
 
@@ -66,7 +64,7 @@ class DEntity(
       throw Exception("Cannot get field from a Pack<*>, unpack first.")
 
     schema.fields.mapNotNull {
-      contains(it.key) { DField(it.value, this) }
+      if (it.key == ID) null else contains(it.key) { DField(it.value, this) }
     }
   }
 
@@ -116,6 +114,11 @@ class DEntity(
     return all
   }
 
+  internal fun setHistory(dHistory: DEntity) {
+    sv[STATE] = (dHistory.cEntity as History).state
+    sv[HISTORY] = OneLinkWithoutTraits(dHistory.refID)
+  }
+
   internal fun getFieldValue(field: SField): Any? {
     return if (mEntity != null) mEntity[field.name] else when (field.name) {
       TYPE -> sv[TYPE]
@@ -129,7 +132,10 @@ class DEntity(
   }
 
   internal fun getLinkedRelationValue(rel: SRelation): LinkData {
-    return if (mEntity != null) mEntity[rel.name] as LinkData else rel.linkTranslate()
+    return if (mEntity != null) mEntity[rel.name] as LinkData else when (rel.name) {
+      HISTORY -> sv[HISTORY] as OneLinkWithoutTraits
+      else -> rel.linkTranslate()
+    }
   }
 
   private fun <T: Any> contains(name: String, exec: () -> T?): T? {
@@ -145,8 +151,8 @@ class DEntity(
     val value = getValue(cEntity!!) ?: return OneRemove(RefID(null))
 
     return when (isCollection) {
-      false -> OneAdd(DEntity(ref, cEntity = value))
-      true -> ManyAdd((value as List<Any>).map { DEntity(ref, cEntity = it) })
+      false -> OneAdd(DEntity(RefID(), ref, cEntity = value))
+      true -> ManyAdd((value as List<Any>).map { DEntity(RefID(), ref, cEntity = it) })
     }
   }
 
@@ -157,6 +163,10 @@ class DEntity(
       false -> if (traits.isEmpty()) OneLinkWithoutTraits(value as RefID) else OneLinkWithTraits(value as Traits)
       true -> if (traits.isEmpty()) ManyLinksWithoutTraits(value as List<RefID>) else ManyLinksWithTraits(value as List<Traits>)
     }
+  }
+
+  override fun toString(): String {
+    return if (cEntity != null) JsonParser.write(cEntity) else JsonParser.write(mEntity!!)
   }
 }
 

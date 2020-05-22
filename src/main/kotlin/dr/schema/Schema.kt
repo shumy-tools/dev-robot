@@ -17,7 +17,7 @@ annotation class Sealed(vararg val value: KClass<out Any>)
 
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class StateMachine(val value: KClass<out Machine<*, *>>)
+annotation class StateMachine(val value: KClass<out Machine<*, *, *>>)
 
 
 @Target(AnnotationTarget.CLASS)
@@ -87,6 +87,7 @@ class RefID(private var _id: Long? = null) {
       onSet?.invoke(value!!)
     }
 
+  override fun toString() = "RefID(id=$_id)"
 }
 
 data class Pack<T: Any>(
@@ -142,10 +143,13 @@ class Schema {
 }
 
   /* ------------------------- entity -------------------------*/
-  class SEntity(val clazz: KClass<out Any>, val type: EntityType, val isSealed: Boolean, val initFun: KFunction<*>?, val listeners: Set<SListener>, val machine: SMachine?) {
+  class SEntity(val clazz: KClass<out Any>, val type: EntityType, val isSealed: Boolean, val initFun: KFunction<*>?, val listeners: Set<SListener>) {
     val sealed: Map<String, SEntity> = linkedMapOf()
     val fields: Map<String, SField> = linkedMapOf()
     val rels: Map<String, SRelation> = linkedMapOf()
+
+    var machine: SMachine? = null
+      internal set
 
     val name: String
       get() = clazz.qualifiedName!!
@@ -214,7 +218,7 @@ class Schema {
     override fun toString() = name
   }
 
-    class SMachine(val clazz: KClass<out Machine<*, *>>, val states: List<String>, val events: Map<String, KClass<out Any>>) {
+    class SMachine(val clazz: KClass<out Machine<*, *, *>>, val states: List<String>, val events: Map<String, KClass<out Any>>) {
       val name: String
         get() = clazz.qualifiedName!!
 

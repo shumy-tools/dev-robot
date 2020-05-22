@@ -1,6 +1,8 @@
 package dr.test
 
+import dr.base.User
 import dr.schema.*
+import dr.state.Machine
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -125,3 +127,72 @@ data class OwnedAdminUser(
 data class OwnedOperUser(
   val ownedOperProp: String
 )
+
+/* -------------------------------State Machine Model------------------------------- */
+@Master
+data class RefToMEntity(
+  val alias: String,
+  @Link(MEntity::class) val to: RefID
+)
+
+@Master @StateMachine(dr.test.MEntityMachine::class)
+data class MEntity(
+  @Unique val name: String
+)
+
+class MEntityMachine: Machine<MEntity, MEntityMachine.State, MEntityMachine.Event>() {
+  enum class State { START, VALIDATE, STOP }
+
+  sealed class Event {
+    data class Submit(val value: String): Event()
+    object Ok: Event()
+    object Incorrect: Event()
+  }
+
+  private val q1 = query("""dr.base.User | name == "shumy" | { * }""")
+
+  init {
+    onCreate = { id, entity ->
+      assert(entity.name == "My Name")
+      assert(q1.exec().rows.toString() == "[{@id=1, name=shumy, email=shumy@gmail.com}]")
+      create(RefToMEntity("m-alias", id))
+    }
+
+    onUpdate = {
+      println("UPDATE: ${it.id} - ${it.get(MEntity::name)}")
+    }
+
+    enter(State.START) {
+      println("START")
+      open(MEntity::name).forRole("admin")
+    }
+
+    on(State.START, Event.Submit::class) fromRole "admin" goto State.VALIDATE after {
+      check { event.value.startsWith("#") }
+
+      println("(SUBMIT(${event.value}) from 'employee') START -> VALIDATE")
+      history.set("owner", user)
+      close(MEntity::name).forAll()
+    }
+
+    on(State.VALIDATE, Event.Ok::class) fromRole "manager" goto State.STOP after {
+      val record = history.last(Event.Submit::class)
+      println("OK -> check(${record.event.value})")
+
+      println("(OK from 'manager') VALIDATE -> STOP")
+    }
+
+    on(State.VALIDATE, Event.Incorrect::class) fromRole "manager" goto State.START after {
+      val record = history.last(Event.Submit::class)
+      println("INCORRECT -> check(${record.event.value})")
+
+      println("(INCORRECT from 'manager') VALIDATE -> START")
+      val owner: User = history.last(Event.Submit::class).get("owner")
+      open(MEntity::name).forUser(owner.name)
+    }
+
+    enter(State.STOP) {
+      println("STOP")
+    }
+  }
+}

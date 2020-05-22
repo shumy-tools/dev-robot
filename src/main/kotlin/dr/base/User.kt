@@ -2,6 +2,7 @@ package dr.base
 
 import dr.schema.Link
 import dr.schema.Master
+import dr.schema.RefID
 
 @Master
 data class User(
@@ -9,7 +10,7 @@ data class User(
   val email: String,
 
   @Link(Role::class)
-  val roles: List<Long>
+  val roles: List<RefID>
 )
 
 @Master

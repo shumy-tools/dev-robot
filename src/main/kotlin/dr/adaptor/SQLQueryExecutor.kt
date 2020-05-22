@@ -335,7 +335,7 @@ class SQLResult(private val tables: Tables): IResult {
     }
 
     val cValue = if (name.startsWith(TRAITS)) {
-      val traitSplit = name.substring(1).split("@")
+      val traitSplit = name.substring(1).split(SPECIAL)
       val sTrait = tables.schema.traits.getValue(traitSplit.first())
       JsonParser.readJson((value as String), sTrait.clazz)
     } else value

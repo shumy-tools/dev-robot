@@ -3,12 +3,14 @@ package dr.schema.tabular
 import dr.schema.*
 
 const val TRAITS = "&"
+const val SPECIAL = "@"
 const val ID = "@id"
 const val REF = "@ref"
 const val INV = "@inv"
 
 const val TYPE = "@type"
 const val STATE = "@state"
+const val HISTORY = "@history"
 const val SUPER = "@super"
 
 data class Tables(val schema: Schema, private val tables: Map<String, STable>) {
@@ -118,6 +120,14 @@ sealed class TRef {
     }
   }
 
+  val isOptional: Boolean by lazy {
+    when (this) {
+      is TSuperRef -> false
+      is TDirectRef -> rel.isOptional
+      is TInverseRef -> rel.isOptional || rel.isUnique || rel.type == RelationType.OWN // unique @inv are implemented via nullable reference
+    }
+  }
+
   override fun toString() = when(this) {
     is TSuperRef -> SUPER
     is TDirectRef -> if (!includeRelName) "$REF-to-${rel.ref.name}" else "$REF-to-${rel.ref.name}-${rel.name}"
@@ -130,4 +140,6 @@ sealed class TRef {
   class TInverseRef(override val refEntity: SEntity, val rel: SRelation, val includeRelName: Boolean = true): TRef()
 
 /* ------------------------- helpers -------------------------*/
-private fun tableNameFrom(ent: String, rel: String? = null) = if (rel == null) ent else "${ent}-${rel}"
+private fun tableNameFrom(ent: String, rel: String? = null): String {
+  return if (rel == null) ent else if (rel.startsWith(SPECIAL)) "${ent}-${rel.substring(1)}" else "${ent}-${rel}"
+}

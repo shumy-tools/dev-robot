@@ -1,9 +1,9 @@
 package dr.schema
 
-import dr.schema.tabular.ID
-import dr.schema.tabular.STATE
-import dr.schema.tabular.SUPER
-import dr.schema.tabular.TYPE
+import dr.base.History
+import dr.base.Role
+import dr.base.User
+import dr.schema.tabular.*
 import dr.state.Machine
 import kotlin.reflect.*
 import kotlin.reflect.full.*
@@ -13,6 +13,12 @@ object SParser {
   fun parse(vararg items: KClass<out Any>): Schema {
     println("----Checking Master Entities----")
     val tmpSchema = TempSchema()
+
+    // add internal master entities
+    tmpSchema.base[User::class] = User::class.processEntity(tmpSchema)
+    tmpSchema.base[Role::class] = Role::class.processEntity(tmpSchema)
+    tmpSchema.base[History::class] = History::class.processEntity(tmpSchema)
+
     for (kc in items) {
       if (kc.getEntityType() != EntityType.MASTER)
         throw Exception("Include only master entities!")
@@ -29,6 +35,7 @@ object SParser {
 private class TempSchema {
   val schema = Schema()
   val owned = mutableMapOf<String, String>()        // ownedEntity -> byEntity
+  val base = mutableMapOf<KClass<out Any>, SEntity>()
 }
 
 private fun KClass<*>.checkEntityNumber(name: String) {
@@ -90,13 +97,7 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
     }
 
     val sealed = findAnnotation<Sealed>()
-    val machine = processStateMachine(type)
-    val sEntity = SEntity(this, type, sealed != null, initFun, processListeners(), machine)
-
-    // TODO: add history table also?
-    // entities with state machine have state
-    if (machine != null)
-      sEntity.addProperty(STATE, SField(STATE, null, FieldType.TEXT, emptySet(), false))
+    val sEntity = SEntity(this, type, sealed != null, initFun, processListeners())
 
     tmpSchema.schema.addEntity(sEntity)
     if (ownedBy != null)
@@ -107,6 +108,9 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
 
     // all entities have an id
     sEntity.addProperty(ID, SField(ID, null, FieldType.LONG, emptySet(), false))
+
+    // add state-machine if exists
+    sEntity.machine = processStateMachine(tmpSchema, sEntity)
 
     // process ordered inputs
     for (param in primaryConstructor!!.parameters) {
@@ -151,17 +155,17 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
   }
 }
 
-private fun KClass<*>.processStateMachine(type: EntityType): SMachine? {
+private fun KClass<*>.processStateMachine(tmpSchema: TempSchema, sEntity: SEntity): SMachine? {
   val machine = findAnnotation<StateMachine>()
   return machine?.let {
-    if (type != EntityType.MASTER)
+    if (sEntity.type != EntityType.MASTER)
       throw Exception("Only a @Master can have a state machine! - ($qualifiedName)")
 
     val machineType = machine.value.supertypes.firstOrNull {
       sType -> Machine::class.qualifiedName == (sType.classifier as KClass<*>).qualifiedName
     } ?: throw Exception("StateMachine '${machine.value.qualifiedName}' must implement '${Machine::class.qualifiedName}'")
 
-    val stateType = machineType.arguments.first().type ?: throw Exception("Machine '${machine.value.qualifiedName}' requires generic types!")
+    val stateType = machineType.arguments[1].type ?: throw Exception("Machine '${machine.value.qualifiedName}' requires generic types!")
     val stateClass = stateType.classifier as KClass<*>
 
     val evtType = machineType.arguments.last().type ?: throw Exception("Machine '${machine.value.qualifiedName}' requires generic types!")
@@ -178,6 +182,13 @@ private fun KClass<*>.processStateMachine(type: EntityType): SMachine? {
 
     if (states.isEmpty())
       throw Exception("StateMachine '${machine.value.qualifiedName}' requires at least one state!")
+
+    // add @state to entity
+    sEntity.addProperty(STATE, SField(STATE, null, FieldType.TEXT, emptySet(), false))
+
+    // add History to entity
+    val sHistory = tmpSchema.base.getValue(History::class)
+    sEntity.addProperty(HISTORY, SRelation(HISTORY, null, RelationType.LINK, sHistory, emptyMap(),true, false, false))
 
     SMachine(machine.value, states, events)
   }
