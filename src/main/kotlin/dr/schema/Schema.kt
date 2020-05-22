@@ -43,10 +43,6 @@ annotation class Unique
 
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Optional
-
-@Target(AnnotationTarget.PROPERTY)
-@Retention(AnnotationRetention.RUNTIME)
 annotation class Open
 
 @Target(AnnotationTarget.PROPERTY)

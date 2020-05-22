@@ -124,11 +124,17 @@ class InstructionBuilder(private val tables: Tables) {
         }
 
         is OneRemove -> {
-          // TODO: update root.putResolvedRef(TInverseRef(entity.schema, oCol.schema), RefID(null))
+          bottomInclude.add(Update(tables.get(oCol.schema.ref), rValue.ref.id, ActionType.REMOVE).apply {
+            putResolvedRef(TInverseRef(entity.schema, oCol.schema), RefID(null))
+          })
         }
 
         is ManyRemove -> {
-          // TODO: update root.putResolvedRef(TInverseRef(entity.schema, oCol.schema), RefID(null))
+          rValue.refs.forEach {
+            bottomInclude.add(Update(tables.get(oCol.schema.ref), it.id, ActionType.REMOVE).apply {
+              putResolvedRef(TInverseRef(entity.schema, oCol.schema), RefID(null))
+            })
+          }
         }
       }
     }

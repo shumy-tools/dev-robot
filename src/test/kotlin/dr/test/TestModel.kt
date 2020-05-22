@@ -30,8 +30,8 @@ data class A(
 data class BRefs(
   val brefsText: String?,
   @Own val crefDetail: CRefDetail?,
-  @Optional @Link(CMaster::class) val cref: RefID,
-  @Optional @Link(CMaster::class, Trace::class) val crefTraits: Traits
+  @Link(CMaster::class) val cref: RefID?,
+  @Link(CMaster::class, Trace::class) val crefTraits: Traits?
 )
 
 @Master

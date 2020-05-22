@@ -271,7 +271,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
 
   val type = returnType
   val isOpen = hasAnnotation<Open>()
-  val isOptional = type.isMarkedNullable || hasAnnotation<Optional>()
+  val isOptional = type.isMarkedNullable
 
   val traits = LinkedHashMap<String, SEntity>()
   val link = findAnnotation<Link>()
@@ -308,7 +308,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
       }
 
       RelationType.LINK -> {
-        if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.LIST_ID))
+        if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.LIST_REFID))
           throw Exception("Link-collection without traits must be of type List<RefID>! - (${sEntity.name}, ${this.name})")
 
         if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.LIST_TRAITS))
@@ -323,7 +323,7 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
     val ref = when(rType) {
       RelationType.OWN -> {
         var tRef = type
-        val isPack = if (type.isSubtypeOf(TypeEngine.PACK)) {
+        val isPack = if (type.isSubtypeOf(TypeEngine.PACK_NULL)) {
           tRef = type.arguments.last().type ?: throw Exception("Required generic type! - (${sEntity.name}, ${this.name})")
           true
         } else false
@@ -332,11 +332,11 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
       }
 
       RelationType.LINK -> {
-        if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.ID))
-          throw Exception("Link without traits must be of type, one of (RefID, List<RefID>)! - (${sEntity.name}, ${this.name})")
+        if (traits.isEmpty() && !type.isSubtypeOf(TypeEngine.REFID_NULL))
+          throw Exception("Link without traits must be of type, one of (RefID, RefID?, List<RefID>)! - (${sEntity.name}, ${this.name})")
 
-        if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.TRAITS))
-          throw Exception("Link with traits must be of type, one of (Traits, List<Traits>)! - (${sEntity.name}, ${this.name})")
+        if (traits.isNotEmpty() && !type.isSubtypeOf(TypeEngine.TRAITS_NULL))
+          throw Exception("Link with traits must be of type, one of (Traits, Traits?, List<Traits>)! - (${sEntity.name}, ${this.name})")
 
         link!!.value.processEntity(tmpSchema)
       }

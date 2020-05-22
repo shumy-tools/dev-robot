@@ -12,7 +12,8 @@ enum class EventType {
 
 enum class ActionType(val funName: String) {
   CREATE("onCreate"), UPDATE("onUpdate"), DELETE("onDelete"),
-  ADD("onAdd"), LINK("onLink"), UNLINK("onUnlink")
+  ADD("onAdd"), REMOVE("onRemove"),
+  LINK("onLink"), UNLINK("onUnlink")
 }
 
 /* ------------------------- api -------------------------*/

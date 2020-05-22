@@ -7,6 +7,9 @@ import dr.schema.tabular.STable
 import dr.schema.tabular.TYPE
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 import kotlin.reflect.KClass
 import kotlin.reflect.full.isSubclassOf
 
@@ -76,19 +79,101 @@ private class CompatibilityTable {
   fun check(fieldType: FieldType, compType: CompType, argType: KClass<*>): Boolean {
     val testType = table[fieldType]?.get(compType)
     return if (testType != null) argType.isSubclassOf(testType) else false
-    //return table[fieldType]?.get(compType) == argType
   }
 }
 
-// FieldType -> (TEXT, INT, FLOAT, BOOL, TIME, DATE, DATETIME)
-// CompType -> (EQUAL, DIFFERENT, MORE, LESS, MORE_EQ, LESS_EQ, IN)
-
-// TODO: incomplete table of constraints?
+// (TEXT, INT, LONG, FLOAT, DOUBLE, BOOL, TIME, DATE, DATETIME)
+// ('==' | '!=' | '>' | '<' | '>=' | '<=' | 'in')
 private val fieldTable = CompatibilityTable().apply {
+  // ==
   set(FieldType.TEXT, CompType.EQUAL, String::class)
-  set(FieldType.TEXT, CompType.DIFFERENT, String::class)
-  set(FieldType.TEXT, CompType.IN, List::class)
-
   set(FieldType.INT, CompType.EQUAL, Int::class)
+  set(FieldType.INT, CompType.EQUAL, Long::class)
   set(FieldType.LONG, CompType.EQUAL, Long::class)
+  set(FieldType.LONG, CompType.EQUAL, Int::class)
+  set(FieldType.FLOAT, CompType.EQUAL, Float::class)
+  set(FieldType.FLOAT, CompType.EQUAL, Double::class)
+  set(FieldType.DOUBLE, CompType.EQUAL, Double::class)
+  set(FieldType.DOUBLE, CompType.EQUAL, Float::class)
+  set(FieldType.BOOL, CompType.EQUAL, Boolean::class)
+  set(FieldType.TIME, CompType.EQUAL, LocalTime::class)
+  set(FieldType.DATE, CompType.EQUAL, LocalDate::class)
+  set(FieldType.DATETIME, CompType.EQUAL, LocalDateTime::class)
+
+  // !=
+  set(FieldType.TEXT, CompType.DIFFERENT, String::class)
+  set(FieldType.INT, CompType.DIFFERENT, Int::class)
+  set(FieldType.INT, CompType.DIFFERENT, Long::class)
+  set(FieldType.LONG, CompType.DIFFERENT, Long::class)
+  set(FieldType.LONG, CompType.DIFFERENT, Int::class)
+  set(FieldType.FLOAT, CompType.DIFFERENT, Float::class)
+  set(FieldType.FLOAT, CompType.DIFFERENT, Double::class)
+  set(FieldType.DOUBLE, CompType.DIFFERENT, Double::class)
+  set(FieldType.DOUBLE, CompType.DIFFERENT, Float::class)
+  set(FieldType.BOOL, CompType.DIFFERENT, Boolean::class)
+  set(FieldType.TIME, CompType.DIFFERENT, LocalTime::class)
+  set(FieldType.DATE, CompType.DIFFERENT, LocalDate::class)
+  set(FieldType.DATETIME, CompType.DIFFERENT, LocalDateTime::class)
+
+  // >
+  set(FieldType.INT, CompType.MORE, Int::class)
+  set(FieldType.INT, CompType.MORE, Long::class)
+  set(FieldType.LONG, CompType.MORE, Long::class)
+  set(FieldType.LONG, CompType.MORE, Int::class)
+  set(FieldType.FLOAT, CompType.MORE, Float::class)
+  set(FieldType.FLOAT, CompType.MORE, Double::class)
+  set(FieldType.DOUBLE, CompType.MORE, Double::class)
+  set(FieldType.DOUBLE, CompType.MORE, Float::class)
+  set(FieldType.TIME, CompType.MORE, LocalTime::class)
+  set(FieldType.DATE, CompType.MORE, LocalDate::class)
+  set(FieldType.DATETIME, CompType.MORE, LocalDateTime::class)
+
+  // <
+  set(FieldType.INT, CompType.LESS, Int::class)
+  set(FieldType.INT, CompType.LESS, Long::class)
+  set(FieldType.LONG, CompType.LESS, Long::class)
+  set(FieldType.LONG, CompType.LESS, Int::class)
+  set(FieldType.FLOAT, CompType.LESS, Float::class)
+  set(FieldType.FLOAT, CompType.LESS, Double::class)
+  set(FieldType.DOUBLE, CompType.LESS, Double::class)
+  set(FieldType.DOUBLE, CompType.LESS, Float::class)
+  set(FieldType.TIME, CompType.LESS, LocalTime::class)
+  set(FieldType.DATE, CompType.LESS, LocalDate::class)
+  set(FieldType.DATETIME, CompType.LESS, LocalDateTime::class)
+
+  // >=
+  set(FieldType.INT, CompType.MORE_EQ, Int::class)
+  set(FieldType.INT, CompType.MORE_EQ, Long::class)
+  set(FieldType.LONG, CompType.MORE_EQ, Long::class)
+  set(FieldType.LONG, CompType.MORE_EQ, Int::class)
+  set(FieldType.FLOAT, CompType.MORE_EQ, Float::class)
+  set(FieldType.FLOAT, CompType.MORE_EQ, Double::class)
+  set(FieldType.DOUBLE, CompType.MORE_EQ, Double::class)
+  set(FieldType.DOUBLE, CompType.MORE_EQ, Float::class)
+  set(FieldType.TIME, CompType.MORE_EQ, LocalTime::class)
+  set(FieldType.DATE, CompType.MORE_EQ, LocalDate::class)
+  set(FieldType.DATETIME, CompType.MORE_EQ, LocalDateTime::class)
+
+  // <=
+  set(FieldType.INT, CompType.LESS_EQ, Int::class)
+  set(FieldType.INT, CompType.LESS_EQ, Long::class)
+  set(FieldType.LONG, CompType.LESS_EQ, Long::class)
+  set(FieldType.LONG, CompType.LESS_EQ, Int::class)
+  set(FieldType.FLOAT, CompType.LESS_EQ, Float::class)
+  set(FieldType.FLOAT, CompType.LESS_EQ, Double::class)
+  set(FieldType.DOUBLE, CompType.LESS_EQ, Double::class)
+  set(FieldType.DOUBLE, CompType.LESS_EQ, Float::class)
+  set(FieldType.TIME, CompType.LESS_EQ, LocalTime::class)
+  set(FieldType.DATE, CompType.LESS_EQ, LocalDate::class)
+  set(FieldType.DATETIME, CompType.LESS_EQ, LocalDateTime::class)
+
+  // in
+  set(FieldType.TEXT, CompType.IN, List::class)
+  set(FieldType.INT, CompType.IN, List::class)
+  set(FieldType.LONG, CompType.IN, List::class)
+  set(FieldType.FLOAT, CompType.IN, List::class)
+  set(FieldType.DOUBLE, CompType.IN, List::class)
+  set(FieldType.TIME, CompType.IN, LocalTime::class)
+  set(FieldType.DATE, CompType.IN, LocalDate::class)
+  set(FieldType.DATETIME, CompType.IN, LocalDateTime::class)
 }

@@ -142,7 +142,8 @@ class DEntity(
 
   @Suppress("UNCHECKED_CAST")
   private fun SRelation.ownTranslate(): OwnData {
-    val value = getValue(cEntity!!)!!
+    val value = getValue(cEntity!!) ?: return OneRemove(RefID(null))
+
     return when (isCollection) {
       false -> OneAdd(DEntity(ref, cEntity = value))
       true -> ManyAdd((value as List<Any>).map { DEntity(ref, cEntity = it) })
@@ -151,7 +152,7 @@ class DEntity(
 
   @Suppress("UNCHECKED_CAST")
   private fun SRelation.linkTranslate(): LinkData {
-    val value = getValue(cEntity!!)!!
+    val value = getValue(cEntity!!) ?: return OneUnlink(RefID(null))
     return when (isCollection) {
       false -> if (traits.isEmpty()) OneLinkWithoutTraits(value as RefID) else OneLinkWithTraits(value as Traits)
       true -> if (traits.isEmpty()) ManyLinksWithoutTraits(value as List<RefID>) else ManyLinksWithTraits(value as List<Traits>)

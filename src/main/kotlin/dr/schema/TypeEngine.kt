@@ -25,13 +25,15 @@ private val DATE = typeOf<LocalDate?>()
 private val DATETIME = typeOf<LocalDateTime?>()
 
 object TypeEngine {
-  val ID = typeOf<RefID>()
+  val REFID_NULL = typeOf<RefID?>()
+
   val PACK = typeOf<Pack<*>>()
+  val PACK_NULL = typeOf<Pack<*>?>()
 
   val LIST = typeOf<List<*>>()
-  val LIST_ID = typeOf<List<RefID>>()
+  val LIST_REFID = typeOf<List<RefID>>()
 
-  val TRAITS = typeOf<Traits>()
+  val TRAITS_NULL = typeOf<Traits?>()
   val LIST_TRAITS = typeOf<List<Traits>>()
 
   private val typeToClass = mutableMapOf<FieldType, KClass<*>>().apply {
