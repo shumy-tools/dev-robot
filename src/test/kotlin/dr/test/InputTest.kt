@@ -115,10 +115,11 @@ class InputTest {
     val id = cInst.root.refID.id!!
     assert(cInst.all.size == 2)
     assert(cInst.all[0].toString() == "Insert(ADD) - {table=dr.test.CRefDetail, data={crefDetailText=value2}}")
-    assert(cInst.all[1].toString() == "Insert(CREATE) - {table=dr.test.BRefs, data={brefsText=value1, &dr.test.Trace@crefTraits=Trace(value=traceValue)}, refs={@ref-to-dr.test.CMaster-cref=${ids[0]}, @ref-to-dr.test.CMaster-crefTraits=${ids[1]}, @ref-to-dr.test.CRefDetail-crefDetail=${cInst.all[0].refID.id}}}")
+    assert(cInst.all[1].toString() == "Insert(CREATE) - {table=dr.test.BRefs, data={brefsText=value1, &dr.test.Trace@crefTraits=Trace(value=traceValue)}, refs={@ref-to-dr.test.CRefDetail-crefDetail=${cInst.all[0].refID.id}, @ref-to-dr.test.CMaster-cref=${ids[0]}, @ref-to-dr.test.CMaster-crefTraits=${ids[1]}}}")
     assert(server.query("dr.test.CRefDetail { * }").toString() == "[{@id=1, crefDetailText=value2}]")
     assert(server.query("dr.test.BRefs { *, crefDetail { * }, cref { * }, crefTraits { * }}").toString() == "[{@id=1, brefsText=value1, &dr.test.Trace@crefTraits=Trace(value=traceValue), crefDetail={@id=1, crefDetailText=value2}, cref={@id=${ids[0]}, cmasterText=value1}, crefTraits={@id=${ids[1]}, cmasterText=value2}}]")
 
+    // TODO: @id=1 is orphan. How to handle orphan entities? Mark as orphan?
     val uJson1 = """{
       "brefsText":"u-value1",
       "crefDetail":{
@@ -140,9 +141,8 @@ class InputTest {
     val uInst1 = server.update(BRefs::class, id, uJson1)
     assert(uInst1.all.size == 2)
     assert(uInst1.all[0].toString() == "Insert(ADD) - {table=dr.test.CRefDetail, data={crefDetailText=u-value2}}")
-    assert(uInst1.all[1].toString() == "Update(UPDATE) - {table=dr.test.BRefs, id=$id, data={brefsText=u-value1, &dr.test.Trace@crefTraits=Trace(value=traceUpdate)}, refs={@ref-to-dr.test.CMaster-cref=${ids[2]}, @ref-to-dr.test.CMaster-crefTraits=${ids[3]}, @ref-to-dr.test.CRefDetail-crefDetail=${uInst1.all[0].refID.id}}}")
+    assert(uInst1.all[1].toString() == "Update(UPDATE) - {table=dr.test.BRefs, id=$id, data={brefsText=u-value1, &dr.test.Trace@crefTraits=Trace(value=traceUpdate)}, refs={@ref-to-dr.test.CRefDetail-crefDetail=${uInst1.all[0].refID.id}, @ref-to-dr.test.CMaster-cref=${ids[2]}, @ref-to-dr.test.CMaster-crefTraits=${ids[3]}}}")
     assert(cInst.all[0].refID.id != uInst1.all[0].refID.id) // confirm that it's a new owned instance and not an update of the old one
-    // TODO: @id=1 is orphan. How to handle orphan entities? Mark as orphan?
     assert(server.query("dr.test.CRefDetail { * }").toString() == "[{@id=1, crefDetailText=value2}, {@id=2, crefDetailText=u-value2}]")
     assert(server.query("dr.test.BRefs { *, crefDetail { * }, cref { * }, crefTraits { * }}").toString() == "[{@id=1, brefsText=u-value1, &dr.test.Trace@crefTraits=Trace(value=traceUpdate), crefDetail={@id=2, crefDetailText=u-value2}, cref={@id=${ids[2]}, cmasterText=value3}, crefTraits={@id=${ids[3]}, cmasterText=value4}}]")
 
@@ -373,7 +373,7 @@ class InputTest {
     assert(cInst3.all.size == 3)
     assert(cInst3.all[0].toString() == "Insert(ADD) - {table=dr.test.OwnedSuperUser, data={ownedAlias=Pedro, @type=dr.test.OwnedOperUser}}")
     assert(cInst3.all[1].toString() == "Insert(CREATE) - {table=dr.test.OwnedOperUser, data={ownedOperProp=PedroOperProp}, refs={@super=1}}")
-    assert(cInst3.all[2].toString() == "Insert(CREATE) - {table=dr.test.RefsToPack, refs={@ref-to-dr.test.SuperUser-admin=$id1, @ref-to-dr.test.OperUser-oper=${cInst2.all[1].refID.id}, @ref-to-dr.test.OwnedSuperUser-ownedAdmin=${cInst3.all[0].refID.id}}}")
+    assert(cInst3.all[2].toString() == "Insert(CREATE) - {table=dr.test.RefsToPack, refs={@ref-to-dr.test.OwnedSuperUser-ownedAdmin=${cInst3.all[0].refID.id}, @ref-to-dr.test.SuperUser-admin=$id1, @ref-to-dr.test.OperUser-oper=${cInst2.all[1].refID.id}}}")
     assert(server.query("dr.test.RefsToPack { @id, ownedAdmin { * }, admin { alias }, oper { operProp, @super { alias } }}").toString() == "[{@id=1, ownedAdmin={@id=1, ownedAlias=Pedro, @type=dr.test.OwnedOperUser}, admin={@id=$id1, alias=Alex}, oper={@id=1, operProp=MarioOperProp, @super={@id=$id2, alias=Mario}}}]")
 
     val cJson4 = """{

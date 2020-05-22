@@ -48,7 +48,7 @@ class InstructionBuilder(private val tables: Tables) {
     for (item in tail) {
       val topEntity = item.superRef!!.schema
       topInst = Insert(item.refID, tables.get(item.schema), CREATE).apply {
-        putRef(TSuperRef(topEntity), topInst)
+        putRef(TSuperRef(topEntity), topInst.refID)
         val (subTopInclude, subBottomInclude) = processUnpackedEntity(item, this)
         allInst.addAll(subTopInclude)
         allInst.add(this)
@@ -82,7 +82,7 @@ class InstructionBuilder(private val tables: Tables) {
           // A ref_<rel> --> B
           val (root, all) = addEntity(rValue.value)
           topInclude.addAll(all)
-          topInst.putRef(TDirectRef(entity.schema, oRef.schema), root)
+          topInst.putRef(TDirectRef(entity.schema, oRef.schema), root.refID)
           topInst.putOutput(oRef.name, root.output)
         }
 
@@ -96,7 +96,7 @@ class InstructionBuilder(private val tables: Tables) {
           }
         } else {
           // A ref_<rel> --> B
-          topInst.putResolvedRef(TDirectRef(entity.schema, oRef.schema), RefID())
+          topInst.putRef(TDirectRef(entity.schema, oRef.schema), RefID())
         }
       }
     }
@@ -110,7 +110,7 @@ class InstructionBuilder(private val tables: Tables) {
         is OneAdd -> {
           val (root, all) = addEntity(rValue.value)
           bottomInclude.addAll(all)
-          root.putRef(TInverseRef(entity.schema, oCol.schema), topInst)
+          root.putRef(TInverseRef(entity.schema, oCol.schema), topInst.refID)
           cOutput.add(root.output)
         }
 
@@ -118,21 +118,21 @@ class InstructionBuilder(private val tables: Tables) {
           rValue.values.forEach {
             val (root, all) = addEntity(it)
             bottomInclude.addAll(all)
-            root.putRef(TInverseRef(entity.schema, oCol.schema), topInst)
+            root.putRef(TInverseRef(entity.schema, oCol.schema), topInst.refID)
             cOutput.add(root.output)
           }
         }
 
         is OneRemove -> {
           bottomInclude.add(Update(rValue.ref, tables.get(oCol.schema.ref), ActionType.REMOVE).apply {
-            putResolvedRef(TInverseRef(entity.schema, oCol.schema), RefID())
+            putRef(TInverseRef(entity.schema, oCol.schema), RefID())
           })
         }
 
         is ManyRemove -> {
           rValue.refs.forEach {
             bottomInclude.add(Update(it, tables.get(oCol.schema.ref), ActionType.REMOVE).apply {
-              putResolvedRef(TInverseRef(entity.schema, oCol.schema), RefID())
+              putRef(TInverseRef(entity.schema, oCol.schema), RefID())
             })
           }
         }
@@ -143,15 +143,15 @@ class InstructionBuilder(private val tables: Tables) {
     for (lRef in entity.allLinkedReferences) {
       // A ref_<rel> --> B
       when (val rValue = lRef.value) {
-        is OneLinkWithoutTraits -> topInst.putResolvedRef(TDirectRef(entity.schema, lRef.schema), rValue.ref)
+        is OneLinkWithoutTraits -> topInst.putRef(TDirectRef(entity.schema, lRef.schema), rValue.ref)
 
         is OneLinkWithTraits -> {
-          topInst.putResolvedRef(TDirectRef(entity.schema, lRef.schema), rValue.ref.id)
+          topInst.putRef(TDirectRef(entity.schema, lRef.schema), rValue.ref.id)
           unwrapTraits(lRef.schema, rValue.ref.traits, topInst)
         }
 
         is OneUnlink -> {
-          topInst.putResolvedRef(TDirectRef(entity.schema, lRef.schema), RefID())
+          topInst.putRef(TDirectRef(entity.schema, lRef.schema), RefID())
           lRef.schema.traits.values.forEach {
             topInst.putData(TEmbedded(lRef.schema, it), null)
           }
@@ -195,13 +195,13 @@ class InstructionBuilder(private val tables: Tables) {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
       Update(link, tables.get(sRelation.ref), LINK).apply {
-        putRef(TInverseRef(entity.schema, sRelation), topInst)
+        putRef(TInverseRef(entity.schema, sRelation), topInst.refID)
       }
     } else {
       // A <-- [inv ref] --> B
       Insert(RefID(), tables.get(entity.schema, sRelation), LINK).apply {
-        putResolvedRef(TDirectRef(sRelation.ref, sRelation, false), link)
-        putRef(TInverseRef(entity.schema, sRelation, false), topInst)
+        putRef(TDirectRef(sRelation.ref, sRelation, false), link)
+        putRef(TInverseRef(entity.schema, sRelation, false), topInst.refID)
       }
     }
   }
@@ -210,13 +210,13 @@ class InstructionBuilder(private val tables: Tables) {
     return if (sRelation.isUnique && sRelation.traits.isEmpty()) {
       // A <-- inv_<A>_<rel> B
       Update(link, tables.get(sRelation.ref), UNLINK).apply {
-        putResolvedRef(TInverseRef(entity.schema, sRelation), RefID())
+        putRef(TInverseRef(entity.schema, sRelation), RefID())
       }
     } else {
       // A <-- [inv ref] --> B
       Delete(RefID(), tables.get(entity.schema, sRelation), UNLINK).apply {
-        putResolvedRef(TDirectRef(sRelation.ref, sRelation, false), link)
-        putRef(TInverseRef(entity.schema, sRelation, false), topInst)
+        putRef(TDirectRef(sRelation.ref, sRelation, false), link)
+        putRef(TInverseRef(entity.schema, sRelation, false), topInst.refID)
       }
     }
   }
