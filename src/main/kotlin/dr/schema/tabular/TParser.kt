@@ -92,7 +92,7 @@ class TParser(private val schema: Schema) {
       sRelation.ref.getOrCreateTable()
       STable(this, sRelation).also {
         tables[it.name] = it
-        it.addProperty(TID)
+        //it.addProperty(TID)
         it.addRef(TInverseRef(this, sRelation, false))
         it.addRef(TDirectRef(sRelation.ref, sRelation, false))
         topTable.addManyToMany(sRelation.name, it, sRelation.ref)

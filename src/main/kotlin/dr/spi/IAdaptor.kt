@@ -1,7 +1,7 @@
 package dr.spi
 
-import dr.query.QTree
 import dr.io.Instructions
+import dr.query.QTree
 import dr.schema.tabular.Tables
 
 interface IAdaptor {

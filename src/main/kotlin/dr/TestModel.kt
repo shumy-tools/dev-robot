@@ -1,7 +1,6 @@
 package dr
 
 import dr.schema.*
-import dr.state.Machine
 import java.time.LocalDateTime
 
 // reusable constraint check

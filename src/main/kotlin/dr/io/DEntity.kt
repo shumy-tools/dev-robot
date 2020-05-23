@@ -1,5 +1,6 @@
 package dr.io
 
+import dr.JsonParser
 import dr.base.History
 import dr.schema.*
 import dr.schema.tabular.*

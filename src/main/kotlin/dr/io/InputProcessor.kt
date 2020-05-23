@@ -2,6 +2,7 @@ package dr.io
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ArrayNode
+import dr.JsonParser
 import dr.schema.*
 import dr.schema.tabular.TYPE
 import java.time.LocalDate

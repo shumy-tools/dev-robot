@@ -1,7 +1,9 @@
 package dr
 
 import dr.ctx.Session
-import dr.io.*
+import dr.io.InputProcessor
+import dr.io.InputService
+import dr.io.InstructionBuilder
 import dr.query.QueryService
 import dr.schema.RefID
 import dr.schema.SEntity

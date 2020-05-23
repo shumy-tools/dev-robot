@@ -1,8 +1,8 @@
 package dr.test
 
-import dr.base.User
-import dr.base.Role
 import dr.adaptor.SQLAdaptor
+import dr.base.Role
+import dr.base.User
 import dr.schema.SParser
 import org.junit.FixMethodOrder
 import org.junit.Test
@@ -54,7 +54,7 @@ private val roles = createRoles()
 private val users = createUsers()
 
 @FixMethodOrder
-class StateMachineTest {
+class MachineTest {
   @Test fun testFirstState() {
     val cJson = """{
       "name":"My Name"
@@ -69,7 +69,7 @@ class StateMachineTest {
     assert(cInst.all[3].toString() == "Insert(CREATE) - {table=dr.test.RefToMEntity, data={alias=m-alias}, refs={@ref-to-dr.test.MEntity-to=$id}}")
 
     //println(server.query("dr.test.RefToMEntity { *, to { * } }"))
-    assert(server.query("dr.test.MEntity { *, @history { state } }").toString() == "[{@id=$id, @state=START, name=My Name, @history=[{@id=1, @history={@id=1, state=START}}]}]")
+    assert(server.query("dr.test.MEntity { *, @history { state } }").toString() == "[{@id=$id, @state=START, name=My Name, @history=[{@id=1, state=START}]}]")
     assert(server.query("dr.test.RefToMEntity { *, to { * } }").toString() == "[{@id=1, alias=m-alias, to={@id=$id, @state=START, name=My Name}}]")
   }
 }

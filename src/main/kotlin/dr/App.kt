@@ -1,11 +1,8 @@
 package dr
 
 import dr.adaptor.SQLAdaptor
-import dr.io.JsonParser
 import dr.schema.SParser
 import dr.schema.Traits
-import dr.schema.tabular.ID
-import dr.schema.tabular.TParser
 import dr.spi.IAuthorizer
 import dr.spi.IReadAccess
 import java.time.LocalDateTime
@@ -24,7 +21,7 @@ fun main(args: Array<String>) {
   }
 
   DrServer(schema, adaptor, TestAuthorizer()).also {
-    it.start(8080)
+    //it.start(8080)
     it.use {
       val adminID = create(Role("admin", 1))
       val operID = create(Role("oper", 2))
@@ -51,6 +48,10 @@ fun main(args: Array<String>) {
       create(User("Arnaldo", "mail@pt", listOf(Address("Germany", "Berlin", null)), listOf(
         Traits(adminID, Trace(LocalDateTime.now()))
       )))
+    }
+
+    it.use {
+      println(query("""dr.User | name == "Pedro" | { name, roles { name }}""").exec().rows)
     }
   }
 }

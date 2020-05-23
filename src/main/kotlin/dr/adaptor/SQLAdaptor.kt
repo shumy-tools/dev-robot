@@ -1,16 +1,15 @@
 package dr.adaptor
 
 import com.zaxxer.hikari.HikariDataSource
+import dr.JsonParser
 import dr.io.*
-import dr.io.Delete
-import dr.io.Insert
-import dr.io.Update
-import dr.query.*
+import dr.query.QTree
 import dr.schema.Schema
 import dr.schema.tabular.*
-import dr.schema.tabular.STable
 import dr.spi.IAdaptor
-import org.jooq.*
+import org.jooq.Constraint
+import org.jooq.SQLDialect
+import org.jooq.UpdateSetMoreStep
 import org.jooq.conf.RenderQuotedNames
 import org.jooq.conf.Settings
 import org.jooq.impl.DSL.*
@@ -46,6 +45,8 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
       allConstraints[tlb] = constraints
 
       var dbTable = db.createTable(table(tlb.sqlName()))
+
+      // set all properties
       for (prop in tlb.props.values) {
         if (prop.isUnique) constraints.add(unique(prop.name))
 
@@ -57,18 +58,23 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
         }
       }
 
+      // set all references
       for (ref in tlb.refs) {
         val rName = ref.fn(tlb)
         dbTable = dbTable.column(rName, SQLDataType.BIGINT.nullable(ref.isOptional))
 
-        if (ref.isUnique)
+        // add ref unique for non auxTable
+        if (tlb.sRelation == null && ref.isUnique)
           constraints.add(unique(rName))
 
         val fk = foreignKey(rName).references(table(ref.refTable.sqlName()))
         constraints.add(fk)
       }
 
-      val dbFinal = dbTable.constraint(primaryKey(ID))
+      // set primary key
+      val pk = if (tlb.sRelation == null) primaryKey(ID) else primaryKey(INV, REF)
+      val dbFinal = dbTable.constraint(pk)
+
       println(dbFinal.sql)
       dbFinal.execute()
     }

@@ -232,7 +232,7 @@ class QueryTest {
         assert(it.paths.toString() == "{name={}, roles={name={}}, address={location={}}}")
       }
       val res1 = query1.exec()
-      assert(res1.rows.toString() == "[{@id=2, name=Pedro, roles=[{@id=2, roles={@id=1, name=admin}}, {@id=3, roles={@id=2, name=oper}}, {@id=4, roles={@id=3, name=other}}]}]")
+      assert(res1.rows.toString() == "[{@id=2, name=Pedro, roles=[{@id=1, name=admin}, {@id=2, name=oper}, {@id=3, name=other}]}]")
 
       val query2 = query("""dr.test.User | address.location == "Gloria" | {
         name,
@@ -242,7 +242,7 @@ class QueryTest {
         assert(it.paths.toString() == "{name={}, roles={name={}}, address={location={}}}")
       }
       val res2 = query2.exec()
-      assert(res2.rows.toString() == "[{@id=2, name=Pedro, roles=[{@id=2, roles={@id=1, name=admin}}]}]")
+      assert(res2.rows.toString() == "[{@id=2, name=Pedro, roles=[{@id=1, name=admin}]}]")
 
       val query3 = query("""dr.test.User | address.location == "Aradas" | {
         name, 
@@ -252,7 +252,7 @@ class QueryTest {
         assert(it.paths.toString() == "{name={}, roles={&dr.test.Trace={}, name={}, ord={}}, address={location={}}}")
       }
       val res3 = query3.exec()
-      assert(res3.rows.toString() == "[{@id=4, name=Jose, roles=[{@id=6, &dr.test.Trace=Trace(value=Jose-oper-trait), roles={@id=3, name=other, ord=3}}]}]")
+      assert(res3.rows.toString() == "[{@id=4, name=Jose, roles=[{&dr.test.Trace=Trace(value=Jose-oper-trait), @id=3, name=other, ord=3}]}]")
 
       val query4 = query("""dr.test.User | roles.name == "admin" | {
         name

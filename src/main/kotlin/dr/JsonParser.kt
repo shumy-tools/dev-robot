@@ -1,4 +1,4 @@
-package dr.io
+package dr
 
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.core.TreeNode
@@ -7,8 +7,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import dr.io.*
 import kotlin.reflect.KClass
-import kotlin.reflect.full.primaryConstructor
 
 object JsonParser {
   private val mapper: ObjectMapper = jacksonObjectMapper()

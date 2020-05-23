@@ -1,12 +1,13 @@
 package dr.adaptor
 
-import dr.io.JsonParser
+import dr.JsonParser
 import dr.query.*
 import dr.schema.tabular.*
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
 import dr.spi.QRow
 import org.jooq.*
+import org.jooq.impl.DSL
 import org.jooq.impl.DSL.*
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -138,10 +139,13 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
 
   @Suppress("UNCHECKED_CAST")
   private fun STable.joinFields(selection: QSelect, prefix: String = MAIN, alias: String = "") {
-    val idField = if (prefix == MAIN) idFn(prefix) else idFn(prefix).`as`("$alias.$ID")
-    joinFields.add(idField as Field<Any>)
+    // only add ID if not an auxTable
+    if (sRelation == null) {
+      val idField = if (alias.isEmpty()) idFn(prefix) else idFn(prefix).`as`("$alias.$ID")
+      joinFields.add(idField as Field<Any>)
+    }
 
-    val fields = if (prefix == MAIN) dbFields(selection, prefix) else dbFields(selection, prefix).map { it.`as`("$alias.${it.name}") }
+    val fields = if (alias.isEmpty()) dbFields(selection, prefix) else dbFields(selection, prefix).map { it.`as`("$alias.${it.name}") }
     joinFields.addAll(fields)
 
     // order fields
@@ -154,7 +158,8 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     // add direct-ref fields
     val refs = dbOneToOne(selection)
     for (qRel in refs.keys) {
-      qRel.ref.joinFields(qRel.select, qRel.name, "$alias.${qRel.name}")
+      val sAlias = if (sRelation == null) "$alias.${qRel.name}" else alias // compact auxTable
+      qRel.ref.joinFields(qRel.select, qRel.name, sAlias)
     }
 
     // add @super fields
@@ -211,7 +216,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
 
   @Suppress("UNCHECKED_CAST")
   private fun STable.predicate(pred: QPredicate, params: MutableMap<String, Any>): Condition {
-    var sPrefix = sRelation?.name ?: MAIN // detect if it's an auxTree
+    var sPrefix = sRelation?.name ?: MAIN // detect if it's an auxTable
     var sName = "_null_"
     for ((i, qDeref) in pred.path.withIndex()) {
       when (qDeref.deref) {

@@ -2,7 +2,10 @@ package dr.io
 
 import dr.schema.ActionType
 import dr.schema.RefID
-import dr.schema.tabular.*
+import dr.schema.tabular.ID
+import dr.schema.tabular.STable
+import dr.schema.tabular.TProperty
+import dr.schema.tabular.TRef
 import java.util.*
 
 class Instructions(val all: MutableList<Instruction> = mutableListOf()) {
@@ -82,12 +85,12 @@ sealed class Instruction(val refID: RefID) {
 }
 
   class Insert(refID: RefID, override val table: STable, override val action: ActionType): Instruction(refID) {
-    init { putOutput(ID, null) } // reserve the first position for @id in the output
+    init { if (table.sRelation == null) putOutput(ID, null) } // reserve the first position for @id in the output
     override fun toString() = "Insert($action) - {table=${tableText()}${dataText()}${resolvedRefsText()}}"
   }
 
   class Update(refID: RefID, override val table: STable, override val action: ActionType): Instruction(refID) {
-    init { putOutput(ID, refID.id) }
+    init { if (table.sRelation == null) putOutput(ID, refID.id) }
     override fun toString() = "Update($action) - {table=${tableText()}, id=${refID.id}${dataText()}${resolvedRefsText()}}"
   }
 
