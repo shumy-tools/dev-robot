@@ -100,10 +100,10 @@ class InputProcessor(val schema: Schema) {
     return DEntity(RefID(id), type, mEntity = map)
   }
 
-  fun update(type: SEntity, id: Long, map: MutableMap<String, Any?>): DEntity {
+  fun update(type: SEntity, id: Long, map: Map<String, Any?>, ignoreInputConstraint: Boolean = false): DEntity {
     for (nName in map.keys) {
       val sFieldOrRelation = type.getFieldOrRelation(nName) ?: throw Exception("Property not found! - (${type.name}, ${nName})")
-      if (!sFieldOrRelation.isInput)
+      if (!ignoreInputConstraint && !sFieldOrRelation.isInput)
         throw Exception("Invalid input field! - (${type.name}, ${nName})")
 
       val value = map[nName]

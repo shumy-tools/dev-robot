@@ -3,6 +3,7 @@ package dr.spi
 import dr.io.Instructions
 import dr.query.QTree
 import dr.schema.tabular.Tables
+import kotlin.reflect.KProperty
 
 interface IAdaptor {
   val tables: Tables
@@ -19,7 +20,6 @@ typealias QRow = Map<String, Any?>
 
 interface IResult {
   val rows: List<QRow>
-
-  fun <T: Any> get(name: String): T
-  fun row(id: Long): QRow?
+  fun <R: Any> get(name: String): R?
+  fun <R: Any> get(prop: KProperty<R>): R? = get<R>(prop.name)
 }

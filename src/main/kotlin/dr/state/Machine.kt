@@ -4,26 +4,29 @@ import dr.base.User
 import dr.ctx.Context
 import dr.io.DEntity
 import dr.JsonParser
+import dr.base.History
 import dr.query.QueryService
 import dr.schema.RefID
 import dr.schema.SEntity
 import dr.schema.SMachine
 import dr.schema.Schema
+import dr.schema.tabular.HISTORY
 import dr.schema.tabular.ID
 import dr.schema.tabular.STATE
 import dr.spi.IQueryExecutor
+import dr.spi.QRow
+import java.time.LocalDateTime
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty
 import kotlin.reflect.KProperty1
 
-class UEntity<T: Any>(val id: Long, val data: MutableMap<String, Any?>) {
+const val CREATE = "CREATE"
+const val NEW_HISTORY = "NEW_$HISTORY"
+
+class UEntity<T: Any>(val id: Long, val data: Map<String, Any?>) {
   @Suppress("UNCHECKED_CAST")
   fun <R: Any?> get(prop: KProperty1<T, R>): R {
     return data[prop.name] as R
-  }
-
-  fun <R: Any?> set(prop: KProperty1<T, R>, value: R) {
-    data[prop.name] = value
   }
 
   override fun toString(): String {
@@ -43,12 +46,15 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
 
   private lateinit var schema: Schema
   internal lateinit var sMachine: SMachine
+
   private lateinit var stateQuery: IQueryExecutor
+  private lateinit var historyQuery: IQueryExecutor
 
   internal fun init(allSchema: Schema, sEntity: SEntity, qService: QueryService) {
     schema = allSchema
     sMachine = sEntity.machine!!
     stateQuery = qService.compile("${sEntity.name} | $ID == ?id | { $STATE }").first
+    historyQuery = qService.compile("${sEntity.name} | $ID == ?id | { $ID, $HISTORY { * } }").first
   }
 
   internal fun include(evtType: KClass<out E>, from: S, after: After<out E>) {
@@ -62,37 +68,77 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
 
   @Suppress("UNCHECKED_CAST")
   internal fun fireEvent(id: Long, inEvt: Any) {
-    Context.refID = RefID(id)
-      val event = inEvt as E
-      val state = stateQuery.exec("id" to id).get<String>(STATE)
+    Context.session.vars[ID] = RefID(id)
+    val event = inEvt as E
+    val evtKClass = event.javaClass.kotlin
 
-      val states = events.getValue(event.javaClass.kotlin)
-      val then = states[state] ?: throw Exception("StateMachine transit '$event':'$state' not found! - (${javaClass.kotlin.qualifiedName})")
-      then.onEvent?.invoke(EventActions(state, event))
-    Context.refID = RefID()
+    val state = stateQuery.exec("id" to id).get<String>(STATE)!!
+    Context.session.vars[STATE] = state
+
+    val states = events.getValue(evtKClass)
+    val then = states[state] ?: throw Exception("StateMachine transition '$state -> ${evtKClass.qualifiedName}' not found! - (${javaClass.canonicalName})")
+
+    val evtJson = JsonParser.write(inEvt)
+    val newHistory = History(LocalDateTime.now(), evtJson, state, then.to.name)
+    Context.session.vars[NEW_HISTORY] = newHistory
+    then.onEvent?.invoke(EventActions(state, event))
   }
 
   @Suppress("UNCHECKED_CAST")
   internal fun fireCreate(entity: DEntity) {
-    Context.refID = entity.refID
-      onCreate?.invoke(entity.refID, entity.cEntity as T)
-      val enter = enter.getValue(entity.state)
-      enter.invoke(EnterActions(entity.state))
-    Context.refID = RefID()
+    Context.session.vars[ID] = entity.refID
+    onCreate?.invoke(entity.refID, entity.cEntity as T)
+    val enter = enter.getValue(entity.state)
+    enter.invoke(EnterActions(entity.state))
   }
 
   internal fun fireUpdate(entity: DEntity) {
-    Context.refID = entity.refID
-      onUpdate?.invoke(UEntity(entity.refID.id!!, entity.mEntity!!))
-    Context.refID = RefID()
+    Context.session.vars[ID] = entity.refID
+    onUpdate?.invoke(UEntity(entity.refID.id!!, entity.mEntity!!))
   }
 
-  inner class History internal constructor(private val state: String, private val evtType: KClass<out E>? = null) {
-    inner class Record<EX: E>(val event: EX, private val data: Map<String, Any>) {
-      @Suppress("UNCHECKED_CAST")
-      fun <T> get(key: String): T {
-        return data.getValue(key) as T
+  inner class SHistory internal constructor(private val state: String, private val evtType: KClass<out E>? = null) {
+    inner class Record<EX: E>(private val map: QRow) {
+      val ts: LocalDateTime by lazy {
+        map.getValue(History::ts.name) as LocalDateTime
       }
+
+      @Suppress("UNCHECKED_CAST")
+      val event: EX? by lazy {
+        val value = map.getValue(History::evt.name) as String?
+        value?.let {
+          val evtType = sMachine.events.getValue(value)
+          JsonParser.read(value, evtType) as EX
+        }
+      }
+
+      @Suppress("UNCHECKED_CAST")
+      val from: S? by lazy {
+        val value = map.getValue(History::from.name) as String?
+        value?.let { sMachine.states.getValue(value) as S }
+      }
+
+      @Suppress("UNCHECKED_CAST")
+      val to: S by lazy {
+        val value = map.getValue(History::to.name) as String
+        sMachine.states.getValue(value) as S
+      }
+
+      val data: Map<String, Any> by lazy {
+        val value = map.getValue(History::data.name) as String
+        JsonParser.readMap(value)
+      }
+
+      override fun toString() = "Record(ts=$ts, event=$event, from=$from, to=$to, data=$data)"
+    }
+
+    val all: List<Machine<T, S, E>.SHistory.Record<E>>
+    init {
+      val id = (Context.session.vars[ID] as RefID).id
+
+      @Suppress("UNCHECKED_CAST")
+      val history = (if (id != null) historyQuery.exec("id" to id).get<Any>(HISTORY)!! else emptyList<Any>()) as List<QRow>
+      all = history.map { Record<E>(it) }
     }
 
     fun set(key: String, value: Any) {
@@ -122,7 +168,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   }
 
   open inner class EnterActions internal constructor(private val state: String, private val evtType: KClass<out E>? = null) {
-    val history = History(state, evtType)
+    val history by lazy { SHistory(state, evtType) }
 
     fun open(prop: KProperty1<T, Any>): For {
       return For(For.PropertyState.OPEN, prop)
@@ -136,7 +182,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     open infix fun check(predicate: () -> Boolean) {
       checkOrder++
       if (!predicate())
-        throw Exception("State machine failed on check constraint! - (enter $state, check $checkOrder)")
+        throw Exception("State machine failed on check constraint! - (enter $state, check $checkOrder for ${this@Machine.javaClass.canonicalName})")
     }
   }
 
@@ -144,11 +190,11 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     override infix fun check(predicate: () -> Boolean) {
       checkOrder++
       if (!predicate())
-        throw Exception("State machine failed on check constraint! - ($event -> $state, check $checkOrder)")
+        throw Exception("State machine failed on check constraint! - ($state -> ${event.javaClass.simpleName}, check $checkOrder for ${this@Machine.javaClass.canonicalName})")
     }
   }
 
-  inner class After<EX: E> internal constructor(private val to: S, private val users: Set<String>, private val roles: Set<String>) {
+  inner class After<EX: E> internal constructor(internal val to: S, private val users: Set<String>, private val roles: Set<String>) {
     var onEvent: (EventActions<out E>.() -> Unit)? = null
       private set
 
@@ -206,5 +252,10 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   fun update(id: Long, type: KClass<out Any>, data: Map<KProperty<Any>, Any?>) {
     val sEntity = schema.find(type)
     Context.update(id, sEntity, data)
+  }
+
+  fun action(id: Long, type: KClass<out Any>, evt: Any) {
+    val sEntity = schema.find(type)
+    Context.action(id, sEntity, evt)
   }
 }

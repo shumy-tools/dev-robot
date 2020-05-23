@@ -177,7 +177,7 @@ private fun KClass<*>.processStateMachine(tmpSchema: TempSchema, sEntity: SEntit
       it.parameters.isEmpty()
     } ?: throw Exception("StateMachine '${machine.value.qualifiedName}' requires an empty default constructor!")
 
-    val states = stateClass.java.enumConstants.map { it.toString() }
+    val states = stateClass.java.enumConstants.map { it.toString() to (it as Enum<*>) }.toMap()
     val events = evtClass.sealedSubclasses.map { it.qualifiedName!! to it }.toMap()
 
     if (states.isEmpty())

@@ -15,6 +15,7 @@ import dr.spi.IReadAccess
 import dr.spi.QRow
 import dr.state.Machine
 import kotlin.reflect.KClass
+import kotlin.reflect.KProperty
 import kotlin.reflect.full.createInstance
 
 class TestAuthorizer: IAuthorizer {
@@ -39,14 +40,19 @@ class TestServer(private val schema: Schema, adaptor: IAdaptor) {
     Context.clear()
   }
 
-  fun create(type: KClass<out Any>, json: String): Instructions {
+  fun create(entType: KClass<out Any>, json: String): Instructions {
     Context.session = Session(iService, qService)
-    return iService.initCreate(type, json)
+    return iService.initCreate(entType, json)
   }
 
-  fun update(type: KClass<out Any>, id: Long, json: String): Instructions {
+  fun update(entType: KClass<out Any>, id: Long, json: String): Instructions {
     Context.session = Session(iService, qService)
-    return iService.initUpdate(type, id, json)
+    return iService.initUpdate(entType, id, json)
+  }
+
+  fun action(entType: KClass<out Any>, evtType: KClass<out Any>, id: Long, json: String): Instructions {
+    Context.session = Session(iService, qService)
+    return iService.initAction(entType, evtType, id, json)
   }
 
   fun query(query: String): List<QRow> {

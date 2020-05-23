@@ -218,7 +218,7 @@ class Schema {
     override fun toString() = name
   }
 
-    class SMachine(val clazz: KClass<out Machine<*, *, *>>, val states: List<String>, val events: Map<String, KClass<out Any>>) {
+    class SMachine(val clazz: KClass<out Machine<*, *, *>>, val states: Map<String, Enum<*>>, val events: Map<String, KClass<out Any>>) {
       val name: String
         get() = clazz.qualifiedName!!
 

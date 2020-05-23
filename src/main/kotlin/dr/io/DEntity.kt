@@ -8,7 +8,7 @@ import dr.schema.tabular.*
 class DEntity(
   val refID: RefID,
   val schema: SEntity,
-  internal val mEntity: MutableMap<String, Any?>? = null,
+  internal val mEntity: Map<String, Any?>? = null,
   internal val cEntity: Any? = null    // may be Pack<Any>
 ) {
   private val sv = mutableMapOf<String, Any>() // TYPE, STATE, HISTORY, SUPER
@@ -116,7 +116,7 @@ class DEntity(
   }
 
   internal fun setHistory(dHistory: DEntity) {
-    sv[STATE] = (dHistory.cEntity as History).state
+    sv[STATE] = (dHistory.cEntity as History).to
     sv[HISTORY] = OneLinkWithoutTraits(dHistory.refID)
   }
 

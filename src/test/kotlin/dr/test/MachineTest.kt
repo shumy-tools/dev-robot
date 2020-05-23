@@ -3,7 +3,11 @@ package dr.test
 import dr.adaptor.SQLAdaptor
 import dr.base.Role
 import dr.base.User
+import dr.io.Instruction
 import dr.schema.SParser
+import dr.schema.tabular.HISTORY
+import dr.schema.tabular.STATE
+import dr.spi.QRow
 import org.junit.FixMethodOrder
 import org.junit.Test
 
@@ -53,6 +57,14 @@ private fun createUsers(): List<Long> {
 private val roles = createRoles()
 private val users = createUsers()
 
+private fun Instruction.checkHistory(evt: String?, from: String?, to: String) {
+  val fields = data.mapKeys { it.key.name }
+  assert(table.name == "dr.base.History")
+  assert(fields["evt"] == evt)
+  assert(fields["from"] == from)
+  assert(fields["to"] == to)
+}
+
 @FixMethodOrder
 class MachineTest {
   @Test fun testFirstState() {
@@ -60,16 +72,40 @@ class MachineTest {
       "name":"My Name"
     }"""
     val cInst = server.create(MEntity::class, cJson)
-    cInst.all.forEach { println(it) }
     val id = cInst.root.refID.id!!
     assert(cInst.all.size == 4)
-    //assert(cInst.all[0].toString() == "Insert(CREATE) - {table=dr.base.History, data={ts=2020-05-22T23:03:55.379, state=START}}")
+    cInst.all[0].checkHistory(null, null, "START")
     assert(cInst.all[1].toString() == "Insert(CREATE) - {table=dr.test.MEntity, data={@state=START, name=My Name}}")
     assert(cInst.all[2].toString() == "Insert(LINK) - {table=dr.test.MEntity-history, refs={@ref-to-dr.base.History=1, @inv-to-dr.test.MEntity=1}}")
-    assert(cInst.all[3].toString() == "Insert(CREATE) - {table=dr.test.RefToMEntity, data={alias=m-alias}, refs={@ref-to-dr.test.MEntity-to=$id}}")
+    assert(cInst.all[3].toString() == "Insert(CREATE) - {table=dr.test.RefToMEntity, data={alias=a-create}, refs={@ref-to-dr.test.MEntity-to=$id}}")
+    assert(server.query("dr.test.MEntity { *, @history { evt, from, to } }").toString() == "[{@id=$id, @state=START, name=My Name, @history=[{@id=1, evt=null, from=null, to=START}]}]")
+    assert(server.query("dr.test.RefToMEntity { *, to { * } }").toString() == "[{@id=1, alias=a-create, to={@id=$id, @state=START, name=My Name}}]")
+
+    val uJson = """{
+      "name":"No Name"
+    }"""
+    val uInst = server.update(MEntity::class, id, uJson)
+    //uInst.all.forEach { println(it) }
+    assert(uInst.all.size == 2)
+    assert(uInst.all[0].toString() == "Update(UPDATE) - {table=dr.test.MEntity, id=$id, data={name=No Name}}")
+    assert(uInst.all[1].toString() == "Insert(CREATE) - {table=dr.test.RefToMEntity, data={alias=a-update}, refs={@ref-to-dr.test.MEntity-to=$id}}")
+    assert(server.query("dr.test.RefToMEntity { *, to { * } }").toString() == "[{@id=1, alias=a-create, to={@id=$id, @state=START, name=No Name}}, {@id=2, alias=a-update, to={@id=$id, @state=START, name=No Name}}]")
 
     //println(server.query("dr.test.RefToMEntity { *, to { * } }"))
-    assert(server.query("dr.test.MEntity { *, @history { state } }").toString() == "[{@id=$id, @state=START, name=My Name, @history=[{@id=1, state=START}]}]")
-    assert(server.query("dr.test.RefToMEntity { *, to { * } }").toString() == "[{@id=1, alias=m-alias, to={@id=$id, @state=START, name=My Name}}]")
+  }
+
+  @Test fun testAction() {
+    val eJson = """{
+      "value":"#try-submit"
+    }"""
+    val eInst = server.action(MEntity::class, MEntityMachine.Event.Submit::class, 1, eJson)
+    //eInst.all.forEach { println(it) }
+    assert(eInst.all.size == 3)
+    eInst.all[0].checkHistory("""{"value":"#try-submit"}""", "START", "VALIDATE")
+    assert(eInst.all[1].toString() == "Update(UPDATE) - {table=dr.test.MEntity, id=1, data={@state=VALIDATE}}")
+    assert(eInst.all[2].toString() == "Insert(LINK) - {table=dr.test.MEntity-history, refs={@ref-to-dr.base.History=2, @inv-to-dr.test.MEntity=1}}")
+
+    //println(server.query("dr.test.MEntity | @id == 1 | { @state, @history { evt, from, to } }"))
+    assert(server.query("dr.test.MEntity | @id == 1 | { @state, @history { evt, from, to } }").toString() == """[{@id=1, @state=VALIDATE, @history=[{@id=1, evt=null, from=null, to=START}, {@id=2, evt={"value":"#try-submit"}, from=START, to=VALIDATE}]}]""")
   }
 }

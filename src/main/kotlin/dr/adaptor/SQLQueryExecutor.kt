@@ -10,6 +10,7 @@ import org.jooq.*
 import org.jooq.impl.DSL
 import org.jooq.impl.DSL.*
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.reflect.KProperty
 
 class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, private val qTree: QTree): IQueryExecutor {
   private val qTable = table(qTree.table.sqlName()).asTable(MAIN)
@@ -289,10 +290,12 @@ class SQLResult(private val tables: Tables): IResult {
   override val rows
     get() = rowsWithIds.values.toList()
 
-  override fun row(id: Long) = rowsWithIds[id]
+  @Suppress("UNCHECKED_CAST")
+  override fun <R: Any> get(name: String): R? {
+    if (rows.size != 1)
+      throw Exception("Expecting a single result to use 'get' function!")
 
-  override fun <T : Any> get(name: String): T {
-    TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+    return rows.first()[name] as R?
   }
 
   @Suppress("UNCHECKED_CAST")

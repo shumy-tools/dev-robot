@@ -53,12 +53,12 @@ class QueryExecutorWithValidator(private val native: IQueryExecutor, parameters:
 
   private fun check(table: STable, field: String, comp: CompType, value: Any) = when (field) {
     // TODO: insert other special types
-    ID -> fieldTable.check(FieldType.LONG, comp, value.javaClass.kotlin)
-    TYPE -> fieldTable.check(FieldType.TEXT, comp, value.javaClass.kotlin)
+    ID -> fieldTable.check(FieldType.LONG, comp, value)
+    TYPE -> fieldTable.check(FieldType.TEXT, comp, value)
     else -> {
       val eField = table.sEntity.fields[field] ?: (table.sEntity.rels[field] ?: throw Exception("Bug! Expected '${table.name}.$field'"))
       if (eField is SField) {
-        fieldTable.check(eField.type, comp, value.javaClass.kotlin)
+        fieldTable.check(eField.type, comp, value)
       } else {
         // TODO: check relation constraints?
         false
@@ -76,7 +76,13 @@ private class CompatibilityTable {
     second[compType] = argType
   }
 
-  fun check(fieldType: FieldType, compType: CompType, argType: KClass<*>): Boolean {
+  fun check(fieldType: FieldType, compType: CompType, value: Any): Boolean {
+    val argType = when (value) {
+      is Int -> Long::class
+      is Float -> Double::class
+      else -> value.javaClass.kotlin
+    }
+
     val testType = table[fieldType]?.get(compType)
     return if (testType != null) argType.isSubclassOf(testType) else false
   }
@@ -87,14 +93,10 @@ private class CompatibilityTable {
 private val fieldTable = CompatibilityTable().apply {
   // ==
   set(FieldType.TEXT, CompType.EQUAL, String::class)
-  set(FieldType.INT, CompType.EQUAL, Int::class)
   set(FieldType.INT, CompType.EQUAL, Long::class)
   set(FieldType.LONG, CompType.EQUAL, Long::class)
-  set(FieldType.LONG, CompType.EQUAL, Int::class)
-  set(FieldType.FLOAT, CompType.EQUAL, Float::class)
   set(FieldType.FLOAT, CompType.EQUAL, Double::class)
   set(FieldType.DOUBLE, CompType.EQUAL, Double::class)
-  set(FieldType.DOUBLE, CompType.EQUAL, Float::class)
   set(FieldType.BOOL, CompType.EQUAL, Boolean::class)
   set(FieldType.TIME, CompType.EQUAL, LocalTime::class)
   set(FieldType.DATE, CompType.EQUAL, LocalDate::class)
@@ -102,67 +104,47 @@ private val fieldTable = CompatibilityTable().apply {
 
   // !=
   set(FieldType.TEXT, CompType.DIFFERENT, String::class)
-  set(FieldType.INT, CompType.DIFFERENT, Int::class)
   set(FieldType.INT, CompType.DIFFERENT, Long::class)
   set(FieldType.LONG, CompType.DIFFERENT, Long::class)
-  set(FieldType.LONG, CompType.DIFFERENT, Int::class)
-  set(FieldType.FLOAT, CompType.DIFFERENT, Float::class)
   set(FieldType.FLOAT, CompType.DIFFERENT, Double::class)
   set(FieldType.DOUBLE, CompType.DIFFERENT, Double::class)
-  set(FieldType.DOUBLE, CompType.DIFFERENT, Float::class)
   set(FieldType.BOOL, CompType.DIFFERENT, Boolean::class)
   set(FieldType.TIME, CompType.DIFFERENT, LocalTime::class)
   set(FieldType.DATE, CompType.DIFFERENT, LocalDate::class)
   set(FieldType.DATETIME, CompType.DIFFERENT, LocalDateTime::class)
 
   // >
-  set(FieldType.INT, CompType.MORE, Int::class)
   set(FieldType.INT, CompType.MORE, Long::class)
   set(FieldType.LONG, CompType.MORE, Long::class)
-  set(FieldType.LONG, CompType.MORE, Int::class)
-  set(FieldType.FLOAT, CompType.MORE, Float::class)
   set(FieldType.FLOAT, CompType.MORE, Double::class)
   set(FieldType.DOUBLE, CompType.MORE, Double::class)
-  set(FieldType.DOUBLE, CompType.MORE, Float::class)
   set(FieldType.TIME, CompType.MORE, LocalTime::class)
   set(FieldType.DATE, CompType.MORE, LocalDate::class)
   set(FieldType.DATETIME, CompType.MORE, LocalDateTime::class)
 
   // <
-  set(FieldType.INT, CompType.LESS, Int::class)
   set(FieldType.INT, CompType.LESS, Long::class)
   set(FieldType.LONG, CompType.LESS, Long::class)
-  set(FieldType.LONG, CompType.LESS, Int::class)
-  set(FieldType.FLOAT, CompType.LESS, Float::class)
   set(FieldType.FLOAT, CompType.LESS, Double::class)
   set(FieldType.DOUBLE, CompType.LESS, Double::class)
-  set(FieldType.DOUBLE, CompType.LESS, Float::class)
   set(FieldType.TIME, CompType.LESS, LocalTime::class)
   set(FieldType.DATE, CompType.LESS, LocalDate::class)
   set(FieldType.DATETIME, CompType.LESS, LocalDateTime::class)
 
   // >=
-  set(FieldType.INT, CompType.MORE_EQ, Int::class)
   set(FieldType.INT, CompType.MORE_EQ, Long::class)
   set(FieldType.LONG, CompType.MORE_EQ, Long::class)
-  set(FieldType.LONG, CompType.MORE_EQ, Int::class)
-  set(FieldType.FLOAT, CompType.MORE_EQ, Float::class)
   set(FieldType.FLOAT, CompType.MORE_EQ, Double::class)
   set(FieldType.DOUBLE, CompType.MORE_EQ, Double::class)
-  set(FieldType.DOUBLE, CompType.MORE_EQ, Float::class)
   set(FieldType.TIME, CompType.MORE_EQ, LocalTime::class)
   set(FieldType.DATE, CompType.MORE_EQ, LocalDate::class)
   set(FieldType.DATETIME, CompType.MORE_EQ, LocalDateTime::class)
 
   // <=
-  set(FieldType.INT, CompType.LESS_EQ, Int::class)
   set(FieldType.INT, CompType.LESS_EQ, Long::class)
   set(FieldType.LONG, CompType.LESS_EQ, Long::class)
-  set(FieldType.LONG, CompType.LESS_EQ, Int::class)
-  set(FieldType.FLOAT, CompType.LESS_EQ, Float::class)
   set(FieldType.FLOAT, CompType.LESS_EQ, Double::class)
   set(FieldType.DOUBLE, CompType.LESS_EQ, Double::class)
-  set(FieldType.DOUBLE, CompType.LESS_EQ, Float::class)
   set(FieldType.TIME, CompType.LESS_EQ, LocalTime::class)
   set(FieldType.DATE, CompType.LESS_EQ, LocalDate::class)
   set(FieldType.DATETIME, CompType.LESS_EQ, LocalDateTime::class)

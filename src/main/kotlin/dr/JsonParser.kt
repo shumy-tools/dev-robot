@@ -11,7 +11,7 @@ import dr.io.*
 import kotlin.reflect.KClass
 
 object JsonParser {
-  private val mapper: ObjectMapper = jacksonObjectMapper()
+  val mapper: ObjectMapper = jacksonObjectMapper()
     .registerModule(JavaTimeModule())
     .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
     .setSerializationInclusion(JsonInclude.Include.NON_NULL)
@@ -32,6 +32,8 @@ object JsonParser {
   }
 
   fun write(value: Any): String = mapper.writeValueAsString(value)
+  fun <T: Any> read(json: String, type: KClass<out T>) = mapper.readValue(json, type.java)
+  inline fun <reified T: Any> read(json: String) = mapper.readValue(json, T::class.java)
 
   fun readTree(json: String): JsonNode = mapper.readTree(json)
   fun <T: Any> readNode(node: TreeNode, type: KClass<out T>): T = mapper.treeToValue(node, type.java)

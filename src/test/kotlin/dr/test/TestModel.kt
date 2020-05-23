@@ -155,40 +155,39 @@ class MEntityMachine: Machine<MEntity, MEntityMachine.State, MEntityMachine.Even
     onCreate = { id, entity ->
       assert(entity.name == "My Name")
       assert(q1.exec().rows.toString() == "[{@id=1, name=shumy, email=shumy@gmail.com}]")
-      create(RefToMEntity("m-alias", id))
+      create(RefToMEntity("a-create", id))
     }
 
     onUpdate = {
-      println("UPDATE: ${it.id} - ${it.get(MEntity::name)}")
+      create(RefToMEntity("a-update", RefID(it.id)))
     }
 
     enter(State.START) {
-      println("START")
       open(MEntity::name).forRole("admin")
     }
 
     on(State.START, Event.Submit::class) fromRole "admin" goto State.VALIDATE after {
       check { event.value.startsWith("#") }
+      println(history.all)
 
-      println("(SUBMIT(${event.value}) from 'employee') START -> VALIDATE")
       history.set("owner", user)
       close(MEntity::name).forAll()
     }
 
     on(State.VALIDATE, Event.Ok::class) fromRole "manager" goto State.STOP after {
       val record = history.last(Event.Submit::class)
-      println("OK -> check(${record.event.value})")
+      println("OK -> check(${record.event})")
 
       println("(OK from 'manager') VALIDATE -> STOP")
     }
 
     on(State.VALIDATE, Event.Incorrect::class) fromRole "manager" goto State.START after {
       val record = history.last(Event.Submit::class)
-      println("INCORRECT -> check(${record.event.value})")
+      println("INCORRECT -> check(${record.event})")
 
       println("(INCORRECT from 'manager') VALIDATE -> START")
-      val owner: User = history.last(Event.Submit::class).get("owner")
-      open(MEntity::name).forUser(owner.name)
+      //val owner: User = history.last(Event.Submit::class).get("owner")
+      //open(MEntity::name).forUser(owner.name)
     }
 
     enter(State.STOP) {
