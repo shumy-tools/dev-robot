@@ -20,10 +20,9 @@ import kotlin.reflect.KClass
 import kotlin.reflect.KProperty
 import kotlin.reflect.KProperty1
 
-const val CREATE = "CREATE"
 const val NEW_HISTORY = "NEW_$HISTORY"
 
-class UEntity<T: Any>(val id: Long, val data: Map<String, Any?>) {
+class UEntity<T: Any>(val data: Map<String, Any?>) {
   @Suppress("UNCHECKED_CAST")
   fun <R: Any?> get(prop: KProperty1<T, R>): R {
     return data[prop.name] as R
@@ -35,10 +34,13 @@ class UEntity<T: Any>(val id: Long, val data: Map<String, Any?>) {
 }
 
 open class Machine<T: Any, S: Enum<*>, E: Any> {
+  val id: RefID
+    get() = Context.session.vars[ID] as RefID
+
   val user: User
     get() = Context.session.user
 
-  var onCreate: ((RefID, T) -> Unit)? = null
+  var onCreate: ((T) -> Unit)? = null
   var onUpdate: ((UEntity<T>) -> Unit)? = null
 
   private val enter = hashMapOf<String, EnterActions.() -> Unit>()
@@ -70,31 +72,37 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   internal fun fireEvent(id: Long, inEvt: Any) {
     Context.session.vars[ID] = RefID(id)
     val event = inEvt as E
-    val evtKClass = event.javaClass.kotlin
+    val evtType = event.javaClass.kotlin
 
     val state = stateQuery.exec("id" to id).get<String>(STATE)!!
     Context.session.vars[STATE] = state
 
-    val states = events.getValue(evtKClass)
-    val then = states[state] ?: throw Exception("StateMachine transition '$state -> ${evtKClass.qualifiedName}' not found! - (${javaClass.canonicalName})")
+    val states = events.getValue(evtType)
+    val then = states[state] ?: throw Exception("StateMachine transition '$state -> ${evtType.qualifiedName}' not found! - (${javaClass.canonicalName})")
 
     val evtJson = JsonParser.write(inEvt)
-    val newHistory = History(LocalDateTime.now(), evtJson, state, then.to.name)
+    val newHistory = History(LocalDateTime.now(), evtType.qualifiedName, evtJson, state, then.to.name)
     Context.session.vars[NEW_HISTORY] = newHistory
-    then.onEvent?.invoke(EventActions(state, event))
+
+    then.call(user, state, event)
+
+    // call enter state if exists
+    val enter = enter[then.to.name]
+    enter?.invoke(EnterActions(then.to.name))
   }
 
   @Suppress("UNCHECKED_CAST")
   internal fun fireCreate(entity: DEntity) {
     Context.session.vars[ID] = entity.refID
-    onCreate?.invoke(entity.refID, entity.cEntity as T)
-    val enter = enter.getValue(entity.state)
-    enter.invoke(EnterActions(entity.state))
+    onCreate?.invoke(entity.cEntity as T)
+
+    val enter = enter[entity.state]
+    enter?.invoke(EnterActions(entity.state))
   }
 
   internal fun fireUpdate(entity: DEntity) {
     Context.session.vars[ID] = entity.refID
-    onUpdate?.invoke(UEntity(entity.refID.id!!, entity.mEntity!!))
+    onUpdate?.invoke(UEntity(entity.mEntity!!))
   }
 
   inner class SHistory internal constructor(private val state: String, private val evtType: KClass<out E>? = null) {
@@ -104,11 +112,17 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
       }
 
       @Suppress("UNCHECKED_CAST")
+      val evtType: KClass<EX>? by lazy {
+        val value = map[History::evtType.name] as String?
+        value?.let { sMachine.events[value] as KClass<EX>? }
+      }
+
+      @Suppress("UNCHECKED_CAST")
       val event: EX? by lazy {
-        val value = map.getValue(History::evt.name) as String?
-        value?.let {
-          val evtType = sMachine.events.getValue(value)
-          JsonParser.read(value, evtType) as EX
+        val type = evtType
+        type?.let {
+          val value = map.getValue(History::evt.name) as String
+          JsonParser.read(value, type) as EX
         }
       }
 
@@ -142,12 +156,15 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     }
 
     fun set(key: String, value: Any) {
-      // TODO: set value to commit ('event' -> 'state' or enter 'state')
+      val newHistory = Context.session.vars[NEW_HISTORY] as History
+      val map = JsonParser.readMap(newHistory.data).toMutableMap()
+      map[key] = value
+      newHistory.data = JsonParser.write(map)
     }
 
-    fun <EX: E> last(evtType: KClass<EX>, transit: Pair<S, S>? = null): Record<EX> {
-      // TODO: query from history
-      TODO()
+    @Suppress("UNCHECKED_CAST")
+    fun <EX: E> last(evtType: KClass<EX>, from: S? = null, to: S? = null): Record<EX> {
+      return all.last { it.evtType == evtType && (from == null || it.from == from) && (to == null || it.to == to) } as Record<EX>
     }
   }
 
@@ -195,11 +212,16 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   }
 
   inner class After<EX: E> internal constructor(internal val to: S, private val users: Set<String>, private val roles: Set<String>) {
-    var onEvent: (EventActions<out E>.() -> Unit)? = null
+    private var onEvent: (EventActions<out E>.() -> Unit)? = null
       private set
 
     @Suppress("UNCHECKED_CAST")
     infix fun after(exec: EventActions<EX>.() -> Unit) { onEvent = exec as EventActions<out E>.() -> Unit }
+
+    fun call(user: User, state: String, event: E) {
+      //TODO: check if user can call?
+      onEvent?.invoke(EventActions(state, event))
+    }
   }
 
   inner class Transit<EX: E> internal constructor(private val from: S, private val event: KClass<EX>, private val users: Set<String>, private val roles: Set<String>) {

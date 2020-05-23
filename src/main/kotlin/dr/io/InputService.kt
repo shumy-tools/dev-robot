@@ -9,7 +9,6 @@ import dr.schema.SEntity
 import dr.schema.tabular.HISTORY
 import dr.schema.tabular.STATE
 import dr.spi.IAdaptor
-import dr.state.CREATE
 import dr.state.Machine
 import dr.state.NEW_HISTORY
 import java.time.LocalDateTime
@@ -26,27 +25,26 @@ class InputService(
 
   fun create(data: Any): RefID {
     val dEntity = processor.create(data)
-    val hInst = dEntity.createStateHistory()
-    val main = translator.create(dEntity)
+    val dHistory = dEntity.createStateHistory()
 
-    val root = if (hInst == null) main else {
+    val main = translator.create(dEntity)
+    val root = if (dHistory == null) main else {
+      val hInst = translator.create(dHistory)
       hInst.include(main)
-      hInst.root = main.root
       hInst
     }
 
     Context.instructions.include(root)
-    machines[dEntity.schema]?.fireCreate(dEntity)
     return root.root.refID
   }
 
   fun update(id: Long, type: SEntity, data: Map<KProperty<Any>, Any?>) {
     val nData = data.mapKeys { it.key.name }
     val dEntity = processor.update(type, id, nData)
+    machines[dEntity.schema]?.fireUpdate(dEntity)
+
     val main = translator.update(dEntity)
     Context.instructions.include(main)
-
-    machines[dEntity.schema]?.fireUpdate(dEntity)
   }
 
   fun action(id: Long, type: SEntity, evt: Any) {
@@ -69,21 +67,19 @@ class InputService(
       processor.create(sEntity, json)
     }
 
-    val hInst = dEntity.createStateHistory()
-    val main = translator.create(dEntity)
+    val dHistory = dEntity.createStateHistory()
 
-    val root = if (hInst == null) main else {
+    val main = translator.create(dEntity)
+    val root = if (dHistory == null) main else {
+      val hInst = translator.create(dHistory)
       hInst.include(main)
       hInst.root = main.root
       hInst
     }
 
-    Context.instructions.include(root)
-    machines[dEntity.schema]?.fireCreate(dEntity)
-
-    Context.instructions.root = root.root
-    adaptor.commit(Context.instructions)
-    return Context.instructions
+    root.include(Context.instructions)
+    adaptor.commit(root)
+    return root
   }
 
   fun initUpdate(type: KClass<out Any>, id: Long, json: String) = initUpdate(type.qualifiedName!!, id, json)
@@ -91,15 +87,13 @@ class InputService(
   fun initUpdate(entity: String, id: Long, json: String): Instructions {
     val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
     val dEntity = processor.update(sEntity, id, json)
-
-    val main = translator.update(dEntity)
-
-    Context.instructions.include(main)
     machines[dEntity.schema]?.fireUpdate(dEntity)
 
-    Context.instructions.root = main.root
-    adaptor.commit(Context.instructions)
-    return Context.instructions
+    val root = translator.update(dEntity)
+
+    root.include(Context.instructions)
+    adaptor.commit(root)
+    return root
   }
 
   fun initAction(type: KClass<out Any>, evtType: KClass<out Any>, id: Long, json: String) = initAction(type.qualifiedName!!, evtType.qualifiedName!!, id, json)
@@ -128,18 +122,19 @@ class InputService(
     Context.instructions.include(main)
   }
 
-  private fun DEntity.createStateHistory(): Instructions? {
+  private fun DEntity.createStateHistory(): DEntity? {
     // add history if state-machine exists
     val sMachine = schema.machine
     return sMachine?.let {
       val state = sMachine.states.keys.first()
-      val history = History(LocalDateTime.now(), null, null, state)
+      val history = History(LocalDateTime.now(), null,null, null, state)
+      Context.session.vars[NEW_HISTORY] = history
 
       val dHistory = processor.create(history)
-      val hInst = translator.create(dHistory)
-
       setHistory(dHistory)
-      hInst
+      machines[schema]?.fireCreate(this)
+
+      dHistory
     }
   }
 }

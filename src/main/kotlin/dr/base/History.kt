@@ -6,9 +6,12 @@ import java.time.LocalDateTime
 @Master
 data class History(
   val ts: LocalDateTime,
-  val evt: String?,
-  val from: String?,
-  val to: String,
 
-  val data: String = "{}"
-)
+  val evtType: String?,
+  val evt: String?,
+
+  val from: String?,
+  val to: String
+) {
+  var data: String = "{}"
+}

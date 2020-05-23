@@ -152,33 +152,32 @@ class MEntityMachine: Machine<MEntity, MEntityMachine.State, MEntityMachine.Even
   private val q1 = query("""dr.base.User | name == "shumy" | { * }""")
 
   init {
-    onCreate = { id, entity ->
-      assert(entity.name == "My Name")
+    onCreate = {
+      assert(it.name == "My Name")
       assert(q1.exec().rows.toString() == "[{@id=1, name=shumy, email=shumy@gmail.com}]")
       create(RefToMEntity("a-create", id))
     }
 
     onUpdate = {
-      create(RefToMEntity("a-update", RefID(it.id)))
+      create(RefToMEntity("a-update", id))
     }
 
     enter(State.START) {
+      history.set("d-field", 30)
       open(MEntity::name).forRole("admin")
     }
 
     on(State.START, Event.Submit::class) fromRole "admin" goto State.VALIDATE after {
       check { event.value.startsWith("#") }
-      println(history.all)
 
-      history.set("owner", user)
+      history.set("owner", user.name)
       close(MEntity::name).forAll()
     }
 
     on(State.VALIDATE, Event.Ok::class) fromRole "manager" goto State.STOP after {
       val record = history.last(Event.Submit::class)
-      println("OK -> check(${record.event})")
-
-      println("(OK from 'manager') VALIDATE -> STOP")
+      assert(record.event == Event.Submit("#try-submit"))
+      assert(record.data["owner"] == user.name)
     }
 
     on(State.VALIDATE, Event.Incorrect::class) fromRole "manager" goto State.START after {
@@ -191,7 +190,7 @@ class MEntityMachine: Machine<MEntity, MEntityMachine.State, MEntityMachine.Even
     }
 
     enter(State.STOP) {
-      println("STOP")
+      create(RefToMEntity("a-stop", id))
     }
   }
 }
