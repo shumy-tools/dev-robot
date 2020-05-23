@@ -5,14 +5,13 @@ import dr.query.*
 import dr.schema.tabular.*
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
+import dr.spi.IRowGet
 import dr.spi.QRow
 import org.jooq.*
-import org.jooq.impl.DSL
 import org.jooq.impl.DSL.*
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.reflect.KProperty
 
-class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, private val qTree: QTree): IQueryExecutor {
+class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, private val qTree: QTree): IQueryExecutor<Any> {
   private val qTable = table(qTree.table.sqlName()).asTable(MAIN)
 
   private val joinFields = mutableListOf<Field<Any>>()
@@ -27,12 +26,12 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
   // compile query tree
   init { qTree.table.compile(qTree.select, qTree.filter) }
 
-  override fun exec(params: Map<String, Any>): IResult {
+  override fun exec(params: Map<String, Any>): IResult<Any> {
     return subExec(params)
   }
 
   @Suppress("UNCHECKED_CAST")
-  fun subExec(params: Map<String, Any>, fk: Field<Long>? = null, topIds: Select<*>? = null): IResult {
+  fun subExec(params: Map<String, Any>, fk: Field<Long>? = null, topIds: Select<*>? = null): IResult<Any> {
     val mParams = params.toMutableMap()
     val idsQuery = buildQueryIds(params.toMutableMap())
     val mainQuery = buildQuery(mParams)
@@ -283,7 +282,18 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
 
 
 /* ------------------------- helpers -------------------------*/
-class SQLResult(private val tables: Tables): IResult {
+class RowGet(private val row: QRow): IRowGet<Any> {
+  @Suppress("UNCHECKED_CAST")
+  override fun <R : Any> get(name: String) =row[name] as R?
+}
+
+class ResultIterator(rows: List<QRow>): Iterator<IRowGet<Any>> {
+  private val iter = rows.iterator()
+  override fun hasNext() = iter.hasNext()
+  override fun next() = RowGet(iter.next())
+}
+
+class SQLResult(private val tables: Tables): IResult<Any> {
   internal val rowsWithIds = linkedMapOf<Long, LinkedHashMap<String, Any?>>()
   internal val fkKeys = linkedMapOf<Long, MutableList<Long>>()
 
@@ -297,6 +307,8 @@ class SQLResult(private val tables: Tables): IResult {
 
     return rows.first()[name] as R?
   }
+
+  override fun iterator(): Iterator<IRowGet<Any>> = ResultIterator(rows)
 
   @Suppress("UNCHECKED_CAST")
   fun addTo(pk: Long, name: String, row: QRow) {
@@ -345,7 +357,7 @@ class SQLResult(private val tables: Tables): IResult {
     val cValue = if (name.startsWith(TRAITS)) {
       val traitSplit = name.substring(1).split(SPECIAL)
       val sTrait = tables.schema.traits.getValue(traitSplit.first())
-      JsonParser.readJson((value as String), sTrait.clazz)
+      JsonParser.read((value as String), sTrait.clazz)
     } else value
 
     this[name] = cValue

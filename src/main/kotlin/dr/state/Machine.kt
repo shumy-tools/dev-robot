@@ -1,10 +1,10 @@
 package dr.state
 
+import dr.JsonParser
+import dr.base.History
 import dr.base.User
 import dr.ctx.Context
 import dr.io.DEntity
-import dr.JsonParser
-import dr.base.History
 import dr.query.QueryService
 import dr.schema.RefID
 import dr.schema.SEntity
@@ -21,6 +21,7 @@ import kotlin.reflect.KProperty
 import kotlin.reflect.KProperty1
 
 const val NEW_HISTORY = "NEW_$HISTORY"
+private const val NEW_HISTORY_DATA = "${NEW_HISTORY}_DATA"
 
 class UEntity<T: Any>(val data: Map<String, Any?>) {
   @Suppress("UNCHECKED_CAST")
@@ -49,14 +50,18 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   private lateinit var schema: Schema
   internal lateinit var sMachine: SMachine
 
-  private lateinit var stateQuery: IQueryExecutor
-  private lateinit var historyQuery: IQueryExecutor
+  private lateinit var stateQuery: IQueryExecutor<T>
+  private lateinit var historyQuery: IQueryExecutor<T>
 
   internal fun init(allSchema: Schema, sEntity: SEntity, qService: QueryService) {
     schema = allSchema
     sMachine = sEntity.machine!!
-    stateQuery = qService.compile("${sEntity.name} | $ID == ?id | { $STATE }").first
-    historyQuery = qService.compile("${sEntity.name} | $ID == ?id | { $ID, $HISTORY { * } }").first
+
+    @Suppress("UNCHECKED_CAST")
+    stateQuery = query(sEntity.clazz,"| $ID == ?id | { $STATE }") as IQueryExecutor<T>
+
+    @Suppress("UNCHECKED_CAST")
+    historyQuery = query(sEntity.clazz,"| $ID == ?id | { $ID, $HISTORY { * } }") as IQueryExecutor<T>
   }
 
   internal fun include(evtType: KClass<out E>, from: S, after: After<out E>) {
@@ -85,24 +90,33 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     Context.session.vars[NEW_HISTORY] = newHistory
 
     then.call(user, state, event)
-
-    // call enter state if exists
-    val enter = enter[then.to.name]
-    enter?.invoke(EnterActions(then.to.name))
+    finalizeEvent(then.to.name)
   }
 
   @Suppress("UNCHECKED_CAST")
   internal fun fireCreate(entity: DEntity) {
     Context.session.vars[ID] = entity.refID
     onCreate?.invoke(entity.cEntity as T)
-
-    val enter = enter[entity.state]
-    enter?.invoke(EnterActions(entity.state))
+    finalizeEvent(entity.state)
   }
 
   internal fun fireUpdate(entity: DEntity) {
     Context.session.vars[ID] = entity.refID
     onUpdate?.invoke(UEntity(entity.mEntity!!))
+  }
+
+  @Suppress("UNCHECKED_CAST")
+  private fun finalizeEvent(toState: String) {
+    // call enter state if exists
+    val enter = enter[toState]
+    enter?.invoke(EnterActions(toState))
+
+    // finalize the data result
+    val newData = Context.session.vars[NEW_HISTORY_DATA]
+    newData?.let {
+      val newHistory = Context.session.vars[NEW_HISTORY] as History
+      newHistory.data = JsonParser.write(newData)
+    }
   }
 
   inner class SHistory internal constructor(private val state: String, private val evtType: KClass<out E>? = null) {
@@ -146,6 +160,13 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
       override fun toString() = "Record(ts=$ts, event=$event, from=$from, to=$to, data=$data)"
     }
 
+    private val newData by lazy {
+      val newHistory = Context.session.vars[NEW_HISTORY] as History
+      val map = JsonParser.readMap(newHistory.data).toMutableMap()
+      Context.session.vars[NEW_HISTORY_DATA] = map
+      map
+    }
+
     val all: List<Machine<T, S, E>.SHistory.Record<E>>
     init {
       val id = (Context.session.vars[ID] as RefID).id
@@ -156,10 +177,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     }
 
     fun set(key: String, value: Any) {
-      val newHistory = Context.session.vars[NEW_HISTORY] as History
-      val map = JsonParser.readMap(newHistory.data).toMutableMap()
-      map[key] = value
-      newHistory.data = JsonParser.write(map)
+      newData[key] = value
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -219,8 +237,10 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     infix fun after(exec: EventActions<EX>.() -> Unit) { onEvent = exec as EventActions<out E>.() -> Unit }
 
     fun call(user: User, state: String, event: E) {
-      //TODO: check if user can call?
-      onEvent?.invoke(EventActions(state, event))
+      val rolesMap = user.rolesMap()
+      if (users.contains(user.name) || roles.any(rolesMap.keys::contains)) {
+        onEvent?.invoke(EventActions(state, event))
+      }
     }
   }
 
@@ -267,7 +287,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     return From(state, evtType)
   }
 
-  fun query(query: String) = Context.query(query)
+  fun <T: Any> query(type: KClass<T>, query: String) = Context.query(type, query)
 
   fun create(entity: Any) = Context.create(entity)
 

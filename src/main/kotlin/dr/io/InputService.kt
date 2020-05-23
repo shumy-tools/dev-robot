@@ -103,7 +103,7 @@ class InputService(
     val machine = machines[sEntity] ?: throw Exception("Entity doesn't have a state machine! - ($entity)")
     val evtClass = machine.sMachine.events[evtType] ?: throw Exception("Event type not found! - ($entity, $evtType)")
 
-    val event = JsonParser.readJson(json, evtClass)
+    val event = JsonParser.read(json, evtClass)
     machine.fireEvent(id, event)
 
     // create and link NEW_HISTORY

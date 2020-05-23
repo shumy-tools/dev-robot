@@ -51,7 +51,7 @@ fun main(args: Array<String>) {
     }
 
     it.use {
-      println(query("""dr.User | name == "Pedro" | { name, roles { name }}""").exec().rows)
+      println(query(User::class,"""| name == "Pedro" | { name, roles { name }}""").exec().rows)
     }
   }
 }

@@ -20,7 +20,7 @@ class InputProcessor(val schema: Schema) {
   fun create(type: SEntity, json: String) = create(type.clazz, json)
 
   fun create(type: KClass<out Any>, json: String): DEntity {
-    val entity = JsonParser.readJson(json, type)
+    val entity = JsonParser.read(json, type)
     return create(entity)
   }
 

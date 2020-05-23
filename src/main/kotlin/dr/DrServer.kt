@@ -1,5 +1,6 @@
 package dr
 
+import dr.base.loadRoles
 import dr.ctx.Session
 import dr.io.InputProcessor
 import dr.io.InputService
@@ -21,7 +22,7 @@ import java.util.*
 import kotlin.reflect.full.createInstance
 
 class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAuthorizer? = null) {
-  private val queries = mutableMapOf<String, Pair<IQueryExecutor, IReadAccess>>()
+  private val queries = mutableMapOf<String, Pair<IQueryExecutor<Any>, IReadAccess>>()
   private val machines = linkedMapOf<SEntity, Machine<*, *, *>>()
 
   private val processor = InputProcessor(schema)
@@ -37,6 +38,8 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
         machines[it.value] = buildMachine(it.value)
         println("    ${it.value.machine!!.name} - OK")
       }
+
+      loadRoles()
     dr.ctx.Context.clear()
   }
 

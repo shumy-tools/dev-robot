@@ -2,7 +2,10 @@ package dr.adaptor
 
 import com.zaxxer.hikari.HikariDataSource
 import dr.JsonParser
-import dr.io.*
+import dr.io.Delete
+import dr.io.Insert
+import dr.io.Instructions
+import dr.io.Update
 import dr.query.QTree
 import dr.schema.Schema
 import dr.schema.tabular.*

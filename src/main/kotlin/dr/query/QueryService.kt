@@ -16,7 +16,7 @@ import java.time.LocalTime
 
 /* ------------------------- api -------------------------*/
 class QueryService(private val tables: Tables, private val adaptor: IAdaptor) {
-  fun compile(query: String): Pair<IQueryExecutor, IReadAccess> {
+  fun compile(query: String): Pair<IQueryExecutor<Any>, IReadAccess> {
     val lexer = QueryLexer(CharStreams.fromString(query))
     val tokens = CommonTokenStream(lexer)
     val parser = QueryParser(tokens)

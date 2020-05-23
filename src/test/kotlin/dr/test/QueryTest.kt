@@ -85,7 +85,7 @@ private val server = DrServer(schema, adaptor, TestAuthorizer()).also {
 class QueryTest {
   @Test fun testSimpleQuery() {
     server.use {
-      val query = query("""dr.test.User | name == "Alex" and email == ?mail | {
+      val query = query(User::class,"""| name == "Alex" and email == ?mail | {
         *
       }""") {
         assert(it.entity == "dr.test.User")
@@ -98,7 +98,7 @@ class QueryTest {
 
   @Test fun testSortByQuery() {
     server.use {
-      val query1 = query("""dr.test.User {
+      val query1 = query(User::class,"""{
         (asc 1) name
       }""") {
         assert(it.entity == "dr.test.User")
@@ -107,7 +107,7 @@ class QueryTest {
       val res1 = query1.exec()
       assert(res1.rows.toString() == "[{@id=1, name=Alex}, {@id=5, name=Arnaldo}, {@id=4, name=Jose}, {@id=3, name=Maria}, {@id=2, name=Pedro}]")
 
-      val res2 = query("""dr.test.User {
+      val res2 = query(User::class,"""{
         (dsc 1) name
       }""").exec()
       assert(res2.rows.toString() == "[{@id=2, name=Pedro}, {@id=3, name=Maria}, {@id=4, name=Jose}, {@id=5, name=Arnaldo}, {@id=1, name=Alex}]")
@@ -116,7 +116,7 @@ class QueryTest {
 
   @Test fun tesLimitAndPageQuery() {
     server.use {
-      val query1 = query("""dr.test.User | email == "mail@pt" | limit 2 page 1 {
+      val query1 = query(User::class,"""| email == "mail@pt" | limit 2 page 1 {
         name
       }""") {
         assert(it.entity == "dr.test.User")
@@ -125,12 +125,12 @@ class QueryTest {
       val res1 = query1.exec()
       assert(res1.rows.toString() == "[{@id=1, name=Alex}, {@id=2, name=Pedro}]")
 
-      val res2 = query("""dr.test.User limit 2 page 2 {
+      val res2 = query(User::class,"""limit 2 page 2 {
         name
       }""").exec()
       assert(res2.rows.toString() == "[{@id=3, name=Maria}, {@id=4, name=Jose}]")
 
-      val res3 = query("""dr.test.User limit ?lmt page ?pgt {
+      val res3 = query(User::class,"""limit ?lmt page ?pgt {
         name
       }""").exec("lmt" to 2, "pgt" to 3)
       assert(res3.rows.toString() == "[{@id=5, name=Arnaldo}]")
@@ -139,7 +139,7 @@ class QueryTest {
 
   @Test fun testSimpleInQuery() {
     server.use {
-      val query1 = query("""dr.test.User | name in ?names | {
+      val query1 = query(User::class,"""| name in ?names | {
         name, email
       }""") {
         assert(it.entity == "dr.test.User")
@@ -148,7 +148,7 @@ class QueryTest {
       val res1 = query1.exec("names" to listOf("Alex", "Arnaldo"))
       assert(res1.rows.toString() == "[{@id=1, name=Alex, email=mail@pt}, {@id=5, name=Arnaldo, email=mail@com}]")
 
-      val res2 = query("""dr.test.User | name in ["Alex", "Arnaldo"] | {
+      val res2 = query(User::class,"""| name in ["Alex", "Arnaldo"] | {
         name, email
       }""").exec()
       assert(res2.rows.toString() == "[{@id=1, name=Alex, email=mail@pt}, {@id=5, name=Arnaldo, email=mail@com}]")
@@ -157,7 +157,7 @@ class QueryTest {
 
   @Test fun testOneToOneQuery() {
     server.use {
-      val query1 = query("""dr.test.User | address.location == ?loc | {
+      val query1 = query(User::class,"""| address.location == ?loc | {
         name, 
         address { * }
       }""") {
@@ -167,7 +167,7 @@ class QueryTest {
       val res1 = query1.exec("loc" to "Aradas")
       assert(res1.rows.toString() == "[{@id=4, name=Jose, address={@id=4, city=Aveiro, location=Aradas}}]")
 
-      val query2 = query("""dr.test.User | email == "mail@pt" and address.location == ?loc and address.country.name == "Portugal" | {
+      val query2 = query(User::class,"""| email == "mail@pt" and address.location == ?loc and address.country.name == "Portugal" | {
         name, 
         address { city, country { * } }
       }""")  {
@@ -181,7 +181,7 @@ class QueryTest {
 
   @Test fun testOneToManyQuery() {
     server.use {
-      val query1 = query("""dr.test.User | address.location == "Aradas" | {
+      val query1 = query(User::class,"""| address.location == "Aradas" | {
         name, 
         settings { * }
       }""") {
@@ -191,7 +191,7 @@ class QueryTest {
       val res1 = query1.exec()
       assert(res1.rows.toString() == "[{@id=4, name=Jose, settings=[{@id=7, key=Jose-set1, value=Jose-v1}, {@id=8, key=Jose-set2, value=Jose-v2}]}]")
 
-      val query2 = query("""dr.test.User | address.location == "Aradas" | {
+      val query2 = query(User::class,"""| address.location == "Aradas" | {
         name, 
         settings | key == "Jose-set2" | { value }
       }""") {
@@ -201,7 +201,7 @@ class QueryTest {
       val res2 = query2.exec()
       assert(res2.rows.toString() == "[{@id=4, name=Jose, settings=[{@id=8, value=Jose-v2}]}]")
 
-      val query3 = query("""dr.test.User | settings.value == "Jose-v2" | {
+      val query3 = query(User::class,"""| settings.value == "Jose-v2" | {
         name
       }""") {
         assert(it.entity == "dr.test.User")
@@ -210,12 +210,12 @@ class QueryTest {
       val res3 = query3.exec()
       assert(res3.rows.toString() == "[{@id=4, name=Jose}]")
 
-      val res4 = query("""dr.test.User | settings.value in ["Jose-v2", "Arnaldo-v2"] | {
+      val res4 = query(User::class,"""| settings.value in ["Jose-v2", "Arnaldo-v2"] | {
         name
       }""").exec()
       assert(res4.rows.toString() == "[{@id=4, name=Jose}, {@id=5, name=Arnaldo}]")
 
-      val res5 = query("""dr.test.User | settings.value in ?values | {
+      val res5 = query(User::class,"""| settings.value in ?values | {
         name
       }""").exec("values" to listOf("Jose-v2", "Arnaldo-v2"))
       assert(res5.rows.toString() == "[{@id=4, name=Jose}, {@id=5, name=Arnaldo}]")
@@ -224,7 +224,7 @@ class QueryTest {
 
   @Test fun testManyToManyQuery() {
     server.use {
-      val query1 = query("""dr.test.User | address.location == "Gloria" | {
+      val query1 = query(User::class,"""| address.location == "Gloria" | {
         name,
         roles { name }
       }""") {
@@ -234,7 +234,7 @@ class QueryTest {
       val res1 = query1.exec()
       assert(res1.rows.toString() == "[{@id=2, name=Pedro, roles=[{@id=1, name=admin}, {@id=2, name=oper}, {@id=3, name=other}]}]")
 
-      val query2 = query("""dr.test.User | address.location == "Gloria" | {
+      val query2 = query(User::class,"""| address.location == "Gloria" | {
         name,
         roles | name == "admin" | { name }
       }""") {
@@ -244,7 +244,7 @@ class QueryTest {
       val res2 = query2.exec()
       assert(res2.rows.toString() == "[{@id=2, name=Pedro, roles=[{@id=1, name=admin}]}]")
 
-      val query3 = query("""dr.test.User | address.location == "Aradas" | {
+      val query3 = query(User::class,"""| address.location == "Aradas" | {
         name, 
         roles { &dr.test.Trace, name, ord }
       }""") {
@@ -254,7 +254,7 @@ class QueryTest {
       val res3 = query3.exec()
       assert(res3.rows.toString() == "[{@id=4, name=Jose, roles=[{&dr.test.Trace=Trace(value=Jose-oper-trait), @id=3, name=other, ord=3}]}]")
 
-      val query4 = query("""dr.test.User | roles.name == "admin" | {
+      val query4 = query(User::class,"""| roles.name == "admin" | {
         name
       }""") {
         assert(it.entity == "dr.test.User")
@@ -263,12 +263,12 @@ class QueryTest {
       val res4 = query4.exec()
       assert(res4.rows.toString() == "[{@id=1, name=Alex}, {@id=2, name=Pedro}, {@id=5, name=Arnaldo}]")
 
-      val res5 = query("""dr.test.User | roles.name in ["admin", "oper"] | {
+      val res5 = query(User::class,"""| roles.name in ["admin", "oper"] | {
         name
       }""").exec()
       assert(res5.rows.toString() == "[{@id=1, name=Alex}, {@id=2, name=Pedro}, {@id=3, name=Maria}, {@id=5, name=Arnaldo}]")
 
-      val res6 = query("""dr.test.User | roles.name in ?values | {
+      val res6 = query(User::class,"""| roles.name in ?values | {
         name
       }""").exec("values" to listOf("admin", "oper"))
       assert(res6.rows.toString() == "[{@id=1, name=Alex}, {@id=2, name=Pedro}, {@id=3, name=Maria}, {@id=5, name=Arnaldo}]")
@@ -277,7 +277,7 @@ class QueryTest {
 
   @Test fun testSealedQuery() {
     server.use {
-      val query1 = query("""dr.test.SuperUser | alias == "Mario" | {
+      val query1 = query(SuperUser::class,"""| alias == "Mario" | {
         alias, @type
       }""") {
         assert(it.entity == "dr.test.SuperUser")
@@ -286,7 +286,7 @@ class QueryTest {
       val res1 = query1.exec()
       assert(res1.rows.toString() == "[{@id=2, alias=Mario, @type=dr.test.OperUser}]")
 
-      val query2 = query("""dr.test.AdminUser {
+      val query2 = query(AdminUser::class,"""{
         adminProp, @super { * }
       }""") {
         assert(it.entity == "dr.test.AdminUser")
@@ -295,7 +295,7 @@ class QueryTest {
       val res2 = query2.exec()
       assert(res2.rows.toString() == "[{@id=1, adminProp=BrunoAdminProp, @super={@id=1, alias=Bruno, @type=dr.test.AdminUser}}]")
 
-      val query3 = query("""dr.test.OperUser | @super.alias == "Alberto" | {
+      val query3 = query(OperUser::class,"""| @super.alias == "Alberto" | {
         operProp
       }""") {
         assert(it.entity == "dr.test.OperUser")

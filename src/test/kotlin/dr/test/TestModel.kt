@@ -149,7 +149,7 @@ class MEntityMachine: Machine<MEntity, MEntityMachine.State, MEntityMachine.Even
     object Incorrect: Event()
   }
 
-  private val q1 = query("""dr.base.User | name == "shumy" | { * }""")
+  private val q1 = query(User::class,"""| name == "shumy" | { * }""")
 
   init {
     onCreate = {
@@ -177,7 +177,7 @@ class MEntityMachine: Machine<MEntity, MEntityMachine.State, MEntityMachine.Even
     on(State.VALIDATE, Event.Ok::class) fromRole "manager" goto State.STOP after {
       val record = history.last(Event.Submit::class)
       assert(record.event == Event.Submit("#try-submit"))
-      assert(record.data["owner"] == user.name)
+      assert(record.data["owner"] == "shumy")
     }
 
     on(State.VALIDATE, Event.Incorrect::class) fromRole "manager" goto State.START after {

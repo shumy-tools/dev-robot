@@ -16,7 +16,7 @@ import kotlin.reflect.full.isSubclassOf
 /* ------------------------- internal api -------------------------*/
 class Parameter(val table: STable, val field: String, val comp: CompType, val param: QParam)
 
-class QueryExecutorWithValidator(private val native: IQueryExecutor, parameters: List<Parameter>): IQueryExecutor {
+class QueryExecutorWithValidator(private val native: IQueryExecutor<Any>, parameters: List<Parameter>): IQueryExecutor<Any> {
   private val args: List<Parameter> = parameters.filter { it.param.type == ParamType.PARAM }
   private val lpArgs: List<Parameter> = parameters.filter { it.param.type == ParamType.LP_PARAM }
 
@@ -28,7 +28,7 @@ class QueryExecutorWithValidator(private val native: IQueryExecutor, parameters:
     }
   }
 
-  override fun exec(params: Map<String, Any>): IResult {
+  override fun exec(params: Map<String, Any>): IResult<Any> {
     lpArgs.forEach {
       val name = it.param.value as String
       val value = params[name] ?: throw Exception("Expected input value for: '$name'")
