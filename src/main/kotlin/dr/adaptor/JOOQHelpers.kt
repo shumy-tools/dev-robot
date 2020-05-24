@@ -2,8 +2,7 @@ package dr.adaptor
 
 import dr.query.QField
 import dr.query.QSelect
-import dr.schema.FieldType
-import dr.schema.SEntity
+import dr.schema.*
 import dr.schema.tabular.*
 import org.jooq.DataType
 import org.jooq.Field
@@ -117,4 +116,5 @@ fun FieldType.toSqlType(): DataType<out Any> = when (this) {
   FieldType.TIME -> SQLDataType.LOCALTIME
   FieldType.DATE -> SQLDataType.LOCALDATE
   FieldType.DATETIME -> SQLDataType.LOCALDATETIME
+  FieldType.JMAP -> SQLDataType.VARCHAR
 }

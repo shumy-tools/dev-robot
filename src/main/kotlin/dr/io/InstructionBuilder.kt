@@ -1,10 +1,7 @@
 package dr.io
 
-import dr.schema.ActionType
-import dr.schema.ActionType.*
-import dr.schema.EntityType
-import dr.schema.RefID
-import dr.schema.SRelation
+import dr.schema.*
+import dr.io.InstructionType.*
 import dr.schema.tabular.*
 
 class InstructionBuilder(private val tables: Tables) {
@@ -127,14 +124,14 @@ class InstructionBuilder(private val tables: Tables) {
         }
 
         is OneRemove -> {
-          bottomInclude.add(Update(rValue.ref, tables.get(oCol.schema.ref), ActionType.REMOVE).apply {
+          bottomInclude.add(Update(rValue.ref, tables.get(oCol.schema.ref), InstructionType.REMOVE).apply {
             putRef(TInverseRef(entity.schema, oCol.schema), RefID())
           })
         }
 
         is ManyRemove -> {
           rValue.refs.forEach {
-            bottomInclude.add(Update(it, tables.get(oCol.schema.ref), ActionType.REMOVE).apply {
+            bottomInclude.add(Update(it, tables.get(oCol.schema.ref), InstructionType.REMOVE).apply {
               putRef(TInverseRef(entity.schema, oCol.schema), RefID())
             })
           }

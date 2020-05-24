@@ -2,17 +2,6 @@ package dr.schema.tabular
 
 import dr.schema.*
 
-const val TRAITS = "&"
-const val SPECIAL = "@"
-const val ID = "@id"
-const val REF = "@ref"
-const val INV = "@inv"
-
-const val TYPE = "@type"
-const val STATE = "@state"
-const val HISTORY = "@history"
-const val SUPER = "@super"
-
 data class Tables(val schema: Schema, private val tables: Map<String, STable>) {
   val size: Int
     get() = tables.size

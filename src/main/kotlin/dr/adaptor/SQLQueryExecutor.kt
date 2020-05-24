@@ -1,7 +1,9 @@
 package dr.adaptor
 
 import dr.JsonParser
+import dr.io.FieldConverter
 import dr.query.*
+import dr.schema.*
 import dr.schema.tabular.*
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
@@ -47,7 +49,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     // add main result
     println(mainQuery.sql)
     mParams.forEach { mainQuery.bind(it.key, it.value) }
-    mainQuery.fetch().forEach { result.process(it, fk) }
+    mainQuery.fetch().forEach { result.process(it, fk) { name, value -> FieldConverter.load(tables, qTree.table, name, value) }}
 
     // add one-to-many and many-to-many results
     inverted.forEach {
@@ -319,9 +321,9 @@ class SQLResult(private val tables: Tables): IResult<Any> {
     list.add(row)
   }
 
-  fun process(record: Record, fk: Field<Long>? = null) {
+  fun process(record: Record, fk: Field<Long>?, convert: (String, Any) -> Any) {
     val fieldID = record.fields().find { it.name == ID }!!
-    val rowID = (fieldID.getValue(record) as Long?)!!
+    val rowID = fieldID.getValue(record) as Long
     val row = linkedMapOf<String, Any?>()
     rowsWithIds[rowID] = row
 
@@ -333,13 +335,13 @@ class SQLResult(private val tables: Tables): IResult<Any> {
         val fkRows = fkKeys.getOrPut(value as Long) { mutableListOf() }
         fkRows.add(rowID)
       } else {
-        if (it.name.startsWith('.')) row.processJoin(it.name, value) else row.setField(it.name, value)
+        if (it.name.startsWith('.')) row.processJoin(it.name, value, convert) else row.setField(it.name, value, convert)
       }
     }
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun LinkedHashMap<String, Any?>.processJoin(name: String, value: Any?) {
+  private fun LinkedHashMap<String, Any?>.processJoin(name: String, value: Any?, convert: (String, Any) -> Any) {
     val splits = name.split('.').drop(1)
 
     var place = this
@@ -347,21 +349,16 @@ class SQLResult(private val tables: Tables): IResult<Any> {
       place = place.getOrPut(position) { linkedMapOf<String, Any?>() } as LinkedHashMap<String, Any?>
     }
 
-    place.setField(splits.last(), value)
+    place.setField(splits.last(), value, convert)
   }
 
-  private fun LinkedHashMap<String, Any?>.setField(name: String, value: Any?) {
+  private fun LinkedHashMap<String, Any?>.setField(name: String, value: Any?, convert: (String, Any) -> Any) {
     if (value == null) {
       this[name] = null
       return
     }
 
-    val cValue = if (name.startsWith(TRAITS)) {
-      val traitSplit = name.substring(1).split(SPECIAL)
-      val sTrait = tables.schema.traits.getValue(traitSplit.first())
-      JsonParser.read((value as String), sTrait.clazz)
-    } else value
-
+    val cValue = convert(name, value)
     this[name] = cValue
   }
 }

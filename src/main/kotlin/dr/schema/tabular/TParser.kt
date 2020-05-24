@@ -1,9 +1,6 @@
 package dr.schema.tabular
 
-import dr.schema.EntityType
-import dr.schema.SEntity
-import dr.schema.SRelation
-import dr.schema.Schema
+import dr.schema.*
 
 class TParser(private val schema: Schema) {
   private val tables = linkedMapOf<String, STable>()

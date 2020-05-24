@@ -14,7 +14,8 @@ import kotlin.reflect.KClass
 import kotlin.reflect.KProperty
 
 object Context {
-  private var tRoles = AtomicReference<Map<Long, Role>>()
+  // TODO: move cache to cluster?
+  private val tRoles = AtomicReference<Map<Long, Role>>()
   private val tSession = ThreadLocal<Session>()
 
   var allRoles: Map<Long, Role>

@@ -4,23 +4,23 @@ import dr.ctx.Context
 import dr.schema.Link
 import dr.schema.Master
 import dr.schema.RefID
-import dr.schema.tabular.ID
+import dr.schema.Unique
+import dr.schema.ID
 
 const val ANY = "@any" // defines any role
 
 @Master
 data class User(
-  val name: String,
+  @Unique val name: String,
   val email: String,
 
-  @Link(Role::class)
-  val roles: List<RefID>
+  @Link(Role::class) val roles: List<RefID>
 ) {
   fun rolesMap(): Map<String, Role> = Context.roles(roles)
 }
 
 @Master
-data class Role(val name: String)
+data class Role(@Unique val name: String)
 
 fun loadRoles() {
   val qRoles = Context.query(Role::class,"{ * }").exec()

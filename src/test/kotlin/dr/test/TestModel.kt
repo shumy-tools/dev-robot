@@ -135,7 +135,7 @@ data class RefToMEntity(
   @Link(MEntity::class) val to: RefID
 )
 
-@Master @StateMachine(dr.test.MEntityMachine::class)
+@Master @StateMachine(MEntityMachine::class)
 data class MEntity(
   @Unique val name: String
 )

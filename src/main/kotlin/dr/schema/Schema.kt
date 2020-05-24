@@ -1,7 +1,5 @@
 package dr.schema
 
-import com.fasterxml.jackson.annotation.JsonTypeInfo
-import dr.schema.tabular.TYPE
 import dr.state.Machine
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -10,103 +8,12 @@ import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 import kotlin.reflect.KProperty1
 
-/* ------------------------- annotations -------------------------*/
-@Target(AnnotationTarget.CLASS)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Sealed(vararg val value: KClass<out Any>)
-
-@Target(AnnotationTarget.CLASS)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class StateMachine(val value: KClass<out Machine<*, *, *>>)
-
-
-@Target(AnnotationTarget.CLASS)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Master
-
-@Target(AnnotationTarget.CLASS)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Detail
-
-@Target(AnnotationTarget.CLASS)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Trait
-
-
-@Target(AnnotationTarget.PROPERTY)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Checks(vararg val value: KClass<out FieldCheck<*>>)
-
-@Target(AnnotationTarget.PROPERTY)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Unique
-
-@Target(AnnotationTarget.PROPERTY)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Open
-
-@Target(AnnotationTarget.PROPERTY)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Own
-
-@Target(AnnotationTarget.PROPERTY)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Link(val value: KClass<out Any>, vararg val traits: KClass<out Any>)
-
-
-@Target(AnnotationTarget.FUNCTION)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class LateInit
-
-
-@Target(AnnotationTarget.CLASS)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Listeners(vararg val value: KClass<out EListener>)
-
-@Target(AnnotationTarget.FUNCTION)
-@Retention(AnnotationRetention.RUNTIME)
-annotation class Events(vararg val value: EventType)
-
-/* ------------------------- enums -------------------------*/
 enum class EntityType {
   MASTER, DETAIL, TRAIT
 }
 
 enum class RelationType {
   OWN, LINK
-}
-
-/* ------------------------- structures -------------------------*/
-class RefID(private var _id: Long? = null) {
-  var onSet: ((Long) -> Unit)? = null
-
-  var id = _id
-    set(value) {
-      field = value
-      _id = value
-      onSet?.invoke(value!!)
-    }
-
-  override fun toString() = "RefID(id=$_id)"
-}
-
-data class Pack<T: Any>(
-  @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
-  val head: T,
-
-  @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
-  val tail: List<Any>
-) {
-  constructor(head: T, vararg tail: Any): this(head, tail.toList())
-}
-
-data class Traits(
-  val id: RefID,
-
-  @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "@type")
-  val traits: List<Any>
-) {
-  constructor(id: RefID, vararg traits: Any): this(id, traits.toList())
 }
 
 class Schema {
@@ -143,7 +50,7 @@ class Schema {
 }
 
   /* ------------------------- entity -------------------------*/
-  class SEntity(val clazz: KClass<out Any>, val type: EntityType, val isSealed: Boolean, val initFun: KFunction<*>?, val listeners: Set<SListener>) {
+  class SEntity(val clazz: KClass<out Any>, val type: EntityType, val isSealed: Boolean, val initFun: KFunction<*>?) {
     val sealed: Map<String, SEntity> = linkedMapOf()
     val fields: Map<String, SField> = linkedMapOf()
     val rels: Map<String, SRelation> = linkedMapOf()
@@ -191,19 +98,6 @@ class Schema {
         is SRelation -> (rels as LinkedHashMap<String, SRelation>)[name] = prop
       }
     }
-
-    /*internal fun fireListeners(event: EventType, inst: Instruction) {
-      inst.action.entity.schema.listeners.forEach {
-        when (inst.action.type) {
-          ActionType.CREATE -> it.get(ActionType.CREATE, event)?.onCreate(inst as Insert)
-          ActionType.UPDATE -> it.get(ActionType.UPDATE, event)?.onUpdate(inst as Update)
-          ActionType.DELETE -> it.get(ActionType.DELETE, event)?.onDelete(inst as Delete)
-          ActionType.ADD -> it.get(ActionType.ADD, event)?.onAdd(inst as Insert)
-          ActionType.LINK -> it.get(ActionType.LINK, event)?.onLink(inst as Insert)
-          ActionType.UNLINK -> it.get(ActionType.UNLINK, event)?.onUnlink(inst as Delete)
-        }
-      }
-    }*/
 
     fun toMap(simple: Boolean): Map<String, Any> {
       val map = linkedMapOf<String, Any>()
@@ -256,6 +150,7 @@ class Schema {
             FieldType.TIME -> LocalTime::class.java
             FieldType.DATE -> LocalDate::class.java
             FieldType.DATETIME -> LocalDateTime::class.java
+            FieldType.JMAP -> java.lang.String::class.java
           }
         }
 
@@ -303,15 +198,6 @@ class Schema {
         override fun toString() = name
       }
 
-    @Suppress("UNCHECKED_CAST")
-    class SListener(val name: String, internal val listener: EListener, internal val enabled: Map<ActionType, Set<EventType>>) {
-      internal fun get(action: ActionType, event: EventType): EListener? = enabled[action]?.let {
-        if (it.contains(event)) listener else null
-      }
-
-      override fun toString() = name
-    }
-
 /* ----------- Helper printer functions ----------- */
 const val SPACES = 3
 
@@ -349,11 +235,6 @@ fun SEntity.print(spaces: Int) {
     println("$tab@$sName")
     sEntity.print(spaces + SPACES)
   }
-
-  if (this.listeners.isNotEmpty()) {
-    println("${tab}(listeners)")
-    this.listeners.print(spaces + SPACES)
-  }
 }
 
 fun Map<String, SField>.print(tab: String) {
@@ -379,13 +260,5 @@ fun Map<String, SRelation>.print(tab: String, spaces: Int) {
     if (rel.ref.type != EntityType.MASTER) {
       rel.ref.print(spaces + SPACES)
     }
-  }
-}
-
-fun Set<SListener>.print(spaces: Int) {
-  val tab = " ".repeat(spaces)
-  for (lis in this) {
-    val name = lis.listener.javaClass.kotlin.qualifiedName
-    println("${tab}$name -> ${lis.enabled}")
   }
 }

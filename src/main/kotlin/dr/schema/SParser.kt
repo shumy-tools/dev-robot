@@ -3,7 +3,6 @@ package dr.schema
 import dr.base.History
 import dr.base.Role
 import dr.base.User
-import dr.schema.tabular.*
 import dr.state.Machine
 import kotlin.reflect.*
 import kotlin.reflect.full.*
@@ -97,7 +96,7 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
     }
 
     val sealed = findAnnotation<Sealed>()
-    val sEntity = SEntity(this, type, sealed != null, initFun, processListeners())
+    val sEntity = SEntity(this, type, sealed != null, initFun)
 
     tmpSchema.schema.addEntity(sEntity)
     if (ownedBy != null)
@@ -194,47 +193,6 @@ private fun KClass<*>.processStateMachine(tmpSchema: TempSchema, sEntity: SEntit
   }
 }
 
-private fun KClass<*>.processListeners(): Set<SListener> {
-  val listeners = findAnnotation<Listeners>() ?: return setOf()
-  return listeners.value.map {
-    val sType = it.supertypes.firstOrNull {
-      sType -> EListener::class.qualifiedName == (sType.classifier as KClass<*>).qualifiedName
-    } ?: throw Exception("Listener '${it.qualifiedName}' must inherit from '${EListener::class.qualifiedName}'")
-
-    val tRef = sType.arguments.first().type ?: throw Exception("Listener '${it.qualifiedName}' requires generic type!")
-    if (tRef != createType())
-      throw throw Exception("Listener '${it.qualifiedName}' must inherit from '${EListener::class.qualifiedName}<${this.qualifiedName}>'")
-
-    it.constructors.firstOrNull {cst ->
-      cst.parameters.isEmpty()
-    } ?: throw Exception("Listener '${it.qualifiedName}' requires an empty default constructor!")
-
-    // instantiate listener
-    val instance = it.createInstance()
-    val enabled = it.declaredFunctions.mapNotNull { member ->
-      val action = when(member.name) {
-        ActionType.CREATE.funName -> ActionType.CREATE
-        ActionType.UPDATE.funName -> ActionType.UPDATE
-        ActionType.DELETE.funName -> ActionType.DELETE
-        ActionType.ADD.funName -> ActionType.ADD
-        ActionType.LINK.funName -> ActionType.LINK
-        ActionType.UNLINK.funName -> ActionType.UNLINK
-        else -> null
-      }
-
-      if (action != null) {
-        val events = member.findAnnotation<Events>() ?: throw Exception("'${member.name}' on '${it.qualifiedName}' listener requires 'Events' annotation!")
-        if (events.value.isEmpty())
-          throw Exception("${member.name} on '${it.qualifiedName}' listener requires at least one EventType!")
-
-        action to events.value.map { evt -> evt }.toSet()
-      } else null
-    }.toMap()
-
-    SListener(it.qualifiedName!!, instance, enabled)
-  }.toSet()
-}
-
 private fun KProperty1<Any, *>.processFieldOrRelation(sEntity: SEntity, tmpSchema: TempSchema): SFieldOrRelation {
   val fieldOrRelation = if (this.hasAnnotation<Own>() || this.hasAnnotation<Link>()) {
     this.processRelation(sEntity, tmpSchema)
@@ -256,7 +214,7 @@ private fun KProperty1<Any, *>.processFieldOrRelation(sEntity: SEntity, tmpSchem
 }
 
 private fun KProperty1<Any, *>.processChecks(): Set<SCheck> {
-  val checks = findAnnotation<Checks>() ?: return setOf()
+  val checks = findAnnotation<Check>() ?: return setOf()
   return checks.value.map {
     val sType = it.supertypes.firstOrNull {
       sType -> FieldCheck::class.qualifiedName == (sType.classifier as KClass<*>).qualifiedName

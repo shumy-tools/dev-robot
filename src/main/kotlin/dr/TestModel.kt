@@ -34,7 +34,7 @@ class OwnedUserType (
 @Detail @Sealed(Customer::class, Supplier::class)
 class UserType(
   val user: String,
-  @Checks(EmailCheck::class) val email: String,
+  @Check(EmailCheck::class) val email: String,
 
   val password: String,
   @Link(Role::class) val roles: List<RefID>
@@ -78,17 +78,17 @@ data class Market(val name: String)
 
 @Master
 data class User(
-        @Unique val name: String,
+  @Unique val name: String,
 
-        @Checks(EmailCheck::class) val email: String,
+  @Check(EmailCheck::class) val email: String,
 
-        @Own val address: List<Address>,
+  @Own val address: List<Address>,
 
   //@Create val address: Address,
 
   //@Link(Market::class, traits = [UserMarket::class]) val market: Traits,
 
-        @Link(Role::class, traits = [Trace::class]) val roles: List<Traits>
+  @Link(Role::class, traits = [Trace::class]) val roles: List<Traits>
   //@Link(Role::class) val roles: List<RefID>
 ) {
   val timestamp = LocalDateTime.now()

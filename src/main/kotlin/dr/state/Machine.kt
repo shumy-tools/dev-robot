@@ -6,13 +6,7 @@ import dr.base.History
 import dr.base.User
 import dr.ctx.Context
 import dr.io.DEntity
-import dr.schema.RefID
-import dr.schema.SEntity
-import dr.schema.SMachine
-import dr.schema.Schema
-import dr.schema.tabular.HISTORY
-import dr.schema.tabular.ID
-import dr.schema.tabular.STATE
+import dr.schema.*
 import dr.spi.IQueryExecutor
 import dr.spi.QRow
 import java.time.LocalDateTime
@@ -86,7 +80,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     val then = states[state] ?: throw Exception("StateMachine transition '$state -> ${evtType.qualifiedName}' not found! - (${javaClass.canonicalName})")
 
     val evtJson = JsonParser.write(inEvt)
-    val newHistory = History(LocalDateTime.now(), evtType.qualifiedName, evtJson, state, then.to.name)
+    val newHistory = History(LocalDateTime.now(), user.name, evtType.qualifiedName, evtJson, state, then.to.name, JMap())
     Context.session.vars[NEW_HISTORY] = newHistory
 
     then.call(user, state, event)
@@ -110,13 +104,6 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     // call enter state if exists
     val enter = enter[toState]
     enter?.invoke(EnterActions(toState))
-
-    // finalize the data result
-    val newData = Context.session.vars[NEW_HISTORY_DATA]
-    newData?.let {
-      val newHistory = Context.session.vars[NEW_HISTORY] as History
-      newHistory.data = JsonParser.write(newData)
-    }
   }
 
   inner class SHistory internal constructor() {
@@ -131,12 +118,11 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
         value?.let { sMachine.events[value] as KClass<EX>? }
       }
 
-      @Suppress("UNCHECKED_CAST")
       val event: EX? by lazy {
         val type = evtType
         type?.let {
           val value = map.getValue(History::evt.name) as String
-          JsonParser.read(value, type) as EX
+          JsonParser.read(value, type)
         }
       }
 
@@ -152,21 +138,18 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
         sMachine.states.getValue(value) as S
       }
 
-      val data: Map<String, Any> by lazy {
-        val value = map.getValue(History::data.name) as String
-        JsonParser.readMap(value)
+      val data: JMap by lazy {
+        map.getValue(History::data.name) as JMap
       }
 
-      fun get(key: String) = data.getValue(key)
+      operator fun get(key: String) = data[key]!!
 
       override fun toString() = "Record(ts=$ts, event=$event, from=$from, to=$to, data=$data)"
     }
 
     private val newData by lazy {
       val newHistory = Context.session.vars[NEW_HISTORY] as History
-      val map = JsonParser.readMap(newHistory.data).toMutableMap()
-      Context.session.vars[NEW_HISTORY_DATA] = map
-      map
+      newHistory.data
     }
 
     val all: List<Machine<T, S, E>.SHistory.Record<E>>

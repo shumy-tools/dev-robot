@@ -3,11 +3,7 @@ package dr.io
 import dr.JsonParser
 import dr.base.History
 import dr.ctx.Context
-import dr.schema.Pack
-import dr.schema.RefID
-import dr.schema.SEntity
-import dr.schema.tabular.HISTORY
-import dr.schema.tabular.STATE
+import dr.schema.*
 import dr.spi.IAdaptor
 import dr.state.Machine
 import dr.state.NEW_HISTORY
@@ -127,7 +123,7 @@ class InputService(
     val sMachine = schema.machine
     return sMachine?.let {
       val state = sMachine.states.keys.first()
-      val history = History(LocalDateTime.now(), null,null, null, state)
+      val history = History(LocalDateTime.now(), Context.session.user.name, null,null, null, state, JMap())
       Context.session.vars[NEW_HISTORY] = history
 
       val dHistory = processor.create(history)

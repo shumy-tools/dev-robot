@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ArrayNode
 import dr.JsonParser
 import dr.schema.*
-import dr.schema.tabular.TYPE
+import dr.schema.TYPE
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -61,6 +61,7 @@ class InputProcessor(val schema: Schema) {
           FieldType.TIME -> LocalTime.parse(vNode.asText())
           FieldType.DATE -> LocalDate.parse(vNode.asText())
           FieldType.DATETIME -> LocalDateTime.parse(vNode.asText())
+          FieldType.JMAP -> JsonParser.readNode(vNode, JMap::class)
         }
 
         is SRelation -> when (sFieldOrRelation.type) {
@@ -121,6 +122,7 @@ class InputProcessor(val schema: Schema) {
           FieldType.TIME -> value is LocalTime
           FieldType.DATE -> value is LocalDate
           FieldType.DATETIME -> value is LocalDateTime
+          FieldType.JMAP -> value is JMap
         }
 
         is SRelation -> when (sFieldOrRelation.type) {

@@ -1,12 +1,16 @@
 package dr.io
 
-import dr.schema.ActionType
 import dr.schema.RefID
-import dr.schema.tabular.ID
+import dr.schema.ID
 import dr.schema.tabular.STable
 import dr.schema.tabular.TProperty
 import dr.schema.tabular.TRef
 import java.util.*
+
+enum class InstructionType {
+  CREATE, UPDATE, DELETE,
+  ADD, REMOVE, LINK, UNLINK
+}
 
 class Instructions(val all: MutableList<Instruction> = mutableListOf()) {
   lateinit var root: Instruction
@@ -38,7 +42,7 @@ class Instructions(val all: MutableList<Instruction> = mutableListOf()) {
 
 sealed class Instruction(val refID: RefID) {
   abstract val table: STable
-  abstract val action: ActionType
+  abstract val iType: InstructionType
 
   private val _resolvedRefs = linkedMapOf<TRef, RefID>()
   private var dataStack = Stack<LinkedHashMap<TProperty, Any?>>()
@@ -84,16 +88,16 @@ sealed class Instruction(val refID: RefID) {
   }
 }
 
-  class Insert(refID: RefID, override val table: STable, override val action: ActionType): Instruction(refID) {
+  class Insert(refID: RefID, override val table: STable, override val iType: InstructionType): Instruction(refID) {
     init { if (table.sRelation == null) putOutput(ID, null) } // reserve the first position for @id in the output
-    override fun toString() = "Insert($action) - {table=${tableText()}${dataText()}${resolvedRefsText()}}"
+    override fun toString() = "Insert($iType) - {table=${tableText()}${dataText()}${resolvedRefsText()}}"
   }
 
-  class Update(refID: RefID, override val table: STable, override val action: ActionType): Instruction(refID) {
+  class Update(refID: RefID, override val table: STable, override val iType: InstructionType): Instruction(refID) {
     init { if (table.sRelation == null) putOutput(ID, refID.id) }
-    override fun toString() = "Update($action) - {table=${tableText()}, id=${refID.id}${dataText()}${resolvedRefsText()}}"
+    override fun toString() = "Update($iType) - {table=${tableText()}, id=${refID.id}${dataText()}${resolvedRefsText()}}"
   }
 
-  class Delete(refID: RefID, override val table: STable, override val action: ActionType): Instruction(refID) {
-    override fun toString() = "Delete($action) - {table=${tableText()}${resolvedRefsText()}}"
+  class Delete(refID: RefID, override val table: STable, override val iType: InstructionType): Instruction(refID) {
+    override fun toString() = "Delete($iType) - {table=${tableText()}${resolvedRefsText()}}"
   }

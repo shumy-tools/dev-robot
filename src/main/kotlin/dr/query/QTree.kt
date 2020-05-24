@@ -1,7 +1,7 @@
 package dr.query
 
 import dr.schema.tabular.STable
-import dr.schema.tabular.SUPER
+import dr.schema.SUPER
 
 enum class SortType {
   NONE, ASC, DSC

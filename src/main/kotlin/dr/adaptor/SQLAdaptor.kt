@@ -2,12 +2,9 @@ package dr.adaptor
 
 import com.zaxxer.hikari.HikariDataSource
 import dr.JsonParser
-import dr.io.Delete
-import dr.io.Insert
-import dr.io.Instructions
-import dr.io.Update
+import dr.io.*
 import dr.query.QTree
-import dr.schema.Schema
+import dr.schema.*
 import dr.schema.tabular.*
 import dr.spi.IAdaptor
 import org.jooq.Constraint
@@ -118,9 +115,8 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
             val stmt = conf.connectionProvider().acquire().prepareStatement(insert.sql, Statement.RETURN_GENERATED_KEYS)
 
             var seq = 1
-            inst.data.forEach {
-              // TODO: parse Trait class directly instead of a map?
-              val cValue = if (it.key is TEmbedded && it.value != null) JsonParser.write(it.value!!) else it.value
+            inst.data.forEach { (key, value) ->
+              val cValue = value?.let { FieldConverter.save(key, value) }
               stmt.setObject(seq, cValue)
               seq++
             }
@@ -141,10 +137,9 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
           is Update -> {
             var dbUpdate = tx.update(table(tableName)) as UpdateSetMoreStep<*>
 
-            inst.data.forEach {
-              // TODO: parse Trait class directly instead of a map?
-              val cValue = if (it.key is TEmbedded && it.value != null) JsonParser.write(it.value!!) else it.value
-              dbUpdate = dbUpdate.set(it.key.fn(), cValue)
+            inst.data.forEach { (key, value) ->
+              val cValue = value?.let { FieldConverter.save(key, value) }
+              dbUpdate = dbUpdate.set(key.fn(), cValue)
             }
 
             inst.resolvedRefs.forEach { dbUpdate = dbUpdate.set(it.key.fn(inst.table), it.value) }

@@ -2,9 +2,9 @@ package dr.query
 
 import dr.schema.FieldType
 import dr.schema.SField
-import dr.schema.tabular.ID
+import dr.schema.ID
 import dr.schema.tabular.STable
-import dr.schema.tabular.TYPE
+import dr.schema.TYPE
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
 import java.time.LocalDate
