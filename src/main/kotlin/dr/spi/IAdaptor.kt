@@ -25,4 +25,5 @@ interface IRowGet<E: Any> {
 
 interface IResult<E: Any>: IRowGet<E>, Iterable<IRowGet<E>> {
   val rows: List<QRow>
+  fun isEmpty(): Boolean = rows.isEmpty()
 }

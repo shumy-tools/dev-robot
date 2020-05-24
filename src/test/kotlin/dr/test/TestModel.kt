@@ -171,7 +171,7 @@ class MEntityMachine: Machine<MEntity, MEntityMachine.State, MEntityMachine.Even
       check { event.value.startsWith("#") }
 
       history.set("owner", user.name)
-      close(MEntity::name).forAll()
+      close(MEntity::name).forAny()
     }
 
     on(State.VALIDATE, Event.Ok::class) fromRole "manager" goto State.STOP after {
@@ -184,9 +184,8 @@ class MEntityMachine: Machine<MEntity, MEntityMachine.State, MEntityMachine.Even
       val record = history.last(Event.Submit::class)
       println("INCORRECT -> check(${record.event})")
 
-      println("(INCORRECT from 'manager') VALIDATE -> START")
-      //val owner: User = history.last(Event.Submit::class).get("owner")
-      //open(MEntity::name).forUser(owner.name)
+      val owner = record.get("owner") as String
+      open(MEntity::name).forUser(owner)
     }
 
     enter(State.STOP) {

@@ -6,6 +6,8 @@ import dr.schema.Master
 import dr.schema.RefID
 import dr.schema.tabular.ID
 
+const val ANY = "@any" // defines any role
+
 @Master
 data class User(
   val name: String,

@@ -1,11 +1,11 @@
 package dr.state
 
 import dr.JsonParser
+import dr.base.ANY
 import dr.base.History
 import dr.base.User
 import dr.ctx.Context
 import dr.io.DEntity
-import dr.query.QueryService
 import dr.schema.RefID
 import dr.schema.SEntity
 import dr.schema.SMachine
@@ -53,7 +53,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   private lateinit var stateQuery: IQueryExecutor<T>
   private lateinit var historyQuery: IQueryExecutor<T>
 
-  internal fun init(allSchema: Schema, sEntity: SEntity, qService: QueryService) {
+  internal fun init(allSchema: Schema, sEntity: SEntity) {
     schema = allSchema
     sMachine = sEntity.machine!!
 
@@ -119,7 +119,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     }
   }
 
-  inner class SHistory internal constructor(private val state: String, private val evtType: KClass<out E>? = null) {
+  inner class SHistory internal constructor() {
     inner class Record<EX: E>(private val map: QRow) {
       val ts: LocalDateTime by lazy {
         map.getValue(History::ts.name) as LocalDateTime
@@ -157,6 +157,8 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
         JsonParser.readMap(value)
       }
 
+      fun get(key: String) = data.getValue(key)
+
       override fun toString() = "Record(ts=$ts, event=$event, from=$from, to=$to, data=$data)"
     }
 
@@ -189,7 +191,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   class For internal constructor(private val state: PropertyState, private val prop: KProperty<*>) {
     enum class PropertyState { OPEN, CLOSE }
 
-    fun forAll() {
+    fun forAny() {
       // TODO: the property state for all
     }
 
@@ -203,7 +205,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   }
 
   open inner class EnterActions internal constructor(private val state: String, private val evtType: KClass<out E>? = null) {
-    val history by lazy { SHistory(state, evtType) }
+    val history by lazy { SHistory() }
 
     fun open(prop: KProperty1<T, Any>): For {
       return For(For.PropertyState.OPEN, prop)
@@ -231,14 +233,13 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
 
   inner class After<EX: E> internal constructor(internal val to: S, private val users: Set<String>, private val roles: Set<String>) {
     private var onEvent: (EventActions<out E>.() -> Unit)? = null
-      private set
 
     @Suppress("UNCHECKED_CAST")
     infix fun after(exec: EventActions<EX>.() -> Unit) { onEvent = exec as EventActions<out E>.() -> Unit }
 
     fun call(user: User, state: String, event: E) {
       val rolesMap = user.rolesMap()
-      if (users.contains(user.name) || roles.any(rolesMap.keys::contains)) {
+      if (roles.contains(ANY) || users.contains(user.name) || roles.any(rolesMap.keys::contains)) {
         onEvent?.invoke(EventActions(state, event))
       }
     }
@@ -270,7 +271,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     }
 
     infix fun goto(to: S): After<EX> {
-      val then = After<EX>(to, emptySet(), emptySet())
+      val then = After<EX>(to, emptySet(), setOf(ANY))
       include(evtType, from, then)
       return then
     }

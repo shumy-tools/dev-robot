@@ -69,7 +69,7 @@ class TestServer(private val schema: Schema, adaptor: IAdaptor) {
 
   private fun buildMachine(sEntity: SEntity): Machine<*, *, *> {
     val instance = sEntity.machine!!.clazz.createInstance()
-    instance.init(schema, sEntity, qService)
+    instance.init(schema, sEntity)
     return instance
   }
 }

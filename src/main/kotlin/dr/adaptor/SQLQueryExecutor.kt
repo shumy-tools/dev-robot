@@ -310,6 +310,8 @@ class SQLResult(private val tables: Tables): IResult<Any> {
 
   override fun iterator(): Iterator<IRowGet<Any>> = ResultIterator(rows)
 
+  override fun toString(): String = JsonParser.print(rows)
+
   @Suppress("UNCHECKED_CAST")
   fun addTo(pk: Long, name: String, row: QRow) {
     val main = rowsWithIds.getValue(pk)

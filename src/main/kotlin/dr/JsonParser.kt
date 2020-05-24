@@ -31,8 +31,10 @@ object JsonParser {
     )
   }
 
+  fun print(value: Any) = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(value)
+
   fun write(value: Any): String = mapper.writeValueAsString(value)
-  fun <T: Any> read(json: String, type: KClass<out T>) = mapper.readValue(json, type.java)
+  fun <T: Any> read(json: String, type: KClass<out T>): T = mapper.readValue(json, type.java)
 
   fun readTree(json: String): JsonNode = mapper.readTree(json)
   fun <T: Any> readNode(node: TreeNode, type: KClass<out T>): T = mapper.treeToValue(node, type.java)
