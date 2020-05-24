@@ -2,6 +2,7 @@ package dr.schema
 
 import com.fasterxml.jackson.annotation.JsonAnyGetter
 import com.fasterxml.jackson.annotation.JsonAnySetter
+import com.fasterxml.jackson.annotation.JsonIgnore
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 
 
@@ -60,12 +61,29 @@ data class Traits(
 }
 
 class JMap {
-  private val data = linkedMapOf<String, Any>()
+  private var data: MutableMap<String, Any> = linkedMapOf()
+
+  @JsonIgnore
+  fun isEmpty() = data.isEmpty()
 
   @JsonAnyGetter
   fun any(): Map<String, Any> = data
 
-  operator fun get(key: String) = data[key]
+  fun getOrPut(key: String): JMap {
+    val value = data[key]
+    if (value != null)
+      return value as JMap
+
+    val jmap = JMap()
+    data[key] = jmap
+    return jmap
+  }
+
+  @Suppress("UNCHECKED_CAST")
+  operator fun get(key: String): Any? {
+    val value = data[key]
+    return if (value is Map<*, *>) JMap().also { it.data = (value as Map<String, Any>).toMutableMap() } else value
+  }
 
   @JsonAnySetter
   operator fun set(key: String, value: Any?) {
@@ -74,11 +92,14 @@ class JMap {
       return
     }
 
-    val type = TypeEngine.convert(value.javaClass.kotlin)
-    if (type == null || type == FieldType.JMAP)
-      throw Exception("Invalid type for a JProperty! - (${value.javaClass.simpleName})")
+    val nValue = if (value is Map<*, *>) {
+      val jmap = JMap()
+      value.forEach { jmap[it.key as String] = it.value }
+      jmap
+    } else value
 
-    data[key] = value
+    TypeEngine.convert(nValue.javaClass.kotlin) ?: throw Exception("Invalid type for a JProperty! - (${nValue.javaClass.simpleName})")
+    data[key] = nValue
   }
 
   override fun toString() = data.toString()

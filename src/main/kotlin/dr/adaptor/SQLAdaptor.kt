@@ -1,10 +1,12 @@
 package dr.adaptor
 
 import com.zaxxer.hikari.HikariDataSource
-import dr.JsonParser
 import dr.io.*
 import dr.query.QTree
-import dr.schema.*
+import dr.schema.ID
+import dr.schema.INV
+import dr.schema.REF
+import dr.schema.Schema
 import dr.schema.tabular.*
 import dr.spi.IAdaptor
 import org.jooq.Constraint
@@ -86,7 +88,7 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
     }
   }
 
-  override fun compile(query: QTree) = SQLQueryExecutor(db, tables, query)
+  override fun compile(query: QTree) = SQLQueryExecutor(db, query)
 
   override fun commit(instructions: Instructions) {
     db.transaction { conf ->

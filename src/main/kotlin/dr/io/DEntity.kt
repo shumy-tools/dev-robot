@@ -53,11 +53,14 @@ class DEntity(
   val name: String
     get() = schema.name
 
-  val state: String
+  val dState: String
     get() = sv[STATE] as String
 
-  val superRef: DEntity?
-    get() = sv[SUPER] as DEntity?
+  val dOpen: JMap
+    get() = sv[OPEN] as JMap
+
+  val dSuper: DEntity
+    get() = sv[SUPER] as DEntity
 
   val allFields: List<DField> by lazy {
     if (cEntity is Pack<*>)
@@ -114,8 +117,9 @@ class DEntity(
     return all
   }
 
-  internal fun setHistory(dHistory: DEntity) {
+  internal fun createHistory(dHistory: DEntity) {
     sv[STATE] = (dHistory.cEntity as History).to
+    sv[OPEN] = JMap()
     sv[HISTORY] = OneLinkWithoutTraits(dHistory.refID)
   }
 
@@ -123,6 +127,7 @@ class DEntity(
     return if (mEntity != null) mEntity[field.name] else when (field.name) {
       TYPE -> sv[TYPE]
       STATE -> sv[STATE]
+      OPEN -> sv[OPEN]
       else -> field.getValue(cEntity!!)
     }
   }

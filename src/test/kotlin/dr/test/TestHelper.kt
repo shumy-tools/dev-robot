@@ -24,7 +24,7 @@ class TestAuthorizer: IAuthorizer {
   override fun read(access: IReadAccess) = true
 }
 
-class TestServer(private val schema: Schema, adaptor: IAdaptor) {
+class TestServer(private val schema: Schema, private val adaptor: IAdaptor) {
   private val machines = linkedMapOf<SEntity, Machine<*, *, *>>()
   private val processor = InputProcessor(schema)
   private val translator = InstructionBuilder(adaptor.tables)
@@ -37,7 +37,7 @@ class TestServer(private val schema: Schema, adaptor: IAdaptor) {
 
   init {
     println("----Checking State Machines----")
-    Context.session = Session(iService, qService)
+    Context.session = Session(adaptor.tables, iService, qService)
       schema.masters.filter { it.value.machine != null }.forEach {
         machines[it.value] = buildMachine(it.value)
         println("    ${it.value.machine!!.name} - OK")
@@ -48,22 +48,22 @@ class TestServer(private val schema: Schema, adaptor: IAdaptor) {
   }
 
   fun create(entType: KClass<out Any>, json: String, user: User = adminUser): Instructions {
-    Context.session = Session(iService, qService, user)
+    Context.session = Session(adaptor.tables, iService, qService, user)
     return iService.initCreate(entType, json)
   }
 
   fun update(entType: KClass<out Any>, id: Long, json: String, user: User = adminUser): Instructions {
-    Context.session = Session(iService, qService, user)
+    Context.session = Session(adaptor.tables, iService, qService, user)
     return iService.initUpdate(entType, id, json)
   }
 
   fun action(entType: KClass<out Any>, evtType: KClass<out Any>, id: Long, json: String, user: User = adminUser): Instructions {
-    Context.session = Session(iService, qService, user)
+    Context.session = Session(adaptor.tables, iService, qService, user)
     return iService.initAction(entType, evtType, id, json)
   }
 
   fun <T: Any> query(type: KClass<T>, query: String, user: User = adminUser): List<QRow> {
-    Context.session = Session(iService, qService, user)
+    Context.session = Session(adaptor.tables, iService, qService, user)
     return Context.query(type, query).exec().rows
   }
 

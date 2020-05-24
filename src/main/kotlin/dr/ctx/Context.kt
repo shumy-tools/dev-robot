@@ -7,6 +7,7 @@ import dr.io.Instructions
 import dr.query.QueryService
 import dr.schema.RefID
 import dr.schema.SEntity
+import dr.schema.tabular.Tables
 import dr.spi.IQueryExecutor
 import dr.spi.IReadAccess
 import java.util.concurrent.atomic.AtomicReference
@@ -49,7 +50,7 @@ object Context {
 }
 
 val ANONYMOUS = User("anonymous", "no-email", emptyList())
-class Session(val iService: InputService, val qService: QueryService, val user: User = ANONYMOUS) {
+class Session(val tables: Tables, val iService: InputService, val qService: QueryService, val user: User = ANONYMOUS) {
   internal val vars = mutableMapOf<String, Any>()
   internal val instructions = Instructions()
 }

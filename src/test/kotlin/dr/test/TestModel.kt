@@ -163,33 +163,48 @@ class MEntityMachine: Machine<MEntity, MEntityMachine.State, MEntityMachine.Even
     }
 
     enter(State.START) {
-      history.set("d-field", 30)
+      history["d-field"] = 30
       open(MEntity::name).forRole("admin")
+
+      println("(id=${id.id}, state=$state, open=$open, user=${user.name})")
+      //assert("(id=${id.id}, state=$state, open=$open, user=${user.name})" == "(id=null, state=START, open={name={roles={admin=true}}}, user=shumy)")
     }
 
     on(State.START, Event.Submit::class) fromRole "admin" goto State.VALIDATE after {
       check { event.value.startsWith("#") }
 
-      history.set("owner", user.name)
+      history["owner"] = user.name
       close(MEntity::name).forAny()
+
+      println("(id=${id.id}, state=$state, open=$open, emt=${open.isEmpty()} user=${user.name})")
+      //assert("(id=${id.id}, state=$state, open=$open, user=${user.name})" == "(id=1, state=START, open={}, user=shumy)")
     }
 
     on(State.VALIDATE, Event.Ok::class) fromRole "manager" goto State.STOP after {
       val record = history.last(Event.Submit::class)
       assert(record.event == Event.Submit("#try-submit"))
-      assert(record.data["owner"] == "shumy")
+      assert(record["owner"] == "shumy")
+
+      println("(id=${id.id}, state=$state, open=$open, user=${user.name})")
+      //assert("(id=${id.id}, state=$state, open=$open, user=${user.name})" == "(id=1, state=VALIDATE, open={}, user=alex)")
     }
 
     on(State.VALIDATE, Event.Incorrect::class) fromRole "manager" goto State.START after {
       val record = history.last(Event.Submit::class)
       println("INCORRECT -> check(${record.event})")
 
-      val owner = record.get("owner") as String
+      val owner = record["owner"] as String
       open(MEntity::name).forUser(owner)
+
+      println("(id=${id.id}, state=$state, open=$open, user=${user.name})")
+      //assert("(id=${id.id}, state=$state, open=$open, user=${user.name})" == "(id=1, state=VALIDATE, open={}, user=alex)")
     }
 
     enter(State.STOP) {
       create(RefToMEntity("a-stop", id))
+
+      println("(id=${id.id}, state=$state, open=$open, user=${user.name})")
+      //assert("(id=${id.id}, state=$state, open=$open, user=${user.name})" == "(id=1, state=STOP, open={}, user=alex)")
     }
   }
 }

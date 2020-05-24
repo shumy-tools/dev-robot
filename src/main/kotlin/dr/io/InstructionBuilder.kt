@@ -46,7 +46,7 @@ class InstructionBuilder(private val tables: Tables) {
     // create extended entities if exist
     var topInst = rootInst
     for (item in tail) {
-      val topEntity = item.superRef!!.schema
+      val topEntity = item.dSuper.schema
       topInst = Insert(item.refID, tables.get(item.schema), CREATE).apply {
         putRef(TSuperRef(topEntity), topInst.refID)
         val (subTopInclude, subBottomInclude) = processUnpackedEntity(item, this)

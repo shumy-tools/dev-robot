@@ -105,7 +105,8 @@ class InputService(
     // create and link NEW_HISTORY
     val history = Context.session.vars[NEW_HISTORY] as History
     val refID = create(history)
-    val uData = mapOf(STATE to history.to, HISTORY to OneLinkWithoutTraits(refID))
+    val open = Context.session.vars[OPEN]
+    val uData = mapOf(STATE to history.to, OPEN to open, HISTORY to OneLinkWithoutTraits(refID))
     updateState(id, sEntity, uData)
 
     adaptor.commit(Context.instructions)
@@ -127,7 +128,7 @@ class InputService(
       Context.session.vars[NEW_HISTORY] = history
 
       val dHistory = processor.create(history)
-      setHistory(dHistory)
+      createHistory(dHistory)
       machines[schema]?.fireCreate(this)
 
       dHistory

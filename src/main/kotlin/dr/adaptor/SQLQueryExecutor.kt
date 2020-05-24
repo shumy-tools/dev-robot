@@ -1,6 +1,7 @@
 package dr.adaptor
 
 import dr.JsonParser
+import dr.ctx.Context
 import dr.io.FieldConverter
 import dr.query.*
 import dr.schema.*
@@ -13,7 +14,8 @@ import org.jooq.*
 import org.jooq.impl.DSL.*
 import java.util.concurrent.atomic.AtomicBoolean
 
-class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, private val qTree: QTree): IQueryExecutor<Any> {
+class SQLQueryExecutor(private val db: DSLContext, private val qTree: QTree): IQueryExecutor<Any> {
+  private val tables = Context.session.tables
   private val qTable = table(qTree.table.sqlName()).asTable(MAIN)
 
   private val joinFields = mutableListOf<Field<Any>>()
@@ -44,12 +46,12 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
     }
 
     // process results
-    val result = SQLResult(tables)
+    val result = SQLResult()
 
     // add main result
     println(mainQuery.sql)
     mParams.forEach { mainQuery.bind(it.key, it.value) }
-    mainQuery.fetch().forEach { result.process(it, fk) { name, value -> FieldConverter.load(tables, qTree.table, name, value) }}
+    mainQuery.fetch().forEach { result.process(it, fk) { name, value -> FieldConverter.load(qTree.table, name, value) }}
 
     // add one-to-many and many-to-many results
     inverted.forEach {
@@ -79,7 +81,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
       val refTable = tables.get(iRef.rel.ref)
       val subTree = QTree(refTable, qRel)
 
-      val subQuery = SQLQueryExecutor(db, tables, subTree)
+      val subQuery = SQLQueryExecutor(db, subTree)
       inverted[qRel.name] = Pair(iRef.fn(refTable, MAIN), subQuery)
     }
 
@@ -96,7 +98,7 @@ class SQLQueryExecutor(private val db: DSLContext, private val tables: Tables, p
       val auxSelect = QSelect(qRel.select.hasAll, fp.first, refRels)
       val auxTree = QTree(auxTable, qRel.filter, qRel.limit, qRel.page, auxSelect)
 
-      val subQuery = SQLQueryExecutor(db, tables, auxTree)
+      val subQuery = SQLQueryExecutor(db, auxTree)
       inverted[qRel.name] = Pair(invFn(MAIN), subQuery)
     }
   }
@@ -295,7 +297,7 @@ class ResultIterator(rows: List<QRow>): Iterator<IRowGet<Any>> {
   override fun next() = RowGet(iter.next())
 }
 
-class SQLResult(private val tables: Tables): IResult<Any> {
+class SQLResult: IResult<Any> {
   internal val rowsWithIds = linkedMapOf<Long, LinkedHashMap<String, Any?>>()
   internal val fkKeys = linkedMapOf<Long, MutableList<Long>>()
 

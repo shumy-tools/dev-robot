@@ -1,9 +1,7 @@
 package dr.state
 
 import dr.JsonParser
-import dr.base.ANY
-import dr.base.History
-import dr.base.User
+import dr.base.*
 import dr.ctx.Context
 import dr.io.DEntity
 import dr.schema.*
@@ -15,7 +13,8 @@ import kotlin.reflect.KProperty
 import kotlin.reflect.KProperty1
 
 const val NEW_HISTORY = "NEW_$HISTORY"
-private const val NEW_HISTORY_DATA = "${NEW_HISTORY}_DATA"
+
+enum class PropertyState { OPEN, CLOSE }
 
 class UEntity<T: Any>(val data: Map<String, Any?>) {
   @Suppress("UNCHECKED_CAST")
@@ -32,11 +31,18 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   val id: RefID
     get() = Context.session.vars[ID] as RefID
 
+  @Suppress("UNCHECKED_CAST")
+  val state: S
+    get() = sMachine.states.getValue(Context.session.vars[STATE] as String) as S
+
+  val open: JMap
+    get() = Context.session.vars[OPEN] as JMap
+
   val user: User
     get() = Context.session.user
 
-  var onCreate: ((T) -> Unit)? = null
-  var onUpdate: ((UEntity<T>) -> Unit)? = null
+  protected var onCreate: ((T) -> Unit)? = null
+  protected var onUpdate: ((UEntity<T>) -> Unit)? = null
 
   private val enter = hashMapOf<String, EnterActions.() -> Unit>()
   private val events = hashMapOf<KClass<out E>, MutableMap<String, After<out E>>>()
@@ -44,7 +50,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   private lateinit var schema: Schema
   internal lateinit var sMachine: SMachine
 
-  private lateinit var stateQuery: IQueryExecutor<T>
+  private lateinit var stateAndOpenQuery: IQueryExecutor<T>
   private lateinit var historyQuery: IQueryExecutor<T>
 
   internal fun init(allSchema: Schema, sEntity: SEntity) {
@@ -52,7 +58,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     sMachine = sEntity.machine!!
 
     @Suppress("UNCHECKED_CAST")
-    stateQuery = query(sEntity.clazz,"| $ID == ?id | { $STATE }") as IQueryExecutor<T>
+    stateAndOpenQuery = query(sEntity.clazz,"| $ID == ?id | { $STATE, $OPEN }") as IQueryExecutor<T>
 
     @Suppress("UNCHECKED_CAST")
     historyQuery = query(sEntity.clazz,"| $ID == ?id | { $ID, $HISTORY { * } }") as IQueryExecutor<T>
@@ -69,12 +75,15 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
 
   @Suppress("UNCHECKED_CAST")
   internal fun fireEvent(id: Long, inEvt: Any) {
-    Context.session.vars[ID] = RefID(id)
     val event = inEvt as E
     val evtType = event.javaClass.kotlin
+    val so = stateAndOpenQuery.exec("id" to id)
+    val state = so.get<String>(STATE)!!
+    val open = so.get<JMap>(OPEN)!!
 
-    val state = stateQuery.exec("id" to id).get<String>(STATE)!!
+    Context.session.vars[ID] = RefID(id)
     Context.session.vars[STATE] = state
+    Context.session.vars[OPEN] = open
 
     val states = events.getValue(evtType)
     val then = states[state] ?: throw Exception("StateMachine transition '$state -> ${evtType.qualifiedName}' not found! - (${javaClass.canonicalName})")
@@ -83,19 +92,27 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     val newHistory = History(LocalDateTime.now(), user.name, evtType.qualifiedName, evtJson, state, then.to.name, JMap())
     Context.session.vars[NEW_HISTORY] = newHistory
 
-    then.call(user, state, event)
+    then.call(user, event)
     finalizeEvent(then.to.name)
   }
 
   @Suppress("UNCHECKED_CAST")
   internal fun fireCreate(entity: DEntity) {
     Context.session.vars[ID] = entity.refID
+    Context.session.vars[STATE] = entity.dState
+    Context.session.vars[OPEN] = entity.dOpen
+
     onCreate?.invoke(entity.cEntity as T)
-    finalizeEvent(entity.state)
+    finalizeEvent(entity.dState)
   }
 
   internal fun fireUpdate(entity: DEntity) {
+    val so = stateAndOpenQuery.exec("id" to entity.refID.id!!)
+
     Context.session.vars[ID] = entity.refID
+    Context.session.vars[STATE] = so.get<String>(STATE)!!
+    Context.session.vars[OPEN] = so.get<JMap>(OPEN)!!
+
     onUpdate?.invoke(UEntity(entity.mEntity!!))
   }
 
@@ -103,13 +120,20 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   private fun finalizeEvent(toState: String) {
     // call enter state if exists
     val enter = enter[toState]
-    enter?.invoke(EnterActions(toState))
+    enter?.let {
+      Context.session.vars[STATE] = toState
+      it.invoke(EnterActions())
+    }
   }
 
   inner class SHistory internal constructor() {
     inner class Record<EX: E>(private val map: QRow) {
       val ts: LocalDateTime by lazy {
         map.getValue(History::ts.name) as LocalDateTime
+      }
+
+      val user: String by lazy {
+        map.getValue(History::user.name) as String
       }
 
       @Suppress("UNCHECKED_CAST")
@@ -128,8 +152,8 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
 
       @Suppress("UNCHECKED_CAST")
       val from: S? by lazy {
-        val value = map.getValue(History::from.name) as String?
-        value?.let { sMachine.states.getValue(value) as S }
+        val value = map.getValue(History::from.name) as String
+        sMachine.states.getValue(value) as S
       }
 
       @Suppress("UNCHECKED_CAST")
@@ -144,7 +168,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
 
       operator fun get(key: String) = data[key]!!
 
-      override fun toString() = "Record(ts=$ts, event=$event, from=$from, to=$to, data=$data)"
+      override fun toString() = "Record(ts=$ts, user=$user, event=$event, from=$from, to=$to, data=$data)"
     }
 
     private val newData by lazy {
@@ -161,7 +185,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
       all = history.map { Record<E>(it) }
     }
 
-    fun set(key: String, value: Any) {
+    operator fun set(key: String, value: Any) {
       newData[key] = value
     }
 
@@ -171,31 +195,55 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     }
   }
 
-  class For internal constructor(private val state: PropertyState, private val prop: KProperty<*>) {
-    enum class PropertyState { OPEN, CLOSE }
-
+  inner class For internal constructor(private val pState: PropertyState, private val prop: KProperty<*>) {
     fun forAny() {
-      // TODO: the property state for all
+      val oField = open.getOrPut(prop.name)
+      when (pState) {
+        PropertyState.OPEN -> oField[ANY] = true
+        PropertyState.CLOSE -> open[prop.name] = null
+      }
     }
 
     fun forRole(role: String) {
-      // TODO: the property state for role
+      val oField = open.getOrPut(prop.name)
+      val oRoles = oField.getOrPut(ROLES)
+      when (pState) {
+        PropertyState.OPEN -> if (oField[ANY] == null) oRoles[role] = true
+        PropertyState.CLOSE -> {
+          oRoles[role] = null
+          if (oRoles.isEmpty()) {
+            oField[ROLES] = null
+            if (oField[USERS] == null) open[prop.name] = null
+          }
+        }
+      }
     }
 
     fun forUser(user: String) {
-      // TODO: the property state for user
+      val oField = open.getOrPut(prop.name)
+      val oUsers = oField.getOrPut(USERS)
+      when (pState) {
+        PropertyState.OPEN -> if (oField[ANY] == null) oUsers[user] = true
+        PropertyState.CLOSE -> {
+          oUsers[user] = null
+          if (oUsers.isEmpty()) {
+            oField[USERS] = null
+            if (oField[ROLES] == null) open[prop.name] = null
+          }
+        }
+      }
     }
   }
 
-  open inner class EnterActions internal constructor(private val state: String, private val evtType: KClass<out E>? = null) {
+  open inner class EnterActions internal constructor() {
     val history by lazy { SHistory() }
 
     fun open(prop: KProperty1<T, Any>): For {
-      return For(For.PropertyState.OPEN, prop)
+      return For(PropertyState.OPEN, prop)
     }
 
     fun close(prop: KProperty1<T, Any>): For {
-      return For(For.PropertyState.CLOSE, prop)
+      return For(PropertyState.CLOSE, prop)
     }
 
     internal var checkOrder = 0
@@ -206,7 +254,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     }
   }
 
-  inner class EventActions<EX: E> internal constructor(private val state: String, val event: EX): EnterActions(state) {
+  inner class EventActions<EX: E> internal constructor(val event: EX): EnterActions() {
     override infix fun check(predicate: () -> Boolean) {
       checkOrder++
       if (!predicate())
@@ -220,10 +268,10 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     @Suppress("UNCHECKED_CAST")
     infix fun after(exec: EventActions<EX>.() -> Unit) { onEvent = exec as EventActions<out E>.() -> Unit }
 
-    fun call(user: User, state: String, event: E) {
+    fun call(user: User, event: E) {
       val rolesMap = user.rolesMap()
       if (roles.contains(ANY) || users.contains(user.name) || roles.any(rolesMap.keys::contains)) {
-        onEvent?.invoke(EventActions(state, event))
+        onEvent?.invoke(EventActions(event))
       }
     }
   }

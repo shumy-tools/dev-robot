@@ -1,6 +1,7 @@
 package dr.io
 
 import dr.JsonParser
+import dr.ctx.Context
 import dr.schema.FieldType
 import dr.schema.JMap
 import dr.schema.SPECIAL
@@ -15,11 +16,13 @@ object FieldConverter {
     else -> value
   }
 
-  fun load(tables: Tables, table: STable, name: String, value: Any) = if (name.startsWith(TRAITS)) {
+  fun load(table: STable, name: String, value: Any) = if (name.startsWith(TRAITS)) {
+    val tables = Context.session.tables
     val traitSplit = name.substring(1).split(SPECIAL)
     val sTrait = tables.schema.traits.getValue(traitSplit.first())
     JsonParser.read((value as String), sTrait.clazz)
   } else {
+    val tables = Context.session.tables
     val sTable = if (table.sRelation == null) table else tables.get(table.sRelation.ref)
     val sProp = sTable.props[name]
     if (sProp is TField && sProp.field.type == FieldType.JMAP) {

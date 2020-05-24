@@ -8,6 +8,8 @@ import dr.schema.Unique
 import dr.schema.ID
 
 const val ANY = "@any" // defines any role
+const val ROLES = "roles"
+const val USERS = "users"
 
 @Master
 data class User(

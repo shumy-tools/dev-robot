@@ -182,8 +182,9 @@ private fun KClass<*>.processStateMachine(tmpSchema: TempSchema, sEntity: SEntit
     if (states.isEmpty())
       throw Exception("StateMachine '${machine.value.qualifiedName}' requires at least one state!")
 
-    // add @state to entity
+    // add @state and @open to entity
     sEntity.addProperty(STATE, SField(STATE, null, FieldType.TEXT, emptySet(), false))
+    sEntity.addProperty(OPEN, SField(OPEN, null, FieldType.JMAP, emptySet(), false))
 
     // add History to entity
     val sHistory = tmpSchema.base.getValue(History::class)

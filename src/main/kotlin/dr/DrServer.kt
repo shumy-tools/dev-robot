@@ -33,7 +33,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
 
   init {
     println("----Checking State Machines----")
-    dr.ctx.Context.session = Session(iService, qService)
+    dr.ctx.Context.session = Session(adaptor.tables, iService, qService)
       schema.masters.filter { it.value.machine != null }.forEach {
         machines[it.value] = buildMachine(it.value)
         println("    ${it.value.machine!!.name} - OK")
@@ -53,7 +53,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
       val user = dr.base.User("admin", "admin@mail.com", listOf(RefID(1)))
 
       println("before - /api/*")
-      dr.ctx.Context.session = Session(iService, qService, user)
+      dr.ctx.Context.session = Session(adaptor.tables, iService, qService, user)
     }
 
     app.before("/api/*") { dr.ctx.Context.clear() }
@@ -74,7 +74,7 @@ class DrServer(val schema: Schema, val adaptor: IAdaptor, val authorizer: IAutho
   }
 
   fun use(useFn: dr.ctx.Context.() -> Unit) {
-    dr.ctx.Context.session = Session(iService, qService)
+    dr.ctx.Context.session = Session(adaptor.tables, iService, qService)
       dr.ctx.Context.useFn()
       if (dr.ctx.Context.instructions.all.isNotEmpty())
         adaptor.commit(dr.ctx.Context.instructions)
