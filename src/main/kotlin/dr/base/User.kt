@@ -1,11 +1,7 @@
 package dr.base
 
 import dr.ctx.Context
-import dr.schema.Link
-import dr.schema.Master
-import dr.schema.RefID
-import dr.schema.Unique
-import dr.schema.ID
+import dr.schema.*
 
 const val ANY = "@any" // defines any role
 const val ROLES = "roles"

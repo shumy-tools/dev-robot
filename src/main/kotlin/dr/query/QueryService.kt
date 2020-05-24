@@ -1,7 +1,7 @@
 package dr.query
 
-import dr.schema.tabular.STable
 import dr.schema.TRAITS
+import dr.schema.tabular.STable
 import dr.schema.tabular.Tables
 import dr.spi.IAdaptor
 import dr.spi.IQueryExecutor

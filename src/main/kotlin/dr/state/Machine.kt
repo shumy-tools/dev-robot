@@ -41,8 +41,8 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   val user: User
     get() = Context.session.user
 
-  protected var onCreate: ((T) -> Unit)? = null
-  protected var onUpdate: ((UEntity<T>) -> Unit)? = null
+  protected var onCreate: (EnterActions.(T) -> Unit)? = null
+  protected var onUpdate: (EnterActions.(UEntity<T>) -> Unit)? = null
 
   private val enter = hashMapOf<String, EnterActions.() -> Unit>()
   private val events = hashMapOf<KClass<out E>, MutableMap<String, After<out E>>>()
@@ -102,7 +102,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     Context.session.vars[STATE] = entity.dState
     Context.session.vars[OPEN] = entity.dOpen
 
-    onCreate?.invoke(entity.cEntity as T)
+    onCreate?.invoke(EnterActions(), entity.cEntity as T)
     finalizeEvent(entity.dState)
   }
 
@@ -113,7 +113,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     Context.session.vars[STATE] = so.get<String>(STATE)!!
     Context.session.vars[OPEN] = so.get<JMap>(OPEN)!!
 
-    onUpdate?.invoke(UEntity(entity.mEntity!!))
+    onUpdate?.invoke(EnterActions(), UEntity(entity.mEntity!!))
   }
 
   @Suppress("UNCHECKED_CAST")
@@ -184,6 +184,9 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
       val history = (if (id != null) historyQuery.exec("id" to id).get<Any>(HISTORY)!! else emptyList<Any>()) as List<QRow>
       all = history.map { Record<E>(it) }
     }
+
+    val size: Int
+      get() = all.size
 
     operator fun set(key: String, value: Any) {
       newData[key] = value

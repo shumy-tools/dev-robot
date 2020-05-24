@@ -1,7 +1,10 @@
 package dr.io
 
-import dr.schema.*
 import dr.io.InstructionType.*
+import dr.schema.EntityType
+import dr.schema.RefID
+import dr.schema.SRelation
+import dr.schema.SUPER
 import dr.schema.tabular.*
 
 class InstructionBuilder(private val tables: Tables) {

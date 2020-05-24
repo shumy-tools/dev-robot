@@ -4,8 +4,11 @@ import dr.JsonParser
 import dr.ctx.Context
 import dr.io.FieldConverter
 import dr.query.*
-import dr.schema.*
-import dr.schema.tabular.*
+import dr.schema.ID
+import dr.schema.SUPER
+import dr.schema.TRAITS
+import dr.schema.tabular.STable
+import dr.schema.tabular.TDirectRef
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
 import dr.spi.IRowGet

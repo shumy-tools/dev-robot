@@ -1,7 +1,7 @@
 package dr.io
 
-import dr.schema.RefID
 import dr.schema.ID
+import dr.schema.RefID
 import dr.schema.tabular.STable
 import dr.schema.tabular.TProperty
 import dr.schema.tabular.TRef

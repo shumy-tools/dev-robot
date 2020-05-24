@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ArrayNode
 import dr.JsonParser
 import dr.schema.*
-import dr.schema.TYPE
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime

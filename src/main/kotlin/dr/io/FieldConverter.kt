@@ -6,7 +6,10 @@ import dr.schema.FieldType
 import dr.schema.JMap
 import dr.schema.SPECIAL
 import dr.schema.TRAITS
-import dr.schema.tabular.*
+import dr.schema.tabular.STable
+import dr.schema.tabular.TEmbedded
+import dr.schema.tabular.TField
+import dr.schema.tabular.TProperty
 
 // used to convert fields to DB and back
 object FieldConverter {

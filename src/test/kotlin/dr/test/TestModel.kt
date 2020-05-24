@@ -153,9 +153,9 @@ class MEntityMachine: Machine<MEntity, MEntityMachine.State, MEntityMachine.Even
 
   init {
     onCreate = {
-      assert(it.name == "My Name")
       assert(q1.exec().rows.toString() == "[{@id=1, name=shumy, email=shumy@gmail.com}]")
       create(RefToMEntity("a-create", id))
+      open(MEntity::name).forRole("admin")
     }
 
     onUpdate = {
@@ -164,47 +164,44 @@ class MEntityMachine: Machine<MEntity, MEntityMachine.State, MEntityMachine.Even
 
     enter(State.START) {
       history["d-field"] = 30
-      open(MEntity::name).forRole("admin")
 
-      println("(id=${id.id}, state=$state, open=$open, user=${user.name})")
-      //assert("(id=${id.id}, state=$state, open=$open, user=${user.name})" == "(id=null, state=START, open={name={roles={admin=true}}}, user=shumy)")
+      if (history.size == 0)
+        assert("(state=$state, open=$open, user=${user.name})" == "(state=START, open={name={roles={admin=true}}}, user=shumy)")
+      else
+        assert("(state=$state, open=$open, user=${user.name})" == "(state=START, open={name={users={shumy=true}}}, user=alex)")
     }
 
     on(State.START, Event.Submit::class) fromRole "admin" goto State.VALIDATE after {
-      check { event.value.startsWith("#") }
+      check { event.value.startsWith("#try-submit") }
 
       history["owner"] = user.name
       close(MEntity::name).forAny()
 
-      println("(id=${id.id}, state=$state, open=$open, emt=${open.isEmpty()} user=${user.name})")
-      //assert("(id=${id.id}, state=$state, open=$open, user=${user.name})" == "(id=1, state=START, open={}, user=shumy)")
+      assert("(state=$state, open=$open, user=${user.name})" == "(state=START, open={}, user=shumy)")
     }
 
     on(State.VALIDATE, Event.Ok::class) fromRole "manager" goto State.STOP after {
       val record = history.last(Event.Submit::class)
-      assert(record.event == Event.Submit("#try-submit"))
+      assert(record.event!!.value.startsWith("#try-submit"))
       assert(record["owner"] == "shumy")
 
-      println("(id=${id.id}, state=$state, open=$open, user=${user.name})")
-      //assert("(id=${id.id}, state=$state, open=$open, user=${user.name})" == "(id=1, state=VALIDATE, open={}, user=alex)")
+      assert("(state=$state, open=$open, user=${user.name})" == "(state=VALIDATE, open={}, user=alex)")
     }
 
     on(State.VALIDATE, Event.Incorrect::class) fromRole "manager" goto State.START after {
       val record = history.last(Event.Submit::class)
-      println("INCORRECT -> check(${record.event})")
+      assert(record.event!!.value.startsWith("#try-submit"))
+      assert(record["owner"] == "shumy")
 
       val owner = record["owner"] as String
       open(MEntity::name).forUser(owner)
 
-      println("(id=${id.id}, state=$state, open=$open, user=${user.name})")
-      //assert("(id=${id.id}, state=$state, open=$open, user=${user.name})" == "(id=1, state=VALIDATE, open={}, user=alex)")
+      assert("(state=$state, open=$open, user=${user.name})" == "(state=VALIDATE, open={name={users={shumy=true}}}, user=alex)")
     }
 
     enter(State.STOP) {
       create(RefToMEntity("a-stop", id))
-
-      println("(id=${id.id}, state=$state, open=$open, user=${user.name})")
-      //assert("(id=${id.id}, state=$state, open=$open, user=${user.name})" == "(id=1, state=STOP, open={}, user=alex)")
+      assert("(state=$state, open=$open, user=${user.name})" == "(state=STOP, open={}, user=alex)")
     }
   }
 }
