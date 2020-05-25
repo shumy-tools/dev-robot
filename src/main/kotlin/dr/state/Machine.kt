@@ -4,6 +4,7 @@ import dr.JsonParser
 import dr.base.*
 import dr.ctx.Context
 import dr.io.DEntity
+import dr.io.OneLinkWithoutTraits
 import dr.schema.*
 import dr.spi.IQueryExecutor
 import dr.spi.QRow
@@ -35,8 +36,9 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   val state: S
     get() = sMachine.states.getValue(Context.session.vars[STATE] as String) as S
 
-  val open: JMap
-    get() = Context.session.vars[OPEN] as JMap
+  @Suppress("UNCHECKED_CAST")
+  val open: MutableMap<String, Any>
+    get() = Context.session.vars[OPEN] as MutableMap<String, Any>
 
   val user: User
     get() = Context.session.user
@@ -79,7 +81,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     val evtType = event.javaClass.kotlin
     val so = stateAndOpenQuery.exec("id" to id)
     val state = so.get<String>(STATE)!!
-    val open = so.get<JMap>(OPEN)!!
+    val open = so.get<Map<String, Any>>(OPEN)!!
 
     Context.session.vars[ID] = RefID(id)
     Context.session.vars[STATE] = state
@@ -89,7 +91,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     val then = states[state] ?: throw Exception("StateMachine transition '$state -> ${evtType.qualifiedName}' not found! - (${javaClass.canonicalName})")
 
     val evtJson = JsonParser.write(inEvt)
-    val newHistory = History(LocalDateTime.now(), user.name, evtType.qualifiedName, evtJson, state, then.to.name, JMap())
+    val newHistory = History(LocalDateTime.now(), user.name, evtType.qualifiedName, evtJson, state, then.to.name, linkedMapOf())
     Context.session.vars[NEW_HISTORY] = newHistory
 
     then.call(user, event)
@@ -111,7 +113,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
 
     Context.session.vars[ID] = entity.refID
     Context.session.vars[STATE] = so.get<String>(STATE)!!
-    Context.session.vars[OPEN] = so.get<JMap>(OPEN)!!
+    Context.session.vars[OPEN] = so.get<Map<String, Any>>(OPEN)!!
 
     onUpdate?.invoke(EnterActions(), UEntity(entity.mEntity!!))
   }
@@ -162,11 +164,12 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
         sMachine.states.getValue(value) as S
       }
 
-      val data: JMap by lazy {
-        map.getValue(History::data.name) as JMap
+      @Suppress("UNCHECKED_CAST")
+      val data: Map<String, Any> by lazy {
+        map.getValue(History::data.name) as Map<String, Any>
       }
 
-      operator fun get(key: String) = data[key]!!
+      operator fun get(key: String) = data[key]
 
       override fun toString() = "Record(ts=$ts, user=$user, event=$event, from=$from, to=$to, data=$data)"
     }
@@ -199,39 +202,42 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   }
 
   inner class For internal constructor(private val pState: PropertyState, private val prop: KProperty<*>) {
+    @Suppress("UNCHECKED_CAST")
+    private fun MutableMap<String, Any>.getOrNew(key: String) = getOrPut(key) { linkedMapOf<String, Any>() } as MutableMap<String, Any>
+
     fun forAny() {
-      val oField = open.getOrPut(prop.name)
+      val oField = open.getOrNew(prop.name)
       when (pState) {
         PropertyState.OPEN -> oField[ANY] = true
-        PropertyState.CLOSE -> open[prop.name] = null
+        PropertyState.CLOSE -> open.remove(prop.name)
       }
     }
 
     fun forRole(role: String) {
-      val oField = open.getOrPut(prop.name)
-      val oRoles = oField.getOrPut(ROLES)
+      val oField = open.getOrNew(prop.name)
+      val oRoles = oField.getOrNew(ROLES)
       when (pState) {
         PropertyState.OPEN -> if (oField[ANY] == null) oRoles[role] = true
         PropertyState.CLOSE -> {
-          oRoles[role] = null
+          oRoles.remove(role)
           if (oRoles.isEmpty()) {
-            oField[ROLES] = null
-            if (oField[USERS] == null) open[prop.name] = null
+            oField.remove(ROLES)
+            if (oField[USERS] == null) open.remove(prop.name)
           }
         }
       }
     }
 
     fun forUser(user: String) {
-      val oField = open.getOrPut(prop.name)
-      val oUsers = oField.getOrPut(USERS)
+      val oField = open.getOrNew(prop.name)
+      val oUsers = oField.getOrNew(USERS)
       when (pState) {
         PropertyState.OPEN -> if (oField[ANY] == null) oUsers[user] = true
         PropertyState.CLOSE -> {
-          oUsers[user] = null
+          oUsers.remove(user)
           if (oUsers.isEmpty()) {
-            oField[USERS] = null
-            if (oField[ROLES] == null) open[prop.name] = null
+            oField.remove(USERS)
+            if (oField[ROLES] == null) open.remove(prop.name)
           }
         }
       }

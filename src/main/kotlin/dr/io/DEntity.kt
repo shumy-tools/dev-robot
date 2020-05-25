@@ -56,8 +56,8 @@ class DEntity(
   val dState: String
     get() = sv[STATE] as String
 
-  val dOpen: JMap
-    get() = sv[OPEN] as JMap
+  val dOpen: Map<String, Any>
+    get() = sv[OPEN] as Map<String, Any>
 
   val dSuper: DEntity
     get() = sv[SUPER] as DEntity
@@ -119,7 +119,7 @@ class DEntity(
 
   internal fun createHistory(dHistory: DEntity) {
     sv[STATE] = (dHistory.cEntity as History).to
-    sv[OPEN] = JMap()
+    sv[OPEN] = linkedMapOf<String, Any>()
     sv[HISTORY] = OneLinkWithoutTraits(dHistory.refID)
   }
 

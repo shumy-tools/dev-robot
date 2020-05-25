@@ -1,6 +1,5 @@
 package dr.base
 
-import dr.schema.JMap
 import dr.schema.Master
 import java.time.LocalDateTime
 
@@ -15,5 +14,5 @@ data class History(
   val from: String?,
   val to: String,
 
-  val data: JMap
+  val data: MutableMap<String, Any>
 )

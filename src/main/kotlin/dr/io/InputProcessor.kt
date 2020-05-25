@@ -60,7 +60,9 @@ class InputProcessor(val schema: Schema) {
           FieldType.TIME -> LocalTime.parse(vNode.asText())
           FieldType.DATE -> LocalDate.parse(vNode.asText())
           FieldType.DATETIME -> LocalDateTime.parse(vNode.asText())
-          FieldType.JMAP -> JsonParser.readNode(vNode, JMap::class)
+          FieldType.MAP -> JsonParser.readNode(vNode, Map::class)
+          FieldType.LIST -> JsonParser.readNode(vNode, List::class)
+          FieldType.SET -> JsonParser.readNode(vNode, Set::class)
         }
 
         is SRelation -> when (sFieldOrRelation.type) {
@@ -121,7 +123,9 @@ class InputProcessor(val schema: Schema) {
           FieldType.TIME -> value is LocalTime
           FieldType.DATE -> value is LocalDate
           FieldType.DATETIME -> value is LocalDateTime
-          FieldType.JMAP -> value is JMap
+          FieldType.MAP -> value is Map<*, *>
+          FieldType.LIST -> value is List<*>
+          FieldType.SET -> value is Set<*>
         }
 
         is SRelation -> when (sFieldOrRelation.type) {

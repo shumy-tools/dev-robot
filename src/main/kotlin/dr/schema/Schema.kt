@@ -150,7 +150,9 @@ class Schema {
             FieldType.TIME -> LocalTime::class.java
             FieldType.DATE -> LocalDate::class.java
             FieldType.DATETIME -> LocalDateTime::class.java
-            FieldType.JMAP -> java.lang.String::class.java
+            FieldType.MAP -> java.lang.String::class.java
+            FieldType.LIST -> java.lang.String::class.java
+            FieldType.SET -> java.lang.String::class.java
           }
         }
 

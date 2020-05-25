@@ -124,7 +124,7 @@ class InputService(
     val sMachine = schema.machine
     return sMachine?.let {
       val state = sMachine.states.keys.first()
-      val history = History(LocalDateTime.now(), Context.session.user.name, null,null, null, state, JMap())
+      val history = History(LocalDateTime.now(), Context.session.user.name, null,null, null, state, linkedMapOf())
       Context.session.vars[NEW_HISTORY] = history
 
       val dHistory = processor.create(history)

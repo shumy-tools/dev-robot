@@ -5,13 +5,13 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import kotlin.reflect.KClass
 import kotlin.reflect.KType
-import kotlin.reflect.full.createType
 import kotlin.reflect.full.isSubtypeOf
 import kotlin.reflect.typeOf
 
 enum class FieldType {
   TEXT, INT, LONG, FLOAT, DOUBLE, BOOL,
-  TIME, DATE, DATETIME, JMAP
+  TIME, DATE, DATETIME,
+  MAP, LIST, SET
 }
 
 private val TEXT = typeOf<String?>()
@@ -24,7 +24,10 @@ private val BOOL = typeOf<Boolean?>()
 private val TIME = typeOf<LocalTime?>()
 private val DATE = typeOf<LocalDate?>()
 private val DATETIME = typeOf<LocalDateTime?>()
-private val JMAP = typeOf<JMap?>()
+
+private val MAP = typeOf<Map<String, Any>?>()
+private val LIST = typeOf<List<Any>?>()
+private val SET = typeOf<Set<Any>?>()
 
 object TypeEngine {
   val REFID_NULL = typeOf<RefID?>()
@@ -49,7 +52,10 @@ object TypeEngine {
     put(FieldType.TIME, LocalTime::class)
     put(FieldType.DATE, LocalDate::class)
     put(FieldType.DATETIME, LocalDateTime::class)
-    put(FieldType.JMAP, JMap::class)
+
+    put(FieldType.MAP, Map::class)
+    put(FieldType.LIST, List::class)
+    put(FieldType.SET, Set::class)
   }
 
   fun check(fType: FieldType, vType: KClass<Any>): Boolean {
@@ -67,10 +73,11 @@ object TypeEngine {
     if (type.isSubtypeOf(TIME)) return FieldType.TIME
     if (type.isSubtypeOf(DATE)) return FieldType.DATE
     if (type.isSubtypeOf(DATETIME)) return FieldType.DATETIME
-    if (type.isSubtypeOf(JMAP)) return FieldType.JMAP
+
+    if (type.isSubtypeOf(MAP)) return FieldType.MAP
+    if (type.isSubtypeOf(LIST)) return FieldType.LIST
+    if (type.isSubtypeOf(SET)) return FieldType.SET
 
     return null
   }
-
-  fun convert(type: KClass<*>) = convert(type.createType())
 }

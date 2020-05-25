@@ -184,7 +184,7 @@ private fun KClass<*>.processStateMachine(tmpSchema: TempSchema, sEntity: SEntit
 
     // add @state and @open to entity
     sEntity.addProperty(STATE, SField(STATE, null, FieldType.TEXT, emptySet(), false))
-    sEntity.addProperty(OPEN, SField(OPEN, null, FieldType.JMAP, emptySet(), false))
+    sEntity.addProperty(OPEN, SField(OPEN, null, FieldType.MAP, emptySet(), false))
 
     // add History to entity
     val sHistory = tmpSchema.base.getValue(History::class)

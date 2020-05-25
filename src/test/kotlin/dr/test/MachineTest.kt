@@ -5,7 +5,6 @@ import dr.base.Role
 import dr.base.User
 import dr.base.loadRoles
 import dr.io.Instruction
-import dr.schema.JMap
 import dr.schema.SParser
 import org.junit.FixMethodOrder
 import org.junit.Test
@@ -65,7 +64,7 @@ private fun Instruction.checkHistory(user: String, evtType: String?, evt: String
   assert(fields["evt"] == evt)
   assert(fields["from"] == from)
   assert(fields["to"] == to)
-  assert((fields["data"] as JMap).any() == map)
+  assert(fields["data"] == map)
 }
 
 @FixMethodOrder

@@ -56,7 +56,6 @@ fun STable.dbManyToMany(selection: QSelect) = selection.relations.mapNotNull {
 }.toMap()
 
 
-// "PLATFORM_CLASS_MAPPED_TO_KOTLIN"
 @Suppress("UNCHECKED_CAST")
 fun idFn(prefix: String? = null): Field<Long> = if (prefix != null) {
   DSL.field(DSL.name(prefix, ID), java.lang.Long::class.java) as Field<Long>
@@ -92,13 +91,6 @@ fun TProperty.fn(prefix: String? = null): Field<Any> = if (prefix != null) {
   DSL.field(DSL.name(name), jType) as Field<Any>
 }
 
-/*@Suppress("UNCHECKED_CAST")
-fun SField.fn(prefix: String? = null): Field<Any> = if (prefix != null) {
-  DSL.field(DSL.name(prefix, name), jType) as Field<Any>
-} else {
-  DSL.field(DSL.name(name), jType) as Field<Any>
-}*/
-
 @Suppress("UNCHECKED_CAST")
 fun QField.fn(prefix: String? = null): Field<Any> = if (prefix != null) {
   DSL.field(DSL.name(prefix, name), jType) as Field<Any>
@@ -116,5 +108,7 @@ fun FieldType.toSqlType(): DataType<out Any> = when (this) {
   FieldType.TIME -> SQLDataType.LOCALTIME
   FieldType.DATE -> SQLDataType.LOCALDATE
   FieldType.DATETIME -> SQLDataType.LOCALDATETIME
-  FieldType.JMAP -> SQLDataType.VARCHAR
+  FieldType.MAP -> SQLDataType.VARCHAR
+  FieldType.LIST -> SQLDataType.VARCHAR
+  FieldType.SET -> SQLDataType.VARCHAR
 }
