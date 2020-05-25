@@ -7,6 +7,7 @@ import dr.schema.*
 import dr.spi.IAdaptor
 import dr.state.Machine
 import dr.state.NEW_HISTORY
+import dr.state.UPDATE_OPEN
 import java.time.LocalDateTime
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty
@@ -37,7 +38,9 @@ class InputService(
   fun update(id: Long, type: SEntity, data: Map<KProperty<Any>, Any?>) {
     val nData = data.mapKeys { it.key.name }
     val dEntity = processor.update(type, id, nData)
+
     machines[dEntity.schema]?.fireUpdate(dEntity)
+    type.updateOpen(id)
 
     val main = translator.update(dEntity)
     Context.instructions.include(main)
@@ -51,6 +54,7 @@ class InputService(
       throw Exception("Event type not found! - ($type, $evtType)")
 
     machine.fireEvent(id, evt)
+    type.updateStateHistory(id)
   }
 
   fun initCreate(type: KClass<out Any>, json: String) = initCreate(type.qualifiedName!!, json)
@@ -83,10 +87,11 @@ class InputService(
   fun initUpdate(entity: String, id: Long, json: String): Instructions {
     val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
     val dEntity = processor.update(sEntity, id, json)
+
     machines[dEntity.schema]?.fireUpdate(dEntity)
+    sEntity.updateOpen(id)
 
     val root = translator.update(dEntity)
-
     root.include(Context.instructions)
     adaptor.commit(root)
     return root
@@ -97,24 +102,34 @@ class InputService(
   fun initAction(entity: String, evtType: String, id: Long, json: String): Instructions {
     val sEntity = schema.entities[entity] ?: throw Exception("Entity not found! - ($entity)")
     val machine = machines[sEntity] ?: throw Exception("Entity doesn't have a state machine! - ($entity)")
+
     val evtClass = machine.sMachine.events[evtType] ?: throw Exception("Event type not found! - ($entity, $evtType)")
-
     val event = JsonParser.read(json, evtClass)
-    machine.fireEvent(id, event)
-
-    // create and link NEW_HISTORY
-    val history = Context.session.vars[NEW_HISTORY] as History
-    val refID = create(history)
-    val open = Context.session.vars[OPEN]
-    val uData = mapOf(STATE to history.to, OPEN to open, HISTORY to OneLinkWithoutTraits(refID))
-    updateState(id, sEntity, uData)
+    machine.fireEvent(id, event, json.replace(Regex("\\s"), ""))
+    sEntity.updateStateHistory(id)
 
     adaptor.commit(Context.instructions)
     return Context.instructions
   }
 
-  private fun updateState(id: Long, type: SEntity, data: Map<String, Any?>) {
-    val dEntity = processor.update(type, id, data, true)
+  private fun SEntity.updateOpen(id: Long) {
+    // update @open if changed
+    val update = Context.session.vars[UPDATE_OPEN] as Boolean ?: false
+    if (update) {
+      val uData = mapOf(OPEN to Context.session.vars[OPEN])
+      val dEntity = processor.update(this, id, uData, true)
+      val main = translator.update(dEntity)
+      Context.instructions.include(main)
+    }
+  }
+
+  private fun SEntity.updateStateHistory(id: Long) {
+    val history = Context.session.vars[NEW_HISTORY] as History
+    val refID = create(history)
+    val open = Context.session.vars[OPEN]
+    val uData = mapOf(STATE to history.to, OPEN to open, HISTORY to OneLinkWithoutTraits(refID))
+
+    val dEntity = processor.update(this, id, uData, true)
     val main = translator.update(dEntity)
     Context.instructions.include(main)
   }
@@ -128,7 +143,7 @@ class InputService(
       Context.session.vars[NEW_HISTORY] = history
 
       val dHistory = processor.create(history)
-      createHistory(dHistory)
+      setStateAndHistory(state, dHistory.refID)
       machines[schema]?.fireCreate(this)
 
       dHistory

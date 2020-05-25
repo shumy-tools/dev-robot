@@ -56,6 +56,7 @@ class DEntity(
   val dState: String
     get() = sv[STATE] as String
 
+  @Suppress("UNCHECKED_CAST")
   val dOpen: Map<String, Any>
     get() = sv[OPEN] as Map<String, Any>
 
@@ -117,10 +118,10 @@ class DEntity(
     return all
   }
 
-  internal fun createHistory(dHistory: DEntity) {
-    sv[STATE] = (dHistory.cEntity as History).to
+  internal fun setStateAndHistory(state: String, hRefID: RefID) {
+    sv[STATE] = state
     sv[OPEN] = linkedMapOf<String, Any>()
-    sv[HISTORY] = OneLinkWithoutTraits(dHistory.refID)
+    sv[HISTORY] = OneLinkWithoutTraits(hRefID)
   }
 
   internal fun getFieldValue(field: SField): Any? {

@@ -14,6 +14,7 @@ import kotlin.reflect.KProperty
 import kotlin.reflect.KProperty1
 
 const val NEW_HISTORY = "NEW_$HISTORY"
+const val UPDATE_OPEN = "UPDATE_$OPEN"
 
 enum class PropertyState { OPEN, CLOSE }
 
@@ -76,7 +77,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
   }
 
   @Suppress("UNCHECKED_CAST")
-  internal fun fireEvent(id: Long, inEvt: Any) {
+  internal fun fireEvent(id: Long, inEvt: Any, json: String? = null) {
     val event = inEvt as E
     val evtType = event.javaClass.kotlin
     val so = stateAndOpenQuery.exec("id" to id)
@@ -90,7 +91,7 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     val states = events.getValue(evtType)
     val then = states[state] ?: throw Exception("StateMachine transition '$state -> ${evtType.qualifiedName}' not found! - (${javaClass.canonicalName})")
 
-    val evtJson = JsonParser.write(inEvt)
+    val evtJson = json ?: JsonParser.write(inEvt)
     val newHistory = History(LocalDateTime.now(), user.name, evtType.qualifiedName, evtJson, state, then.to.name, linkedMapOf())
     Context.session.vars[NEW_HISTORY] = newHistory
 
@@ -115,7 +116,9 @@ open class Machine<T: Any, S: Enum<*>, E: Any> {
     Context.session.vars[STATE] = so.get<String>(STATE)!!
     Context.session.vars[OPEN] = so.get<Map<String, Any>>(OPEN)!!
 
+    val initialOpen = Context.session.vars[OPEN]
     onUpdate?.invoke(EnterActions(), UEntity(entity.mEntity!!))
+    Context.session.vars[UPDATE_OPEN] = Context.session.vars[OPEN] != initialOpen
   }
 
   @Suppress("UNCHECKED_CAST")
