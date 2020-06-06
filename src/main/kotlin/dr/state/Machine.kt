@@ -4,7 +4,6 @@ import dr.JsonParser
 import dr.base.*
 import dr.ctx.Context
 import dr.io.DEntity
-import dr.io.OneLinkWithoutTraits
 import dr.schema.*
 import dr.spi.IQueryExecutor
 import dr.spi.QRow

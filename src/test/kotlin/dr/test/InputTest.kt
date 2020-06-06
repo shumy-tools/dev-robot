@@ -6,7 +6,7 @@ import dr.schema.SParser
 import org.junit.FixMethodOrder
 import org.junit.Test
 
-private val schema = SParser.parse(A::class, BRefs::class, BCols::class, CMaster::class, SuperUser::class, RefsToPack::class)
+private val schema = SParser.parse(A::class, BRefs::class, BCols::class, CMaster::class, SuperUser::class, RefsToPack::class, Tree::class)
 private val adaptor = SQLAdaptor(schema, "jdbc:h2:mem:InputTest").also {
   it.createSchema()
 }
@@ -396,5 +396,70 @@ class InputTest {
     assert(uInst.all.size == 1)
     assert(uInst.all[0].toString() == "Update(UPDATE) - {table=dr.test.RefsToPack, id=$id3, refs={@ref-to-dr.test.OwnedSuperUser-ownedAdmin=null}}")
     assert(server.query(RefsToPack::class,"| @id == $id3 | { @id, ownedAdmin { * } }").toString() == "[{@id=$id3, ownedAdmin={@id=null, ownedAlias=null, @type=null}}]")
+  }
+
+  @Test fun testNestedTree() {
+    val cJson1 = """{
+      "treeName":"the-tree",
+      "node1":[
+        {
+          "n1Name":"node-1",
+          "node2":[
+            {"n2Name":"node-1-1"},
+            {"n2Name":"node-1-2"}
+          ]
+        },
+        {
+          "n1Name":"node-2",
+          "node2":[
+            {"n2Name":"node-2-1"},
+            {"n2Name":"node-2-2"}
+          ]
+        }
+      ]
+    }"""
+    val cInst1 = server.create(Tree::class, cJson1)
+    val id1 = cInst1.root.refID.id!!
+    assert(cInst1.all.size == 7)
+    assert(cInst1.all[0].toString() == "Insert(CREATE) - {table=dr.test.Tree, data={treeName=the-tree}}")
+    assert(cInst1.all[1].toString() == "Insert(ADD) - {table=dr.test.Node1, data={n1Name=node-1}, refs={@inv-to-dr.test.Tree-node1=$id1}}")
+    assert(cInst1.all[2].toString() == "Insert(ADD) - {table=dr.test.Node2, data={n2Name=node-1-1}, refs={@inv-to-dr.test.Node1-node2=${cInst1.all[1].refID.id}}}")
+    assert(cInst1.all[3].toString() == "Insert(ADD) - {table=dr.test.Node2, data={n2Name=node-1-2}, refs={@inv-to-dr.test.Node1-node2=${cInst1.all[1].refID.id}}}")
+    assert(cInst1.all[4].toString() == "Insert(ADD) - {table=dr.test.Node1, data={n1Name=node-2}, refs={@inv-to-dr.test.Tree-node1=$id1}}")
+    assert(cInst1.all[5].toString() == "Insert(ADD) - {table=dr.test.Node2, data={n2Name=node-2-1}, refs={@inv-to-dr.test.Node1-node2=${cInst1.all[4].refID.id}}}")
+    assert(cInst1.all[6].toString() == "Insert(ADD) - {table=dr.test.Node2, data={n2Name=node-2-2}, refs={@inv-to-dr.test.Node1-node2=${cInst1.all[4].refID.id}}}")
+
+    val uJson1 = """{
+      "node1":{
+        "@type":"one-add",
+        "value":{
+          "n1Name":"node-3",
+          "node2":[
+            {"n2Name":"node-3-1"},
+            {"n2Name":"node-3-2"}
+          ]
+        }
+      }
+    }"""
+    val uInst1 = server.update(Tree::class, id1, uJson1)
+    val id2 = uInst1.all[1].refID.id!!
+    assert(uInst1.all.size == 4)
+    assert(uInst1.all[0].toString() == "Update(UPDATE) - {table=dr.test.Tree, id=$id1}")
+    assert(uInst1.all[1].toString() == "Insert(ADD) - {table=dr.test.Node1, data={n1Name=node-3}, refs={@inv-to-dr.test.Tree-node1=$id1}}")
+    assert(uInst1.all[2].toString() == "Insert(ADD) - {table=dr.test.Node2, data={n2Name=node-3-1}, refs={@inv-to-dr.test.Node1-node2=$id2}}")
+    assert(uInst1.all[3].toString() == "Insert(ADD) - {table=dr.test.Node2, data={n2Name=node-3-2}, refs={@inv-to-dr.test.Node1-node2=$id2}}")
+
+    val uJson2 = """{
+      "node2":{
+        "@type":"one-add",
+        "value":{"n2Name":"node-3-3"}
+      }
+    }"""
+    val uInst2 = server.update(Node1::class, id2, uJson2)
+    assert(uInst2.all.size == 2)
+    assert(uInst2.all[0].toString() == "Update(UPDATE) - {table=dr.test.Node1, id=$id2}")
+    assert(uInst2.all[1].toString() == "Insert(ADD) - {table=dr.test.Node2, data={n2Name=node-3-3}, refs={@inv-to-dr.test.Node1-node2=$id2}}")
+    println(server.query(Tree::class,"{ *, node1 | @id == $id2 | { *, node2 { * }}}").toString())
+    assert(server.query(Tree::class,"{ *, node1 | @id == $id2 | { *, node2 { * }}}").toString() == "[{@id=$id1, treeName=the-tree, node1=[{@id=$id2, n1Name=node-3, node2=[{@id=5, n2Name=node-3-1}, {@id=6, n2Name=node-3-2}, {@id=7, n2Name=node-3-3}]}]}]")
   }
 }

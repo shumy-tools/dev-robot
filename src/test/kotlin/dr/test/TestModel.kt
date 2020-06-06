@@ -55,6 +55,17 @@ data class CColDetail(val ccolDetailText: String)
 @Master
 data class CMaster(val cmasterText: String)
 
+
+/* -------------------------------Nested Input Model------------------------------- */
+@Master
+data class Tree(val treeName: String, @Own val node1: List<Node1>)
+
+@Detail
+data class Node1(val n1Name: String, @Own val node2: List<Node2>)
+
+@Detail
+data class Node2(val n2Name: String)
+
 /* -------------------------------Simple Query Model------------------------------- */
 @Master
 data class Country(val name: String)

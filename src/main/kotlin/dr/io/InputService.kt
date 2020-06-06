@@ -114,8 +114,8 @@ class InputService(
 
   private fun SEntity.updateOpen(id: Long) {
     // update @open if changed
-    val update = Context.session.vars[UPDATE_OPEN] as Boolean ?: false
-    if (update) {
+    val update = Context.session.vars[UPDATE_OPEN] as Boolean?
+    if (update == true) {
       val uData = mapOf(OPEN to Context.session.vars[OPEN])
       val dEntity = processor.update(this, id, uData, true)
       val main = translator.update(dEntity)

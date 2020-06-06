@@ -33,7 +33,7 @@ object SParser {
 /* ------------------------- helpers -------------------------*/
 private class TempSchema {
   val schema = Schema()
-  val owned = mutableMapOf<String, String>()        // ownedEntity -> byEntity
+  val owned = mutableMapOf<String, SEntity>()        // ownedEntity -> byEntity
   val base = mutableMapOf<KClass<out Any>, SEntity>()
 }
 
@@ -65,7 +65,7 @@ private fun KProperty1<*, *>.checkRelationNumber(name: String) {
 }
 
 @Suppress("UNCHECKED_CAST")
-private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String? = null): SEntity {
+private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: SEntity? = null): SEntity {
   val name = this.qualifiedName ?: throw Exception("No Entity name!")
   return tmpSchema.schema.entities.getOrElse(name) {
     this.checkEntityNumber(name)
@@ -97,19 +97,16 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
 
     val sealed = findAnnotation<Sealed>()
     val sEntity = SEntity(this, type, sealed != null, initFun)
-
     tmpSchema.schema.addEntity(sEntity)
+
+    sEntity.addProperty(ID, SField(ID, null, FieldType.LONG, emptySet(), false)) // all entities have an ID
+    sEntity.machine = processStateMachine(tmpSchema, sEntity) // add state-machine if exists
+
     if (ownedBy != null)
       tmpSchema.owned[name] = ownedBy
 
     val tmpInputProps = mutableSetOf<KProperty1<Any, *>>()
     val allProps = memberProperties.map { it.name to (it as KProperty1<Any, *>) }.toMap()
-
-    // all entities have an id
-    sEntity.addProperty(ID, SField(ID, null, FieldType.LONG, emptySet(), false))
-
-    // add state-machine if exists
-    sEntity.machine = processStateMachine(tmpSchema, sEntity)
 
     // process ordered inputs
     for (param in primaryConstructor!!.parameters) {
@@ -137,10 +134,11 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: String
       sEntity.addProperty(TYPE, SField(TYPE, null, FieldType.TEXT, emptySet(), false))
 
       for (clazz in sealed.value) {
-        if (tmpSchema.owned.contains(clazz.qualifiedName))
-          throw Exception("Entity already owned! - (${clazz.qualifiedName} -|> ${sEntity.name}) & (${clazz.qualifiedName} owned-by ${tmpSchema.owned[clazz.qualifiedName]})")
+        val thisName = clazz.qualifiedName
+        if (tmpSchema.owned.contains(thisName))
+          throw Exception("Entity already owned! - ($thisName -|> ${sEntity.name}) & ($thisName owned-by ${tmpSchema.owned[thisName]!!.name})")
 
-        val xEntity = clazz.processEntity(tmpSchema, sEntity.name)
+        val xEntity = clazz.processEntity(tmpSchema, sEntity)
         if (xEntity.type == EntityType.MASTER)
           throw Exception("A master cannot inherit a sealed class! - (${xEntity.name} -|> ${sEntity.name})")
 
@@ -327,10 +325,11 @@ private fun KProperty1<Any, *>.processRelation(sEntity: SEntity, tmpSchema: Temp
 
 private fun KType.processOwnRelation(sEntity: SEntity, rel: String, isPack: Boolean, tmpSchema: TempSchema): SEntity {
   val entity = classifier as KClass<*>
-  if (tmpSchema.owned.contains(entity.qualifiedName))
-    throw Exception("Entity already owned! - (${sEntity.name}, $rel) & (${entity.qualifiedName} owned-by ${tmpSchema.owned[entity.qualifiedName]})")
+  val thisName = entity.qualifiedName
+  if (tmpSchema.owned.contains(thisName))
+    throw Exception("Entity already owned! - (${sEntity.name}, $rel) & ($thisName owned-by ${tmpSchema.owned[thisName]!!.name})")
 
-  val eRef = entity.processEntity(tmpSchema, sEntity.name)
+  val eRef = entity.processEntity(tmpSchema, sEntity)
 
   if (!isPack && eRef.isSealed)
     throw Exception("Own of sealed entity must be of type, one of (Set<Pack<*>>, List<Pack<*>>, Pack<*>)! - (${sEntity.name}, $rel)")
