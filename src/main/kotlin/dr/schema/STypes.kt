@@ -17,6 +17,7 @@ const val OPEN = "@open"
 
 // relations
 const val SUPER = "@super"
+const val PARENT = "@parent"
 const val HISTORY = "@history"
 
 @FunctionalInterface

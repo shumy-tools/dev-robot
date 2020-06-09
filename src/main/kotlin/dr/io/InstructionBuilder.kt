@@ -1,10 +1,7 @@
 package dr.io
 
 import dr.io.InstructionType.*
-import dr.schema.EntityType
-import dr.schema.RefID
-import dr.schema.SRelation
-import dr.schema.SUPER
+import dr.schema.*
 import dr.schema.tabular.*
 
 class InstructionBuilder(private val tables: Tables) {
@@ -74,7 +71,7 @@ class InstructionBuilder(private val tables: Tables) {
     topInst.putAllOutput(fOutput)
 
     // --------------------------------- allOwnedReferences ----------------------------------
-    for (oRef in entity.allOwnedReferences.filter { it.name != SUPER }) {
+    for (oRef in entity.allOwnedReferences.filter { it.name != SUPER && it.name != PARENT }) {
       when (val rValue = oRef.value) {
         is OneAdd -> if (oRef.schema.ref.type == EntityType.TRAIT) {
           // A {<rel>: <fields>}

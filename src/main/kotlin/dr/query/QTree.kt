@@ -1,5 +1,6 @@
 package dr.query
 
+import dr.schema.PARENT
 import dr.schema.SUPER
 import dr.schema.tabular.STable
 
@@ -70,6 +71,7 @@ data class QTree(
     val relations: List<QRelation>
   ) {
     val superRef = relations.find { it.name == SUPER }
+    val parentRef = relations.find { it.name == PARENT }
   }
 
     data class QField(

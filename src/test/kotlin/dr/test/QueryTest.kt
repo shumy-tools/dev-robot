@@ -305,4 +305,48 @@ class QueryTest {
       assert(res3.rows.toString() == "[{@id=2, operProp=AlbertoOperProp}]")
     }
   }
+
+
+  @Test fun testParentQuery() {
+    server.use {
+      val query1 = query(Address::class,"""| location == ?loc | {
+        city, 
+        @parent { * }
+      }""") {
+        assert(it.entity == "dr.test.Address")
+        assert(it.paths.toString() == "{city={}, @parent={*={}}, location={}}")
+      }
+      val res1 = query1.exec("loc" to "Aradas")
+      assert(res1.rows.toString() == "[{@id=4, city=Aveiro, @parent={@id=4, name=Jose, email=mail@pt, timestamp=1918-01-10T12:35:18}}]")
+
+      val query2 = query(Setting::class,"""| key == ?set | {
+        key, 
+        @parent { * }
+      }""") {
+        assert(it.entity == "dr.test.Setting")
+        assert(it.paths.toString() == "{key={}, @parent={*={}}}")
+      }
+      val res2 = query2.exec("set" to "Pedro-set3")
+      assert(res2.rows.toString() == "[{@id=5, key=Pedro-set3, @parent={@id=2, name=Pedro, email=mail@pt, timestamp=1918-01-10T12:35:18}}]")
+
+      val query3 = query(Address::class,"""| @parent.name == "Alex" | {
+        city
+      }""") {
+        assert(it.entity == "dr.test.Address")
+        assert(it.paths.toString() == "{city={}, @parent={name={}}}")
+      }
+      val res3 = query3.exec()
+      assert(res3.rows.toString() == "[{@id=1, city=Lisboa}]")
+
+      val query4 = query(Setting::class,"""| @parent.name == "Alex" | {
+        key
+      }""") {
+        assert(it.entity == "dr.test.Setting")
+        assert(it.paths.toString() == "{key={}, @parent={name={}}}")
+      }
+      val res4 = query4.exec()
+      println(res4.rows.toString())
+      assert(res4.rows.toString() == "[{@id=1, key=Alex-set1}, {@id=2, key=Alex-set2}]")
+    }
+  }
 }

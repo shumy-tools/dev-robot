@@ -24,6 +24,7 @@ fun STable.sqlName(): String {
 
 fun STable.refSqlName(tRef: TRef) = when(tRef) {
   is TSuperRef -> SUPER
+  is TParentRef -> PARENT
   is TDirectRef -> if (!tRef.includeRelName) "@ref" else "@ref__${tRef.rel.name}"
   is TInverseRef -> if (sRelation == null) {
     // direct refs without aux table

@@ -1,5 +1,7 @@
 package dr.schema.tabular
 
+import dr.adaptor.fn
+import dr.adaptor.idFn
 import dr.schema.*
 
 class TParser(private val schema: Schema) {
@@ -33,7 +35,6 @@ class TParser(private val schema: Schema) {
     for (field in fields.values) {
       when (field.name) {
         ID -> topTable.addProperty(TID)
-        TYPE -> topTable.addProperty(TType)
         else -> topTable.addProperty(TField(field))
       }
     }
@@ -46,7 +47,15 @@ class TParser(private val schema: Schema) {
       } else {
         // A ref_<rel> --> B
         oRef.ref.getOrCreateTable()
-        val dRef = if (oRef.name == SUPER) TSuperRef(oRef.ref) else TDirectRef(oRef.ref, oRef)
+        val dRef = when (oRef.name) {
+          SUPER -> TSuperRef(oRef.ref)
+          PARENT -> {
+            val viaRel = oRef.ref.rels.values.find { it.type == RelationType.OWN && it.ref == this }!!
+            val viaRef = if (!viaRel.isCollection) TDirectRef(viaRel.ref, viaRel) else TInverseRef(oRef.ref, viaRel)
+            TParentRef(oRef.ref, viaRef)
+          }
+          else -> TDirectRef(oRef.ref, oRef)
+        }
         topTable.addRef(dRef)
       }
     }

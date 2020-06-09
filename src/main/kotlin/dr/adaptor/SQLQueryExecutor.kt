@@ -5,10 +5,12 @@ import dr.ctx.Context
 import dr.io.FieldConverter
 import dr.query.*
 import dr.schema.ID
+import dr.schema.PARENT
 import dr.schema.SUPER
 import dr.schema.TRAITS
 import dr.schema.tabular.STable
 import dr.schema.tabular.TDirectRef
+import dr.schema.tabular.TInverseRef
 import dr.spi.IQueryExecutor
 import dr.spi.IResult
 import dr.spi.IRowGet
@@ -170,10 +172,13 @@ class SQLQueryExecutor(private val db: DSLContext, private val qTree: QTree): IQ
     }
 
     // add @super fields
-    val dSuperRef = selection.superRef
-    if (dSuperRef != null) {
-      val dRefTable = tables.get(superRef!!.refEntity)
-      dRefTable.joinFields(dSuperRef.select, dSuperRef.name, "$alias.${dSuperRef.name}")
+    selection.superRef?.let {
+      it.ref.joinFields(it.select, it.name, "$alias.${it.name}")
+    }
+
+    // add @parent fields
+    selection.parentRef?.let {
+      it.ref.joinFields(it.select, it.name, "$alias.${it.name}")
     }
   }
 
@@ -187,6 +192,11 @@ class SQLQueryExecutor(private val db: DSLContext, private val qTree: QTree): IQ
     // one-to-one A.@super --> B.@id
     if (selection.superRef != null) {
       superJoin(prefix)
+    }
+
+    // one-to-one A.@parent --> B.@id
+    if (selection.parentRef != null) {
+      parentJoin(prefix)
     }
 
     for (qRel in refs.keys) {
@@ -207,6 +217,21 @@ class SQLQueryExecutor(private val db: DSLContext, private val qTree: QTree): IQ
     val rField = dRef.fn(this, prefix)
     val rId = idFn(SUPER)
     joinTables[rTable.name] = (rTable to rField.eq(rId))
+  }
+
+  private fun STable.parentJoin(prefix: String) {
+    val dRef = parentRef!!
+    val rTable = table(dRef.refEntity.sqlName()).asTable(PARENT)
+
+    if (dRef.viaRef is TDirectRef) {
+      val rField = dRef.viaRef.fn(this, PARENT)
+      val rId = idFn(prefix)
+      joinTables[rTable.name] = (rTable to rField.eq(rId))
+    } else {
+      val rField = dRef.viaRef.fn(this, prefix)
+      val rId = idFn(PARENT)
+      joinTables[rTable.name] = (rTable to rField.eq(rId))
+    }
   }
 
   private fun STable.expression(expr: QExpression, params: MutableMap<String, Any> = mutableMapOf()): Condition = if (expr.predicate != null) {
@@ -230,11 +255,13 @@ class SQLQueryExecutor(private val db: DSLContext, private val qTree: QTree): IQ
         DerefType.FIELD -> sName = qDeref.name
 
         DerefType.ONE -> {
-          if (qDeref.name == SUPER) {
-            qDeref.table.superJoin(sPrefix)
-          } else {
-            val dRef = qDeref.table.oneToOne.getValue(qDeref.name)
-            qDeref.table.directJoin(dRef, sPrefix)
+          when (qDeref.name) {
+            SUPER -> qDeref.table.superJoin(sPrefix)
+            PARENT -> qDeref.table.parentJoin(sPrefix)
+            else -> {
+              val dRef = qDeref.table.oneToOne.getValue(qDeref.name)
+              qDeref.table.directJoin(dRef, sPrefix)
+            }
           }
 
           sPrefix = qDeref.name

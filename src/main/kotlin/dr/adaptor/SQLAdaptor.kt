@@ -54,7 +54,6 @@ class SQLAdaptor(val schema: Schema, private val url: String): IAdaptor {
 
         dbTable = when(prop) {
           is TID -> dbTable.column(prop.name, SQLDataType.BIGINT.nullable(false).identity(true))
-          is TType -> dbTable.column(prop.name, SQLDataType.VARCHAR.nullable(false))
           is TEmbedded -> dbTable.column(prop.name, SQLDataType.VARCHAR.nullable(prop.rel.isOptional))
           is TField -> dbTable.column(prop.name, prop.field.type.toSqlType().nullable(prop.field.isOptional))
         }

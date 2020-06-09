@@ -102,8 +102,11 @@ private fun KClass<out Any>.processEntity(tmpSchema: TempSchema, ownedBy: SEntit
     sEntity.addProperty(ID, SField(ID, null, FieldType.LONG, emptySet(), false)) // all entities have an ID
     sEntity.machine = processStateMachine(tmpSchema, sEntity) // add state-machine if exists
 
-    if (ownedBy != null)
+    if (ownedBy != null) {
       tmpSchema.owned[name] = ownedBy
+      if (!ownedBy.isSealed)
+        sEntity.addProperty(PARENT, SRelation(PARENT, null, RelationType.OWN, ownedBy, emptyMap(), false, false, false))
+    }
 
     val tmpInputProps = mutableSetOf<KProperty1<Any, *>>()
     val allProps = memberProperties.map { it.name to (it as KProperty1<Any, *>) }.toMap()
